@@ -11,6 +11,9 @@ Usage:
 """
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
+import torch
 import torchaudio
 from demucs.pretrained import get_model
 from demucs.apply import apply_model
@@ -23,7 +26,11 @@ MODEL_NAME = "htdemucs"  # general-purpose source separation model
 
 
 def separate_file(model, device, in_path: Path, out_path: Path) -> None:
-    wav, sr = torchaudio.load(str(in_path))
+    # Use soundfile for I/O — newer torchaudio versions default to a
+    # torchcodec-backed loader/saver we don't have installed.
+    audio, sr = sf.read(str(in_path), always_2d=True)  # (frames, channels)
+    wav = torch.from_numpy(audio.T).float()  # (channels, frames)
+
     if sr != model.samplerate:
         wav = torchaudio.functional.resample(wav, sr, model.samplerate)
         sr = model.samplerate
@@ -33,10 +40,10 @@ def separate_file(model, device, in_path: Path, out_path: Path) -> None:
 
     sources = apply_model(model, wav[None], device=device, progress=True)[0]
     vocals = sources[model.sources.index("vocals")]
-    vocals_mono = vocals.mean(dim=0, keepdim=True).cpu()
+    vocals_mono = vocals.mean(dim=0).cpu().numpy()
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    torchaudio.save(str(out_path), vocals_mono, sr)
+    sf.write(str(out_path), vocals_mono, sr)
 
 
 def main() -> None:
