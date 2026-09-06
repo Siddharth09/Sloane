@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+.next/
+out/
+
+# Audio/video data (large, not for git)
+raw_audio/
+clean_audio/
+training_data/
+*.wav
+*.mp4
+*.mov
+
+# Env/secrets
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db

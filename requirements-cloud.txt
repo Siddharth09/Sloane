@@ -1,0 +1,7 @@
+# Install on the rented GPU pod (RunPod/Vast.ai), not locally.
+torch --index-url https://download.pytorch.org/whl/cu121
+torchaudio --index-url https://download.pytorch.org/whl/cu121
+demucs
+faster-whisper
+soundfile
+numpy
