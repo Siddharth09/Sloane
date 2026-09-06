@@ -132,10 +132,12 @@ wherever the code actually runs.)
     `/Users/siddharthmehta/Desktop/Astryks/Music/Music production - Matt Landi/MUSIC REVISED`
     — several more hours of unprocessed footage available if more data is
     ever needed (e.g. two ~57-59 min "Painting a..." videos).
-- **`scripts/02_separate_vocals.py`** — written, **not yet run**. Needs a
-  CUDA GPU (torch + demucs). Strips background music/noise, writes to
-  `clean_audio/`.
-- **`scripts/03_chunk_by_speech.py`** — written, **not yet run**. Needs a
+- **`scripts/02_separate_vocals.py`** — **done** (2026-09-06, on RunPod). Fixed
+  a version-drift bug first (newer `torchaudio` defaulted to a
+  `torchcodec`-backed loader we didn't have installed; switched the script to
+  use `soundfile` for I/O instead). Output: `clean_audio/` on the pod's
+  network volume, 603MB, all 10 source files processed.
+- **`scripts/03_chunk_by_speech.py`** — running as of this writing. Needs a
   CUDA GPU (faster-whisper). Transcribes + cuts `clean_audio/` into
   utterance-level clips (2-15 sec) with `filelist.csv` (clip path,
   transcript, duration) per speaker — the audio+text format Chatterbox
@@ -143,6 +145,43 @@ wherever the code actually runs.)
 - `requirements-local.txt` / `requirements-cloud.txt` written.
 - Neither the Mac nor the Windows PC has a usable GPU (see §0) — RunPod is
   the only path forward for steps 2 onward.
+
+### RunPod operational notes (learned 2026-09-06/07)
+
+- **Web app + API scaffolded and pushed**: `web/` (Next.js) and `api/`
+  (FastAPI, currently mocked pending real Chatterbox wiring) live in this
+  repo at github.com/Siddharth09/Sloane, both verified running locally.
+- **SSH access**: RunPod's account-level SSH key (added under Settings → SSH
+  Public Keys) does **not** reliably propagate into a pod's own
+  `authorized_keys` if the pod was already running when the key was added —
+  direct-TCP SSH failed with "Permission denied" until fixed. Workaround
+  used once: connect via the `ssh.runpod.io` proxy (that one *does*
+  authenticate against the account key, but only gives an interactive shell —
+  no scriptable command execution, no SCP/SFTP), pipe commands into it via
+  stdin to manually append the key to `~/.ssh/authorized_keys`. On the
+  *second* pod (below) the key was present automatically from pod creation —
+  seems to depend on whether the key existed on the account before the pod
+  was created.
+- **Stopping/restarting pods risks losing your host's GPU capacity.**
+  Stopped the first pod (`classic_lime_cuckoo`, id `8edb8a1th43nze`) to pause
+  billing after Phase 2 Demucs step finished — its host machine then had no
+  free RTX 4090 to restart into (Community Cloud is shared capacity, not
+  guaranteed). Fix: deployed a **new** pod attached to the *same* network
+  volume (`oc6yvg9b19`, 50GB, datacenter `EU-RO-1` — network volumes are
+  datacenter-locked but independent of any specific pod/host, so all data
+  survived) — Community Cloud had zero capacity for any GPU type in that
+  datacenter at the time, but **Secure Cloud** in the same datacenter did,
+  at the same $0.74/hr price. Current pod: `sloane-pod-2`
+  (id `oxo0ndci51nv1g`).
+- **Takeaway for next time**: stopping a pod to save money is still worth
+  doing, but be ready to redeploy a fresh pod (same network volume, broaden
+  `gpuTypeIds` to a list + `gpuTypePriority: "availability"`, try `SECURE`
+  cloudType if `COMMUNITY` has no capacity) rather than assuming the exact
+  same pod will restart cleanly.
+- **RunPod API key** stored locally at `.secrets/runpod_api_key`
+  (git-ignored, never committed) — used directly via
+  `https://rest.runpod.io/v1/...` (Bearer auth) for stop/start/create, no
+  plugin/MCP integration installed (see §0).
 
 ---
 
@@ -163,10 +202,10 @@ wherever the code actually runs.)
 Once you have a RunPod account with billing set up and a pod deployed, send
 the SSH details and the rest of Phase 1-2 gets run directly.
 
-### Phase 2 — Data cleanup (run on the pod)
-5. `python3 scripts/02_separate_vocals.py` → `clean_audio/`
+### Phase 2 — Data cleanup (run on the pod) ← **you are here**
+5. ~~`python3 scripts/02_separate_vocals.py` → `clean_audio/`~~ done
 6. `python3 scripts/03_chunk_by_speech.py` → `training_data/<speaker>/clips/`
-   + `filelist.csv`
+   + `filelist.csv` — running now
 
 ### Phase 3 — Zero-shot validation (fast, unblocks both features immediately)
 7. Install Chatterbox on the pod (`pip install chatterbox-tts` or clone the
