@@ -650,6 +650,43 @@ a cropped screenshot, not ideal), the consent-capture/watermarking/no-go-
 list work from §3, and wiring this into `06_inference_server.py` /
 `/api/clone-video` the way Chatterbox is already wired for Features A/B.
 
+### Facial realism request, 2026-09-07 — eyes, blinks, twitches, breathing
+
+User asked for the model to learn person-specific eye gaze, blinks, facial
+twitches, subtle expressions, eyebrows, lips, breathing, swallowing.
+**Checked the actual pipeline code before answering** (`infer_flash.py`,
+`infer_preview.py`): both take **only a single static image**
+(`--image_path`) — there is no video-reference or style-input mode in this
+codebase. Important consequence: none of the above can be *learned* from
+the specific instructor via a photo. It's generated entirely from
+EchoMimicV3's own pretrained prior on "how humans generally move," applied
+to our still image + audio — not lifted from real footage of the person,
+since we never gave it any.
+
+**Tunable now, no fine-tuning needed** (not yet empirically tested — needs
+a real pod session):
+- **`video_length`**: used 81 frames (~3.24 sec) for the first test —
+  likely too short to naturally fit a blink cycle (humans blink roughly
+  every 2-10 sec) or a breath. Try longer.
+- **`infer_preview.py` instead of `infer_flash.py`**: Flash's 8-step
+  process trades subtlety for speed; the repo's own tuning tips suggest
+  15-25 steps for "talking body" quality — worth comparing against Flash's
+  faster-but-cruder output.
+- **`guidance_scale` (3-6) / `audio_guidance_scale` (1.8-2)**: documented
+  real tradeoffs (tighter audio/prompt adherence vs. better raw visual
+  quality) — worth A/B testing rather than guessing a value.
+- **A real reference photo**, not a cropped screenshot with UI overlays.
+
+**What would actually deliver instructor-specific mannerisms** (not just
+generic human behavior): fine-tuning EchoMimicV3 itself on real *video* of
+the instructor — meaningfully bigger than the Chatterbox LoRA work (video
+diffusion fine-tuning needs more data/compute), and hits the **same
+blocker as the voice-accent issue**: real video source footage only exists
+on the Mac, not this machine. Both "make the voice/accent better" and
+"make the face more personally realistic" converge on the same next
+decision needed from the user: get more of the original source video
+transferred, or confirm what we already have is what we're working with.
+
 ---
 
 ## 9. Expanded scope, decided 2026-09-07
@@ -725,8 +762,8 @@ effort/impact
 2. **More epochs / tune LoRA rank up** from the current defaults (10
    epochs, `lora_r=128`) — cheap to experiment with given each run took
    only ~2.5 min.
-3. **Per-speaker `exaggeration`/`cfg_weight`/`temperature` tuning** — quick,
-   cheap A/B listening tests once wired into inference.
+3. ~~**Per-speaker `exaggeration`/`cfg_weight`/`temperature` tuning**~~ —
+   wired into `06_inference_server.py` 2026-09-07, see below.
 4. **Not recommended**: switching from LoRA to full fine-tune — the
    toolkit's own guidance is full fine-tune needs "strictly larger than 10
    hours" of data to be worth it; we're nowhere near that even with more
@@ -734,6 +771,42 @@ effort/impact
 5. Keep iterating with real listening feedback (what's already working) —
    quality judgments here are inherently subjective/human, not something to
    over-automate.
+
+### Voice quality pass, 2026-09-07 — user feedback: video good, voice needs work
+
+Specifically asked for: emotion, pause, human-like reactions, accent,
+pitch, tonality, melody. Worth noting up front — since EchoMimicV3 animates
+the face *from the audio track*, better emotional/paced audio should
+improve facial expressiveness too as a side effect, not just the sound.
+
+**Shipped now (code-only, no GPU/retraining needed):**
+- Chatterbox's real expressiveness controls (`exaggeration`,
+  `cfg_weight`) were never actually being set — silently defaulting to
+  neutral 0.5/0.5. Set starting values (`exaggeration=0.6` for a bit more
+  warmth, `cfg_weight=0.4` for looser/less robotic pacing, per the
+  fine-tuning toolkit's own tuning tips) and — more importantly — made
+  both **overridable per-request** (`/api/generate-preset` and
+  `/api/clone-voice` now accept optional `exaggeration`/`cfg_weight` form
+  fields) so the *actual* right values can be found by ear via real A/B
+  listening, not guessed once and left alone. These starting values are
+  informed by the model's documented behavior, not empirically verified by
+  listening yet — that still needs a real pod session.
+- Punctuation-aware pause length between sentences, replacing one fixed
+  0.2s gap everywhere: `?` lingers slightly longer (0.32s), `!` and `.`
+  shorter, matching how a real speaker's pacing actually varies by what
+  the sentence just did. Small, but a concrete, unambiguous improvement
+  (not a tuning question) unlike the exaggeration/cfg_weight starting
+  values above.
+
+**Not a code fix — needs a real decision:** pitch, tonality, melody, and
+especially **accent** are primarily learned from training data, not
+inference-time parameters. The single biggest lever is still #1 above —
+more training data — and it's now the honest blocker: the additional
+hours of unprocessed source footage mentioned in §4 live on the **Mac**,
+not this Windows machine (only `raw_audio/` — the already-extracted clips —
+made the transfer). Needs the user to either transfer more source video
+from the Mac, or confirm there's no more footage worth using beyond what
+we already have.
 
 ---
 

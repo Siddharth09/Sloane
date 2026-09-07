@@ -56,8 +56,27 @@ PRESET_VOICES = {
     },
 }
 
-GEN_PARAMS = {"temperature": 0.8, "repetition_penalty": 1.2}
+# Chatterbox's real (previously unused) expressiveness controls - see
+# PROJECT_CONTEXT.md Sec "Voice quality improvements" for what these do and
+# why these starting values, and note they're overridable per-request below
+# so they can be A/B tested by ear without a redeploy.
+DEFAULT_GEN_PARAMS = {
+    "temperature": 0.8,
+    "repetition_penalty": 1.2,
+    "exaggeration": 0.6,  # emotional intensity; 0.5 = flat/neutral default
+    "cfg_weight": 0.4,  # lower = looser/more natural pacing, less robotic
+}
 MIN_UPLOAD_SECONDS = 8  # practical floor; see PROJECT_CONTEXT.md Sec 9
+
+# Punctuation-aware pause length instead of one fixed gap for every sentence
+# boundary - a real (if small) step toward natural rhythm rather than a
+# metronomic 0.2s everywhere regardless of what the sentence just did.
+PAUSE_SECONDS_BY_ENDING = {
+    "?": 0.32,  # slight lingering, like a real question
+    "!": 0.28,
+    ".": 0.24,
+}
+DEFAULT_PAUSE_SECONDS = 0.22
 
 
 def load_finetuned_engine(adapter_dir: str) -> ChatterboxTTS:
@@ -104,10 +123,18 @@ def split_sentences(text: str) -> list[str]:
     return [s for s in sentences if s.strip()]
 
 
+def pause_seconds_for(sentence: str) -> float:
+    stripped = sentence.rstrip()
+    if stripped and stripped[-1] in PAUSE_SECONDS_BY_ENDING:
+        return PAUSE_SECONDS_BY_ENDING[stripped[-1]]
+    return DEFAULT_PAUSE_SECONDS
+
+
 def synthesize(engine: ChatterboxTTS, text: str, reference_path: str, **kwargs):
     all_chunks = []
     sr = 24000
-    for sentence in split_sentences(text):
+    sentences = split_sentences(text)
+    for sentence in sentences:
         wav_tensor = engine.generate(text=sentence, audio_prompt_path=reference_path, **kwargs)
         if isinstance(wav_tensor, tuple):
             wav_tensor = wav_tensor[0]
@@ -116,14 +143,19 @@ def synthesize(engine: ChatterboxTTS, text: str, reference_path: str, **kwargs):
         if len(trimmed) > 0:
             all_chunks.append(trimmed)
             sr = engine.sr
-            all_chunks.append(np.zeros(int(sr * 0.2), dtype=np.float32))
+            all_chunks.append(np.zeros(int(sr * pause_seconds_for(sentence)), dtype=np.float32))
     if not all_chunks:
         return None, None
     return np.concatenate(all_chunks), sr
 
 
 @app.post("/api/generate-preset")
-async def generate_preset(text: str = Form(...), voice_id: str = Form(...)):
+async def generate_preset(
+    text: str = Form(...),
+    voice_id: str = Form(...),
+    exaggeration: float | None = Form(None),
+    cfg_weight: float | None = Form(None),
+):
     if voice_id not in preset_engines:
         return JSONResponse(
             {"error": f"unknown voice_id, expected one of {sorted(preset_engines)}"},
@@ -131,7 +163,12 @@ async def generate_preset(text: str = Form(...), voice_id: str = Form(...)):
         )
     engine = preset_engines[voice_id]
     reference = PRESET_VOICES[voice_id]["reference"]
-    audio, sr = synthesize(engine, text, reference, **GEN_PARAMS)
+    gen_params = {
+        **DEFAULT_GEN_PARAMS,
+        **({"exaggeration": exaggeration} if exaggeration is not None else {}),
+        **({"cfg_weight": cfg_weight} if cfg_weight is not None else {}),
+    }
+    audio, sr = synthesize(engine, text, reference, **gen_params)
     if audio is None:
         return JSONResponse({"error": "no audio generated"}, status_code=500)
 
@@ -141,7 +178,12 @@ async def generate_preset(text: str = Form(...), voice_id: str = Form(...)):
 
 
 @app.post("/api/clone-voice")
-async def clone_voice(text: str = Form(...), reference_audio: UploadFile = File(...)):
+async def clone_voice(
+    text: str = Form(...),
+    reference_audio: UploadFile = File(...),
+    exaggeration: float | None = Form(None),
+    cfg_weight: float | None = Form(None),
+):
     tmp_path = AUDIO_DIR / f"ref_{uuid.uuid4().hex}.wav"
     content = await reference_audio.read()
     with open(tmp_path, "wb") as f:
@@ -155,7 +197,12 @@ async def clone_voice(text: str = Form(...), reference_audio: UploadFile = File(
             status_code=400,
         )
 
-    audio, sr = synthesize(base_engine, text, str(tmp_path), **GEN_PARAMS)
+    gen_params = {
+        **DEFAULT_GEN_PARAMS,
+        **({"exaggeration": exaggeration} if exaggeration is not None else {}),
+        **({"cfg_weight": cfg_weight} if cfg_weight is not None else {}),
+    }
+    audio, sr = synthesize(base_engine, text, str(tmp_path), **gen_params)
     tmp_path.unlink(missing_ok=True)
     if audio is None:
         return JSONResponse({"error": "no audio generated"}, status_code=500)
