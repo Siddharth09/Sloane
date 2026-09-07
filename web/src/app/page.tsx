@@ -149,8 +149,9 @@ export default function Home() {
         <div>
           <h1 className="text-2xl font-bold">Lucy</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Private prototype — both sections currently return a mock tone until the RunPod
-            Chatterbox backend is wired up (see PROJECT_CONTEXT.md, Phase 4).
+            Private prototype — real fine-tuned Chatterbox generation (see PROJECT_CONTEXT.md).
+            Requires the RunPod inference server running; falls back to a local mock if
+            NEXT_PUBLIC_API_BASE isn&apos;t set.
           </p>
         </div>
         <PresetVoiceSection />

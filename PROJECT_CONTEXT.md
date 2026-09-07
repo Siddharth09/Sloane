@@ -236,22 +236,40 @@ the SSH details and the rest of Phase 1-2 gets run directly.
    (Feature A pins the reference clip server-side; Feature B takes it from
    upload) — zero-shot, no fine-tuning yet.
 
-### Phase 4 — Minimal backend API
-9. Small FastAPI service on the pod (or a RunPod Serverless handler) exposing
-   the two endpoints from §2: `/api/generate-preset` and `/api/clone-voice`.
-   Both call the same underlying Chatterbox zero-shot function — Feature A
-   just pins the reference audio to one of the two instructor clips server-
-   side, Feature B takes the reference audio from the request upload.
-10. Store generated audio in temporary storage (local disk on the pod is
-    fine for now; object storage comes with the real platform build, §8).
+### Phase 4 — Real backend API ← **done** (2026-09-07)
+9. ~~Small FastAPI service on the pod~~ done —
+   `scripts/06_inference_server.py`, run via `uvicorn` in tmux on the pod
+   (port 8000, exposed through RunPod's HTTP proxy at
+   `https://<pod-id>-8000.proxy.runpod.net`). Loads three engines once at
+   startup: the two fine-tuned preset voices (Feature A — reuses the same
+   LoRA-adapter loading pattern as `inference.py`, proven in Phase 6, not
+   the untested merged-checkpoint path) plus one base zero-shot engine
+   (Feature B). Same endpoint contract as the local mock
+   (`api/main.py`): `/api/generate-preset`, `/api/clone-voice`.
+   "No character limit" implemented via sentence-chunking + VAD silence
+   trim + concatenation (reuses `trim_silence_with_vad` from the
+   fine-tuning toolkit). Feature B enforces an 8 sec minimum upload
+   (between the ~3 sec internal reference window and the ~10-20 sec
+   guidance from Sec 9 — 8 sec is a practical floor, not a hard technical
+   one). First request after cold start took ~37 sec (model
+   warmup/CUDA kernel compilation); subsequent requests 3-8 sec depending
+   on text length.
+10. ~~Store generated audio in temporary storage~~ done — local disk on the
+    pod (`/workspace/sloane/api_generated_audio/`), served via FastAPI's
+    `StaticFiles` mount. Object storage still deferred to the real platform
+    build (§7).
 
-### Phase 5 — Minimal frontend
-11. One simple page, two sections:
-    - Text box + voice dropdown ("Art Instructor" / "Music Instructor") →
-      calls `/api/generate-preset` → audio player.
-    - Upload widget (file picker, ~30-60 sec clip) + text box → calls
-      `/api/clone-voice` → audio player.
-12. This is enough for **you to test both features end-to-end** privately.
+### Phase 5 — Frontend ← **done**, now wired to the real backend
+11. The two-section page from Phase 5 originally called a **local mock**
+    (`api/main.py` on Windows, returns a sine-wave tone) — now
+    `web/.env.local` sets `NEXT_PUBLIC_API_BASE` to the pod's proxy URL, so
+    the exact same frontend hits real fine-tuned/zero-shot generation.
+    Verified end-to-end through the actual browser (not just curl) for
+    both features. **`.env.local` is git-ignored and pod-specific** — every
+    time the pod is redeployed (new pod id → new proxy URL) this file needs
+    updating, same as the SSH host/port dance in §0/Phase 1.
+12. ~~This is enough for you to test both features end-to-end~~ confirmed
+    working, 2026-09-07.
 
 ### Phase 6 — Quality upgrade ← **done** (2026-09-07)
 13. ~~Fine-tune Chatterbox per instructor~~ done. User feedback on the
