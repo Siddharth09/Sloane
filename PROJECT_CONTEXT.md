@@ -399,7 +399,7 @@ taken): **Lucy Studio**, **Lucy Voice Co.**, **Lucy Audio**, **Lucy Sound**,
 
 ---
 
-## 8. Feature C: video cloning (OmniTalker) — **activated 2026-09-07**
+## 8. Feature C: video cloning (EchoMimicV3) — **activated 2026-09-07**
 
 Raised 2026-09-06: a third feature where a user uploads a video of
 themselves and types text, and the system generates a video of them
@@ -466,16 +466,46 @@ While vendoring dependencies for backup (see `vendor/README.md`), found that
 **OmniTalker has no public model code or weights** — its GitHub repo is only
 a project page (paper links, demo videos, no source), and its Hugging Face
 Space is a thin UI that calls a private internal Alibaba backend not
-reachable outside their infra. There's nothing to self-host. **Switched the
-Feature C candidate to [Hallo3](https://github.com/fudan-generative-vision/hallo3)**
-(Fudan, CVPR 2025) — confirmed real public repo, MIT-licensed code, real
-downloadable weights via `huggingface-cli download fudan-generative-ai/hallo3`.
-Cascaded pipeline as originally described for Hallo-family models (Chatterbox
-generates audio, Hallo3 separately animates the face to it) — the
-OmniTalker-vs-Hallo3 tradeoff discussion above (joint vs. cascaded) is now
-moot since only one of them is actually usable. Still need to verify the
-model *weights'* specific license terms (separate from the MIT-licensed
-code) before any commercial use.
+reachable outside their infra. There's nothing to self-host, and no
+commercial/API access path either — checked for an Alibaba Cloud
+DashScope listing or any paid API; found nothing connecting OmniTalker to
+any public offering. It is simply not accessible by any means right now.
+
+**First replacement pick was Hallo3** (Fudan, CVPR 2025) — real repo, MIT
+code, downloadable weights. **Superseded same day** after actually
+comparing options instead of taking the first available one: a benchmark
+comparison specifically flagged Hallo3 as having **"severe limitations in
+preserving character identity"** — a dealbreaker for a product whose whole
+point is the video looking like the *specific* real person, not just
+looking generally realistic. Also heavier to run (CogVideoX-5B backbone).
+
+### Feature C candidate, revised: EchoMimicV3 (Ant Group/Alipay)
+
+[antgroup/echomimic_v3](https://github.com/antgroup/echomimic_v3) (AAAI
+2026) — chosen over Hallo3 because:
+- **License covers the weights explicitly**, not just the code: "The
+  models in this repository are licensed under the Apache 2.0 License" —
+  a cleaner story than Hallo3's code-only MIT license with weight terms
+  still unverified.
+- **Lighter/faster**: 1.3B parameters vs. Hallo3's 5B-backbone CogVideoX —
+  a "Flash" variant needs as little as 12GB VRAM, comfortably fits our
+  existing RTX 4090/L4 pods without needing a bigger (pricier) GPU.
+- **No identity-preservation red flag** found in the comparison that
+  flagged Hallo3's weakness.
+- Real weights confirmed downloadable (Hugging Face + ModelScope).
+
+Hallo3 stays vendored (small, no harm keeping it as a secondary reference/
+fallback) but EchoMimicV3 is the active plan. Cascaded pipeline as
+originally scoped (Chatterbox generates audio, EchoMimicV3 separately
+animates the face/body to it) — same OmniTalker-style joint generation
+advantage doesn't apply to either alternative since only cascaded models
+are actually available.
+
+**Lesson for next time**: don't lock in the first technically-available
+option under time pressure — do the comparison pass (license terms
+covering weights specifically, VRAM/speed, and the metric that actually
+matters for the product, here identity preservation over generic FID/FVD
+scores) before vendoring/committing to a specific model.
 
 ---
 
@@ -498,8 +528,9 @@ enough to build the real product. Scope grew in this conversation:
    improve zero-shot quality the way more data helps *fine-tuning*. Guidance
    to users should still be "clean, single-speaker audio," not just "10 sec
    of anything."
-3. **Feature C (video cloning)**: activated, see §8 — OmniTalker, not
-   deferred anymore.
+3. **Feature C (video cloning)**: activated, see §8 — EchoMimicV3 (revised
+   from an initial OmniTalker→Hallo3→EchoMimicV3 pivot the same day, not
+   deferred anymore).
 
 ### No character limit — technical approach
 Chatterbox generates per-sentence/per-chunk, not arbitrary-length text in
@@ -519,12 +550,28 @@ path is varying these per sentence-chunk (see above), not per word.
 
 ### iOS + web platform decision — **React Native/Expo, decided 2026-09-07**
 User chose to build the iOS app in React Native/Expo from the start (over
-"web-first, PWA on iOS" or "fully native Swift"), sharing logic with the
-Next.js web build rather than a fully separate codebase. Note this needs an
-Apple Developer Program membership ($99/yr, user's own account) and App
-Store review before public release — worth remembering App Store review
-can be stricter for AI voice/likeness apps specifically, separate from
-whatever web-side consent/safety work (§3) is needed.
+"web-first, PWA on iOS" or "fully native Swift"). Note this needs an Apple
+Developer Program membership ($99/yr, user's own account) and App Store
+review before public release — App Store review can be stricter for AI
+voice/likeness apps specifically, separate from whatever web-side consent/
+safety work (§3) is needed.
+
+**Re-examined 2026-09-07 (user pushed back on "is this actually the best
+way"), confirmed correct**: the earlier framing of "sharing logic with the
+web build" overstated things — Next.js (DOM: `div`/`input`) and React
+Native (native views: `View`/`TextInput`) don't share actual UI component
+code, only the language (TypeScript) and, if factored out deliberately, the
+API-calling/business-logic functions. A fully unified codebase is possible
+via Expo + `react-native-web`, but that means rewriting the *already-built
+and verified* Next.js UI in RN-primitive style — not worth it given how
+simple these screens actually are (a handful of form fields + an audio/
+video player). **Decision: build a separate, small Expo/React Native app
+that duplicates the same few screens against the same backend API**, rather
+than unifying — the duplication cost is low precisely because the app is
+simple, which is the same reasoning the user offered. React Native (over
+Flutter) remains the right call specifically because it shares the
+language and API logic with the existing TypeScript/Next.js backend calls;
+Flutter (Dart) would share nothing.
 
 ### Making the fine-tuned voices even better — options, roughly in order of
 effort/impact

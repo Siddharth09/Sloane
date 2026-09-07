@@ -16,10 +16,15 @@ re-pull manually if a newer version is needed.
   — a smaller community project, higher disappearance risk than Chatterbox
   itself, so worth mirroring.
 - **`hallo3-upstream/`** — [fudan-generative-vision/hallo3](https://github.com/fudan-generative-vision/hallo3),
-  code MIT licensed. Candidate for Feature C (video cloning) — see note
-  below on why this replaced OmniTalker.
+  code MIT licensed. Kept as a secondary reference — see below for why it's
+  not the active Feature C pick.
+- **`echomimic_v3-upstream/`** — [antgroup/echomimic_v3](https://github.com/antgroup/echomimic_v3)
+  (AAAI 2026), Apache-2.0 covering the models/weights explicitly, not just
+  the code. **Active Feature C candidate.** Demo assets (`datasets/`, ~30MB
+  of sample images/audio) were dropped before committing — not needed to
+  preserve, we only care about the code.
 
-## Why Hallo3, not OmniTalker
+## Feature C model selection: OmniTalker → Hallo3 → EchoMimicV3
 
 PROJECT_CONTEXT.md originally named OmniTalker (Alibaba/HumanAIGC) as the
 Feature C candidate. Checked 2026-09-07 while vendoring: **OmniTalker has no
@@ -28,10 +33,16 @@ public model code or weights** — its GitHub repo
 project page (paper links, demo videos), and its Hugging Face Space
 (`Mrwrichard/OmniTalker`) is a thin Gradio UI that forwards requests to a
 private internal Alibaba backend (`OMNITALKER_URL`, not publicly reachable)
-— there is nothing runnable to self-host. Hallo3 is confirmed to have a real
-public repo, real downloadable weights
-(`huggingface-cli download fudan-generative-ai/hallo3`), and MIT-licensed
-code. **Still unverified**: the model *weights'* own license terms
-specifically (code license and weight license aren't always the same thing)
-— check Hallo3's Hugging Face model card before using it commercially, same
-diligence needed for any future Feature C model choice.
+— nothing runnable to self-host, and no commercial API/DashScope listing
+found either. Completely inaccessible.
+
+First pivoted to Hallo3 (real repo, MIT code, downloadable weights) — then
+superseded the same day once actually compared against alternatives rather
+than just taking the first available option: a benchmark comparison flagged
+Hallo3 with "severe limitations in preserving character identity" (a
+dealbreaker here — the product needs the video to look like the *specific*
+real person), and it's a heavier CogVideoX-5B-backed model. **EchoMimicV3**
+won the comparison: Apache-2.0 explicitly covering the weights (not just
+code, unlike Hallo3), lighter (1.3B params, a "Flash" variant runs on as
+little as 12GB VRAM), and no identity-preservation red flag found against
+it. See PROJECT_CONTEXT.md Sec 8 for the full writeup.
