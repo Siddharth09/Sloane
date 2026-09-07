@@ -25,11 +25,20 @@ OUT_DIR = PROJECT_ROOT / "training_data"
 
 MIN_CLIP_SECONDS = 2.0
 MAX_CLIP_SECONDS = 15.0
+# Per-speaker override: slow, pause-heavy narration (e.g. guided meditation)
+# gets VAD-merged into clips that hug MAX_CLIP_SECONDS and contain long
+# internal silences, which destabilized that voice's training (see
+# PROJECT_CONTEXT.md "Francois-Michelle generation instability"). A tighter
+# ceiling for those speakers forces cleaner, silence-free clips.
+MAX_CLIP_SECONDS_OVERRIDE = {
+    "voice_meditation": 8.0,
+}
 PAD_SECONDS = 0.15  # small buffer so words aren't clipped at boundaries
 
 
 def process_speaker(model: WhisperModel, speaker_dir: Path) -> None:
     speaker = speaker_dir.name
+    max_clip_seconds = MAX_CLIP_SECONDS_OVERRIDE.get(speaker, MAX_CLIP_SECONDS)
     clips_dir = OUT_DIR / speaker / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
     filelist_path = OUT_DIR / speaker / "filelist.csv"
@@ -44,7 +53,7 @@ def process_speaker(model: WhisperModel, speaker_dir: Path) -> None:
 
         for seg in segments:
             duration = seg.end - seg.start
-            if duration < MIN_CLIP_SECONDS or duration > MAX_CLIP_SECONDS:
+            if duration < MIN_CLIP_SECONDS or duration > max_clip_seconds:
                 continue
             text = seg.text.strip()
             if not text:

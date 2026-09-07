@@ -1,8 +1,16 @@
 export type Voice = { id: string; label: string; color: string; initial: string };
 
 export const PRESET_VOICES: Voice[] = [
-  { id: "art_instructor", label: "Art Instructor", color: "bg-rose", initial: "A" },
-  { id: "music_instructor", label: "Music Instructor", color: "bg-sage", initial: "M" },
+  { id: "art_instructor", label: "Kirsty", color: "bg-rose", initial: "K" },
+  { id: "music_instructor", label: "Matt", color: "bg-sage", initial: "M" },
+  { id: "voice_business", label: "Alice", color: "bg-pink", initial: "A" },
+  { id: "voice_finance", label: "Megan", color: "bg-blue", initial: "M" },
+  { id: "voice_broadcast", label: "Katie", color: "bg-purple", initial: "K" },
+  { id: "voice_tech", label: "Brad", color: "bg-butter", initial: "B" },
+  { id: "voice_comedy", label: "Izzy", color: "bg-lavender", initial: "I" },
+  { id: "voice_sales", label: "Robbo", color: "bg-coral", initial: "R" },
+  { id: "voice_meditation", label: "Michelle", color: "bg-coral-dark", initial: "F" },
+  { id: "voice_mark", label: "Mark", color: "bg-sage", initial: "M" },
 ];
 
 export function VoicePicker({

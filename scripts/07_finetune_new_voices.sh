@@ -19,7 +19,7 @@ set -euo pipefail
 
 BASE_TOOLKIT=/workspace/sloane/chatterbox-finetuning
 PROJECT_ROOT=/workspace/sloane
-VOICES=(voice_comedy)
+VOICES=(voice_comedy voice_meditation)
 # voice_business/voice_finance/voice_broadcast/voice_tech/voice_meditation
 # already trained. voice_comedy has only 1.9 min of usable audio after
 # chunking - trying it anyway per explicit request, expect weaker quality

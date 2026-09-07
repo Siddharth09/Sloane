@@ -27,6 +27,8 @@ SPEAKERS = [
     "voice_broadcast",
     "voice_tech",
     "voice_meditation",
+    "voice_sales",
+    "voice_mark",
 ]
 
 

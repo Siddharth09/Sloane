@@ -31,11 +31,24 @@ const COLORS = {
   coralDark: "#d66f55",
   rose: "#e8a0a0",
   sage: "#93b48c",
+  lavender: "#b3a6d6",
+  butter: "#e8c26b",
+  pink: "#dd7c9c",
+  blue: "#6f97bd",
+  purple: "#9b7dc0",
 };
 
 const PRESET_VOICES = [
-  { id: "art_instructor", label: "Art Instructor", color: COLORS.rose, initial: "A" },
-  { id: "music_instructor", label: "Music Instructor", color: COLORS.sage, initial: "M" },
+  { id: "art_instructor", label: "Kirsty", color: COLORS.rose, initial: "K" },
+  { id: "music_instructor", label: "Matt", color: COLORS.sage, initial: "M" },
+  { id: "voice_business", label: "Alice", color: COLORS.pink, initial: "A" },
+  { id: "voice_finance", label: "Megan", color: COLORS.blue, initial: "M" },
+  { id: "voice_broadcast", label: "Katie", color: COLORS.purple, initial: "K" },
+  { id: "voice_tech", label: "Brad", color: COLORS.butter, initial: "B" },
+  { id: "voice_comedy", label: "Izzy", color: COLORS.lavender, initial: "I" },
+  { id: "voice_sales", label: "Robbo", color: COLORS.coral, initial: "R" },
+  { id: "voice_meditation", label: "Michelle", color: COLORS.coralDark, initial: "F" },
+  { id: "voice_mark", label: "Mark", color: COLORS.sage, initial: "M" },
 ];
 
 function GradientButton({

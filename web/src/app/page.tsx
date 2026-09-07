@@ -1,17 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import { AccountWidget } from "@/components/AccountWidget";
 import { Footer } from "@/components/Footer";
 import { LogoMark } from "@/components/LogoMark";
 import { RecordOrUpload } from "@/components/RecordOrUpload";
 import { ShareButtons } from "@/components/ShareButtons";
 import { VoicePicker, PRESET_VOICES } from "@/components/VoicePicker";
+import { useAccessToken } from "@/lib/useAccessToken";
 
+// Video cloning isn't wired to the gated proxy yet (Feature C backend still
+// in progress - see PROJECT_CONTEXT.md), so it still calls the inference
+// server's public URL directly for now.
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 function ResultPlayer({ url, kind }: { url: string | null; kind: "audio" | "video" }) {
   if (!url) return null;
-  const fullUrl = `${API_BASE}${url}`;
+  // generate-preset/clone-voice already return an absolute URL (proxied
+  // server-side); clone-video still returns a path relative to API_BASE.
+  const fullUrl = url.startsWith("http") ? url : `${API_BASE}${url}`;
   return (
     <div className="mt-4">
       {kind === "video" ? (
@@ -60,6 +67,7 @@ function Card({
 }
 
 function PresetVoiceSection() {
+  const { token } = useAccessToken();
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -73,9 +81,10 @@ function PresetVoiceSection() {
       const form = new FormData();
       form.append("text", text);
       form.append("voice_id", voiceId);
-      const res = await fetch(`${API_BASE}/api/generate-preset`, { method: "POST", body: form });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (token) form.append("access_token", token);
+      const res = await fetch("/api/generate-preset", { method: "POST", body: form });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
       setAudioUrl(data.audio_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -114,6 +123,7 @@ function PresetVoiceSection() {
 }
 
 function CloneVoiceSection() {
+  const { token } = useAccessToken();
   const [text, setText] = useState("");
   const [file, setFile] = useState<Blob | File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -128,9 +138,10 @@ function CloneVoiceSection() {
       const form = new FormData();
       form.append("text", text);
       form.append("reference_audio", file, "reference.webm");
-      const res = await fetch(`${API_BASE}/api/clone-voice`, { method: "POST", body: form });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (token) form.append("access_token", token);
+      const res = await fetch("/api/clone-voice", { method: "POST", body: form });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
       setAudioUrl(data.audio_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -227,7 +238,7 @@ export default function Home() {
   return (
     <div className="min-h-screen px-6 py-20">
       <main className="mx-auto flex max-w-2xl flex-col gap-10">
-        <div className="mx-auto rounded-[32px] border border-white/60 bg-white/40 px-8 py-8 text-center backdrop-blur-xl">
+        <div className="mx-auto rounded-[32px] border border-white/60 bg-surface/90 px-8 py-8 text-center shadow-soft-lg backdrop-blur-xl">
           <span className="shadow-soft inline-flex rounded-3xl">
             <LogoMark size={64} />
           </span>
@@ -236,6 +247,7 @@ export default function Home() {
             Narrate, clone, and share, in a voice that sounds like someone real.
           </p>
         </div>
+        <AccountWidget />
         <PresetVoiceSection />
         <CloneVoiceSection />
         <VideoCloneSection />

@@ -29,7 +29,7 @@ NEW_VOCAB_SIZE = 2454
 PROJECT_ROOT = Path("/workspace/sloane")
 OUT_DIR = PROJECT_ROOT / "new_voices_test_output"
 
-VOICES = ["voice_meditation", "voice_comedy"]
+VOICES = ["voice_business", "voice_finance", "voice_broadcast", "voice_tech", "voice_mark", "voice_sales"]
 TEST_SENTENCE = "Hello, my name is Sloane, and I'm excited to help you create something today."
 
 
