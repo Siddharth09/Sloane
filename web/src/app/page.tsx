@@ -41,7 +41,7 @@ function Card({
 }) {
   return (
     <section
-      className={`shadow-soft rounded-[28px] border border-border p-7 transition hover:shadow-soft-lg ${wash}`}
+      className={`shadow-soft-lg rounded-[28px] border border-white/60 p-7 backdrop-blur-xl transition hover:shadow-soft-lg ${wash}`}
     >
       <div className="flex items-center gap-3.5">
         <span
@@ -86,7 +86,7 @@ function PresetVoiceSection() {
 
   return (
     <Card
-      wash="bg-pink-wash"
+      wash="bg-pink-wash/90"
       iconColor="text-pink"
       icon="✎"
       title="Text to speech"
@@ -141,7 +141,7 @@ function CloneVoiceSection() {
 
   return (
     <Card
-      wash="bg-blue-wash"
+      wash="bg-blue-wash/90"
       iconColor="text-blue"
       icon="🎙"
       title="Clone any voice"
@@ -196,7 +196,7 @@ function VideoCloneSection() {
 
   return (
     <Card
-      wash="bg-purple-wash"
+      wash="bg-purple-wash/90"
       iconColor="text-purple"
       icon="🎬"
       title="Clone a video"
@@ -227,7 +227,7 @@ export default function Home() {
   return (
     <div className="min-h-screen px-6 py-20">
       <main className="mx-auto flex max-w-2xl flex-col gap-10">
-        <div className="text-center">
+        <div className="mx-auto rounded-[32px] border border-white/60 bg-white/40 px-8 py-8 text-center backdrop-blur-xl">
           <span className="shadow-soft inline-flex rounded-3xl">
             <LogoMark size={64} />
           </span>

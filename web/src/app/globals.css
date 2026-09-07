@@ -45,11 +45,32 @@
 
 body {
   color: var(--foreground);
-  background:
-    radial-gradient(ellipse 900px 500px at 15% -5%, rgba(232, 160, 160, 0.16), transparent),
-    radial-gradient(ellipse 900px 600px at 100% 10%, rgba(179, 166, 214, 0.14), transparent),
-    var(--background);
-  background-attachment: fixed;
+  background: var(--background);
+}
+
+.art-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+}
+
+.page-content {
+  position: relative;
+  z-index: 1;
+}
+
+.art-backdrop > div {
+  flex: 1;
+  background-size: cover;
+  background-position: center;
+}
+
+.art-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(253, 246, 240, 0.5);
 }
 
 .shadow-soft {

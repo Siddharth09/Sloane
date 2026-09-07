@@ -18,7 +18,16 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TRAINING_DATA = PROJECT_ROOT / "training_data"
-SPEAKERS = ["art_instructor", "music_instructor"]
+SPEAKERS = [
+    "art_instructor",
+    "music_instructor",
+    "voice_business",
+    "voice_comedy",
+    "voice_finance",
+    "voice_broadcast",
+    "voice_tech",
+    "voice_meditation",
+]
 
 
 def main() -> None:
