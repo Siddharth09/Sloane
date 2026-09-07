@@ -687,6 +687,52 @@ on the Mac, not this machine. Both "make the voice/accent better" and
 decision needed from the user: get more of the original source video
 transferred, or confirm what we already have is what we're working with.
 
+### EchoMimicV3 has no training code — Hallo2 added as the fine-tuning path, 2026-09-07
+
+Checked whether we could build our own training loop against EchoMimicV3
+to close the gap above. Confirmed via the vendored copy: EchoMimicV3
+upstream ships **inference only** (`infer_flash.py`, `infer_preview.py`)
+— Ant Group never released training/fine-tuning code for any version of
+the EchoMimic family (v1, v2, or v3). Writing that ourselves against a
+closed recipe would be a multi-week undertaking (loss design, data
+loading for video instead of a single image, GPU-memory handling for
+video-diffusion training, avoiding catastrophic forgetting) — not
+something to take on speculatively.
+
+Researched alternatives that actually ship public training code with a
+permissive license and a reasonable identity-preservation reputation.
+Ruled out: EchoMimic v1/v2 (same dead end, no training code ever
+released), LivePortrait (no training code, and video-driven not
+audio-driven), MuseTalk (has training code but only inpaints lip-sync
+onto an existing driving video — doesn't generate blinks/gaze/breathing
+itself), SyncTalk/DreamTalk (non-commercial-only licenses), AniTalker
+(authors declined to release training code on purpose).
+
+**Chosen: Hallo2** ([fudan-generative-vision/hallo2](https://github.com/fudan-generative-vision/hallo2),
+MIT, vendored to `vendor/hallo2-upstream/`) — a real, complete training
+pipeline (`scripts/train_stage1.py`, `scripts/train_stage2_long.py`),
+confirmed present in the vendored copy, not just claimed in the README.
+Earlier "reference-network" architecture than Hallo3 (which we already
+rejected for weak identity preservation) — a plausible reason Hallo3
+regressed, and a reason to expect Hallo2 holds identity better.
+AniPortrait (Tencent, Apache-2.0, also has full training code, landmark-
+driven) is the runner-up if Hallo2 underperforms. Ditto (Ant Group,
+Apache-2.0, training code on a separate branch, released Nov 2025) is
+too new to have a track record — worth a future look, not a first bet.
+
+**Important: this does not merge with EchoMimicV3.** Different base
+architectures (EchoMimicV3 is a Wan2.1 diffusion-transformer model;
+Hallo2 is a UNet + reference-network model) — their weights can't be
+combined. The plan is to run them as two separate pipelines:
+1. Now, no new data needed: get Hallo2 running zero-shot (no training)
+   on the same reference photo + audio already used for EchoMimicV3, and
+   compare output quality/identity preservation side by side.
+2. Once real source video arrives from the Mac: run one real fine-tuning
+   pass, on whichever model wins step 1.
+
+RunPod pod status checked 2026-09-07: no pod currently running (all
+`EXITED`), so no active GPU cost while this decision was made.
+
 ---
 
 ## 9. Expanded scope, decided 2026-09-07

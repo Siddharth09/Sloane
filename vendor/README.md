@@ -20,9 +20,20 @@ re-pull manually if a newer version is needed.
   not the active Feature C pick.
 - **`echomimic_v3-upstream/`** — [antgroup/echomimic_v3](https://github.com/antgroup/echomimic_v3)
   (AAAI 2026), Apache-2.0 covering the models/weights explicitly, not just
-  the code. **Active Feature C candidate.** Demo assets (`datasets/`, ~30MB
-  of sample images/audio) were dropped before committing — not needed to
-  preserve, we only care about the code.
+  the code. **Active Feature C candidate for inference/zero-shot.** Demo
+  assets (`datasets/`, ~30MB of sample images/audio) were dropped before
+  committing — not needed to preserve, we only care about the code.
+- **`hallo2-upstream/`** — [fudan-generative-vision/hallo2](https://github.com/fudan-generative-vision/hallo2),
+  MIT licensed. **Active Feature C candidate for fine-tuning/training** —
+  unlike EchoMimicV3 (and unlike EchoMimic v1/v2 and Hallo3), Hallo2
+  actually ships working training code (`scripts/train_stage1.py`,
+  `scripts/train_stage2_long.py`), not just inference. Earlier
+  reference-network architecture than Hallo3, plausibly why Hallo3
+  regressed on identity preservation. See PROJECT_CONTEXT.md for the
+  plan: zero-shot compare against EchoMimicV3 first, then run a real
+  fine-tune on whichever wins once real source video is available.
+  Demo assets (`examples/`, ~12MB of sample audio/video) dropped before
+  committing.
 
 ## Feature C model selection: OmniTalker → Hallo3 → EchoMimicV3
 
