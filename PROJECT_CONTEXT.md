@@ -600,6 +600,56 @@ black-box-model cascade, but several findings are directly useful:
   watermarking/no-go-list requirements for Feature C before any public
   exposure.
 
+### First working EchoMimicV3 generation — **done** (2026-09-07)
+
+Set up a dedicated pod (`sloane-echomimic`), separate Python 3.10 venv
+(isolated from the Chatterbox venv — different, heavier dependency tree:
+tensorflow, retina-face, moviepy). Downloaded the Flash variant's weights
+(Wan2.1-Fun-V1.1-1.3B-InP base model, chinese-wav2vec2-base audio encoder,
+EchoMimicV3-flash-pro transformer — ~24GB total) via `hf download`
+(the `huggingface-cli` command is deprecated in favor of `hf` in this
+environment's `huggingface_hub` version).
+
+Ran `infer_flash.py` with the real art instructor reference photo (a
+cropped screenshot the user provided — no clean standalone photo of the
+instructors exists yet, this was a placeholder-quality input, not a proper
+reference image) and a Chatterbox-generated audio clip as the driving
+audio. **Produced a real output video** on the third clean attempt, after
+fixing:
+
+1. **Network volume disk quota** — 50GB wasn't enough once `.venv` (19GB,
+   mostly tensorflow/torch) plus model downloads were added. Fixed via
+   `POST /networkvolumes/{id}/update` with `{"size": 100}` — RunPod
+   supports live-resizing a network volume via the API; freed ~6GB more by
+   deleting the Chatterbox LoRA training checkpoints (`checkpoint-220`/
+   `checkpoint-120` dirs) we no longer needed (adapter + merged weights
+   already saved separately).
+2. **`pyloudnorm` missing** — listed nowhere in the toolkit's own
+   `requirements.txt` despite being a real import; installed directly.
+3. **CUDA OOM (23.4/23.5GB used)** despite the README's "12GB VRAM" claim
+   — root cause was a `diffusers` version too new to have
+   `load_model_dict_into_meta` (an internal memory-efficient-loading
+   helper), forcing a much less efficient loading path. Downgraded
+   `diffusers` to `0.31.0`.
+4. **That downgrade broke a different import** (`FLAX_WEIGHTS_NAME` from
+   `transformers.utils`, removed in whatever `transformers` version was
+   auto-resolved) — needed an *era-consistent pairing*, not just one
+   package downgraded in isolation. Pinned `transformers==4.46.3` (the
+   same version that already worked well for Chatterbox) alongside
+   `diffusers==0.31.0`, and both required symbols imported cleanly.
+
+**Result**: 8-step Flash inference took ~13 seconds of actual GPU compute
+once the environment was correct (model loading from the 24GB of weights
+on the network volume was the slow part, several minutes each attempt).
+Pod runtime for this whole session: ~1h40m, ~$1.24 — most of that was
+environment debugging, not generation itself.
+
+**Still needed before this is a real product feature, not just a proof of
+concept**: a proper clean reference photo per instructor (what we used was
+a cropped screenshot, not ideal), the consent-capture/watermarking/no-go-
+list work from §3, and wiring this into `06_inference_server.py` /
+`/api/clone-video` the way Chatterbox is already wired for Features A/B.
+
 ---
 
 ## 9. Expanded scope, decided 2026-09-07
