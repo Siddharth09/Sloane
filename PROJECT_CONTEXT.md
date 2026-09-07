@@ -187,7 +187,7 @@ wherever the code actually runs.)
 
 ## 5. Precise next steps, in order
 
-### Phase 1 — RunPod environment ← **you are here, do this first**
+### Phase 1 — RunPod environment ← done
 1. Create a RunPod account at runpod.io, add a payment method. (This step
    is yours to do directly — account creation/billing needs your own
    details.)
@@ -202,12 +202,14 @@ wherever the code actually runs.)
 Once you have a RunPod account with billing set up and a pod deployed, send
 the SSH details and the rest of Phase 1-2 gets run directly.
 
-### Phase 2 — Data cleanup (run on the pod) ← **you are here**
+### Phase 2 — Data cleanup (run on the pod) ← **done**
 5. ~~`python3 scripts/02_separate_vocals.py` → `clean_audio/`~~ done
-6. `python3 scripts/03_chunk_by_speech.py` → `training_data/<speaker>/clips/`
-   + `filelist.csv` — running now
+6. ~~`python3 scripts/03_chunk_by_speech.py` → `training_data/<speaker>/clips/`
+   + `filelist.csv`~~ done — **art_instructor: 712 clips, 47.5 min;
+   music_instructor: 390 clips, 36.5 min**. Pod stopped after this
+   (`sloane-pod-2`, ~34 min runtime, ~$0.42).
 
-### Phase 3 — Zero-shot validation (fast, unblocks both features immediately)
+### Phase 3 — Zero-shot validation ← **next up** (fast, unblocks both features immediately)
 7. Install Chatterbox on the pod (`pip install chatterbox-tts` or clone the
    Resemble AI repo — confirm exact package name at install time, it's a
    fast-moving repo).
