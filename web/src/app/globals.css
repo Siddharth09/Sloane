@@ -12,6 +12,14 @@
   --sage: #93b48c;
   --lavender: #b3a6d6;
   --butter: #e8c26b;
+
+  /* Section accents - warm-leaning, not icy/neon */
+  --pink: #dd7c9c;
+  --pink-wash: #fbeef2;
+  --blue: #6f97bd;
+  --blue-wash: #eaf1f6;
+  --purple: #9b7dc0;
+  --purple-wash: #f3edf9;
 }
 
 @theme inline {
@@ -26,6 +34,12 @@
   --color-sage: var(--sage);
   --color-lavender: var(--lavender);
   --color-butter: var(--butter);
+  --color-pink: var(--pink);
+  --color-pink-wash: var(--pink-wash);
+  --color-blue: var(--blue);
+  --color-blue-wash: var(--blue-wash);
+  --color-purple: var(--purple);
+  --color-purple-wash: var(--purple-wash);
   --font-sans: var(--font-nunito);
 }
 

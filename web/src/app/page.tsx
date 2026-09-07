@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Footer } from "@/components/Footer";
 import { RecordOrUpload } from "@/components/RecordOrUpload";
 import { ShareButtons } from "@/components/ShareButtons";
 import { VoicePicker, PRESET_VOICES } from "@/components/VoicePicker";
@@ -23,23 +24,27 @@ function ResultPlayer({ url, kind }: { url: string | null; kind: "audio" | "vide
 }
 
 function Card({
-  color,
+  wash,
+  iconColor,
   icon,
   title,
   subtitle,
   children,
 }: {
-  color: string;
+  wash: string;
+  iconColor: string;
   icon: string;
   title: string;
   subtitle: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="shadow-soft rounded-[28px] border border-border bg-surface p-7 transition hover:shadow-soft-lg">
+    <section
+      className={`shadow-soft rounded-[28px] border border-border p-7 transition hover:shadow-soft-lg ${wash}`}
+    >
       <div className="flex items-center gap-3.5">
         <span
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg ${color}`}
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-lg ${iconColor}`}
         >
           {icon}
         </span>
@@ -80,13 +85,14 @@ function PresetVoiceSection() {
 
   return (
     <Card
-      color="bg-rose/25 text-rose"
+      wash="bg-pink-wash"
+      iconColor="text-pink"
       icon="✎"
       title="Text to speech"
       subtitle="Type anything, pick a voice, hear it narrated — no length limit."
     >
       <textarea
-        className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-coral"
+        className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-pink"
         rows={4}
         placeholder="Type what you want narrated..."
         value={text}
@@ -94,7 +100,7 @@ function PresetVoiceSection() {
       />
       <VoicePicker value={voiceId} onChange={setVoiceId} />
       <button
-        className="shadow-soft rounded-full bg-gradient-to-b from-coral to-coral-dark py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
+        className="shadow-soft rounded-full bg-pink py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
         disabled={!text || loading}
         onClick={handleGenerate}
       >
@@ -134,21 +140,22 @@ function CloneVoiceSection() {
 
   return (
     <Card
-      color="bg-lavender/25 text-lavender"
+      wash="bg-blue-wash"
+      iconColor="text-blue"
       icon="🎙"
       title="Clone any voice"
       subtitle="Record or upload ~10-20 seconds of a voice, then type what it should say."
     >
       <RecordOrUpload kind="audio" onChange={setFile} />
       <textarea
-        className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-coral"
+        className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-blue"
         rows={4}
         placeholder="Type what you want read back in that voice..."
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
       <button
-        className="shadow-soft rounded-full bg-gradient-to-b from-coral to-coral-dark py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
+        className="shadow-soft rounded-full bg-blue py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
         disabled={!text || !file || loading}
         onClick={handleGenerate}
       >
@@ -188,21 +195,22 @@ function VideoCloneSection() {
 
   return (
     <Card
-      color="bg-butter/25 text-butter"
+      wash="bg-purple-wash"
+      iconColor="text-purple"
       icon="🎬"
       title="Clone a video"
       subtitle="Record with your camera or upload a clip, then type what it should say. (In progress.)"
     >
       <RecordOrUpload kind="video" onChange={setFile} />
       <textarea
-        className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-coral"
+        className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
         rows={4}
         placeholder="Type what you want the video to say..."
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
       <button
-        className="shadow-soft rounded-full bg-gradient-to-b from-coral to-coral-dark py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
+        className="shadow-soft rounded-full bg-purple py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
         disabled={!text || !file || loading}
         onClick={handleGenerate}
       >
@@ -230,6 +238,7 @@ export default function Home() {
         <PresetVoiceSection />
         <CloneVoiceSection />
         <VideoCloneSection />
+        <Footer />
       </main>
     </div>
   );
