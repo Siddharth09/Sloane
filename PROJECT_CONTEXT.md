@@ -118,6 +118,42 @@ without re-explaining anything.
   no user-supplied voice), but should still carry watermarking + rate limits
   once public.
 
+### Consent-capture implementation plan (decided 2026-09-07)
+
+User's direction: use ElevenLabs' approach as the standard, but take the
+easiest/lowest-effort path to the same safety outcome rather than copying
+their implementation blindly — don't add complexity that isn't necessary.
+
+- **Random phrase, live recording**: keep as-is from the ElevenLabs pattern
+  — server returns an unpredictable short phrase, user reads it aloud live
+  right after uploading. Cheap, and the unpredictability is what actually
+  defeats replay-attack abuse (can't reuse a pre-recorded clip of someone
+  else). Not worth simplifying further.
+- **Similarity check — the actual simplification**: rather than standing up
+  a separate speaker-verification model, **reuse the voice-embedding step
+  our inference server already runs**. Feature B's zero-shot cloning
+  (`06_inference_server.py`) already extracts a speaker embedding from the
+  uploaded reference clip as part of generation — extract one from the
+  live-recorded phrase too and compare via cosine similarity. No new model,
+  no new dependency, one extra comparison step reusing what's already
+  loaded in memory.
+- **Threshold**: start with a reasonable default (commonly ~0.75-0.8 cosine
+  similarity for speaker-verification embeddings) and tune from real usage
+  rather than extensive upfront calibration — least-resistance here too.
+- **Same idea applies to Feature C (face) later**: EchoMimicV3's pipeline
+  already does face detection (`retina-face` dependency, `src/face_detect.py`
+  in the vendored code) — likely reusable for a face-embedding similarity
+  check the same way, instead of adding a separate face-verification model.
+  Not yet implemented/verified — flag for when Feature C's consent gate is
+  actually built.
+- **Face ID (iOS)**: separate, complementary concern — an **app-access
+  gate** (require Face ID to open the app / before generating), not a
+  substitute for the above. Face ID only proves "this is the device's
+  registered owner," it can't verify "this uploaded voice/face is the same
+  person" — Apple doesn't expose biometric matching against arbitrary
+  third-party content. Adds accountability (ties usage to a real
+  authenticated device) but doesn't replace the consent-capture flow.
+
 ---
 
 ## 4. What's already been done

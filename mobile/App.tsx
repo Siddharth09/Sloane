@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useAudioPlayer } from "expo-audio";
 import * as DocumentPicker from "expo-document-picker";
 
@@ -19,10 +20,45 @@ import * as DocumentPicker from "expo-document-picker";
 // "localhost" meaning your own machine).
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+const COLORS = {
+  background: "#fdf6f0",
+  surface: "#fffbf7",
+  foreground: "#3d3330",
+  muted: "#9a8b83",
+  border: "#f0e2d4",
+  coral: "#e8846b",
+  coralDark: "#d66f55",
+  rose: "#e8a0a0",
+  sage: "#93b48c",
+};
+
 const PRESET_VOICES = [
-  { id: "art_instructor", label: "Art Instructor" },
-  { id: "music_instructor", label: "Music Instructor" },
+  { id: "art_instructor", label: "Art Instructor", color: COLORS.rose, initial: "A" },
+  { id: "music_instructor", label: "Music Instructor", color: COLORS.sage, initial: "M" },
 ];
+
+function GradientButton({
+  onPress,
+  disabled,
+  loading,
+  label,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  label: string;
+}) {
+  return (
+    <Pressable onPress={onPress} disabled={disabled}>
+      <LinearGradient
+        colors={disabled ? ["#e5d9cf", "#e5d9cf"] : [COLORS.coral, COLORS.coralDark]}
+        style={styles.button}
+      >
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{label}</Text>}
+      </LinearGradient>
+    </Pressable>
+  );
+}
 
 function AudioResult({ url }: { url: string | null }) {
   const player = useAudioPlayer(url ? `${API_BASE}${url}` : null);
@@ -31,6 +67,31 @@ function AudioResult({ url }: { url: string | null }) {
     <Pressable style={styles.playButton} onPress={() => player.play()}>
       <Text style={styles.playButtonText}>▶ Play result</Text>
     </Pressable>
+  );
+}
+
+function Card({
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: string;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Text style={styles.cardIcon}>{icon}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          <Text style={styles.cardSubtitle}>{subtitle}</Text>
+        </View>
+      </View>
+      <View style={{ gap: 12 }}>{children}</View>
+    </View>
   );
 }
 
@@ -60,48 +121,49 @@ function PresetVoiceSection() {
   }
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>Text to speech — preset voices</Text>
-      <Text style={styles.cardSubtitle}>Type text, pick a voice, hear it read back.</Text>
-
+    <Card icon="✎" title="Text to speech" subtitle="Type anything, pick a voice, hear it narrated.">
       <TextInput
         style={styles.textArea}
         multiline
         numberOfLines={4}
         placeholder="Type what you want narrated..."
+        placeholderTextColor={COLORS.muted}
         value={text}
         onChangeText={setText}
       />
 
       <View style={styles.voiceRow}>
-        {PRESET_VOICES.map((v) => (
-          <Pressable
-            key={v.id}
-            style={[styles.voicePill, voiceId === v.id && styles.voicePillActive]}
-            onPress={() => setVoiceId(v.id)}
-          >
-            <Text style={[styles.voicePillText, voiceId === v.id && styles.voicePillTextActive]}>
-              {v.label}
-            </Text>
-          </Pressable>
-        ))}
+        {PRESET_VOICES.map((v) => {
+          const selected = voiceId === v.id;
+          return (
+            <Pressable key={v.id} style={styles.voiceOption} onPress={() => setVoiceId(v.id)}>
+              <View
+                style={[
+                  styles.voiceCircle,
+                  { backgroundColor: v.color },
+                  selected && styles.voiceCircleSelected,
+                ]}
+              >
+                <Text style={styles.voiceCircleText}>{v.initial}</Text>
+              </View>
+              <Text style={[styles.voiceLabel, selected && styles.voiceLabelSelected]}>
+                {v.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
-      <Pressable
-        style={[styles.button, (!text || loading) && styles.buttonDisabled]}
-        disabled={!text || loading}
+      <GradientButton
         onPress={handleGenerate}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Generate</Text>
-        )}
-      </Pressable>
+        disabled={!text || loading}
+        loading={loading}
+        label="Generate"
+      />
 
       {error && <Text style={styles.errorText}>{error}</Text>}
       <AudioResult url={audioUrl} />
-    </View>
+    </Card>
   );
 }
 
@@ -145,42 +207,35 @@ function CloneVoiceSection() {
   }
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>Clone a voice from a clip</Text>
-      <Text style={styles.cardSubtitle}>
-        Upload ~10-20 seconds of a voice, type any text, hear it read back in that voice.
-      </Text>
-
+    <Card
+      icon="🎙"
+      title="Clone any voice"
+      subtitle="Upload ~10-20 seconds of a voice, type any text."
+    >
       <Pressable style={styles.filePickButton} onPress={handlePickFile}>
-        <Text style={styles.filePickButtonText}>
-          {file ? file.name : "Choose an audio file"}
-        </Text>
+        <Text style={styles.filePickButtonText}>{file ? file.name : "Choose an audio file"}</Text>
       </Pressable>
 
       <TextInput
         style={styles.textArea}
         multiline
         numberOfLines={4}
-        placeholder="Type what you want read back in the uploaded voice..."
+        placeholder="Type what you want read back in that voice..."
+        placeholderTextColor={COLORS.muted}
         value={text}
         onChangeText={setText}
       />
 
-      <Pressable
-        style={[styles.button, (!text || !file || loading) && styles.buttonDisabled]}
-        disabled={!text || !file || loading}
+      <GradientButton
         onPress={handleGenerate}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Generate</Text>
-        )}
-      </Pressable>
+        disabled={!text || !file || loading}
+        loading={loading}
+        label="Generate"
+      />
 
       {error && <Text style={styles.errorText}>{error}</Text>}
       <AudioResult url={audioUrl} />
-    </View>
+    </Card>
   );
 }
 
@@ -188,11 +243,17 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Lucy</Text>
-        <Text style={styles.subtitle}>
-          Same backend as the web app — set EXPO_PUBLIC_API_BASE to your pod&apos;s proxy URL.
-          {Platform.OS !== "web" && " On a physical device, \"localhost\" won't reach your computer."}
-        </Text>
+        <View style={styles.hero}>
+          <LinearGradient colors={[COLORS.rose, COLORS.coral]} style={styles.logoMark}>
+            <Text style={styles.logoMarkText}>L</Text>
+          </LinearGradient>
+          <Text style={styles.title}>Lucy</Text>
+          <Text style={styles.subtitle}>
+            by Lucy Labs — narrate, clone, and share, in a voice that sounds like someone real.
+            {Platform.OS !== "web" &&
+              ' Set EXPO_PUBLIC_API_BASE to your pod\'s proxy URL — "localhost" won\'t reach your computer from a device.'}
+          </Text>
+        </View>
         <PresetVoiceSection />
         <CloneVoiceSection />
       </ScrollView>
@@ -201,63 +262,98 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#fafafa" },
+  safeArea: { flex: 1, backgroundColor: COLORS.background },
   scrollContent: { padding: 20, gap: 20 },
-  title: { fontSize: 28, fontWeight: "700", color: "#111" },
-  subtitle: { fontSize: 13, color: "#666", marginBottom: 8 },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#e5e5e5",
-    gap: 12,
+  hero: { alignItems: "center", marginBottom: 4, gap: 4 },
+  logoMark: {
+    width: 56,
+    height: 56,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
   },
-  cardTitle: { fontSize: 17, fontWeight: "600", color: "#111" },
-  cardSubtitle: { fontSize: 13, color: "#666", marginTop: -8 },
+  logoMarkText: { color: "#fff", fontSize: 22, fontWeight: "800" },
+  title: { fontSize: 30, fontWeight: "800", color: COLORS.foreground },
+  subtitle: { fontSize: 13, color: COLORS.muted, textAlign: "center", maxWidth: 320 },
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 16,
+    shadowColor: "#3d3330",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 3,
+  },
+  cardHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  cardIcon: {
+    fontSize: 18,
+    width: 40,
+    height: 40,
+    lineHeight: 40,
+    textAlign: "center",
+    backgroundColor: COLORS.background,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  cardTitle: { fontSize: 17, fontWeight: "700", color: COLORS.foreground },
+  cardSubtitle: { fontSize: 13, color: COLORS.muted },
   textArea: {
     borderWidth: 1,
-    borderColor: "#d4d4d4",
-    borderRadius: 8,
-    padding: 12,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    padding: 14,
     fontSize: 14,
     minHeight: 90,
     textAlignVertical: "top",
+    backgroundColor: "#fff",
+    color: COLORS.foreground,
   },
-  voiceRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  voicePill: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#d4d4d4",
+  voiceRow: { flexDirection: "row", gap: 20 },
+  voiceOption: { alignItems: "center", gap: 4 },
+  voiceCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    opacity: 0.75,
   },
-  voicePillActive: { backgroundColor: "#111", borderColor: "#111" },
-  voicePillText: { fontSize: 13, color: "#111" },
-  voicePillTextActive: { color: "#fff" },
+  voiceCircleSelected: {
+    opacity: 1,
+    borderWidth: 3,
+    borderColor: COLORS.coral,
+  },
+  voiceCircleText: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  voiceLabel: { fontSize: 12, color: COLORS.muted },
+  voiceLabelSelected: { color: COLORS.foreground, fontWeight: "600" },
   filePickButton: {
     borderWidth: 1,
-    borderColor: "#d4d4d4",
-    borderRadius: 8,
-    padding: 12,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    padding: 14,
     alignItems: "center",
+    backgroundColor: "#fff",
   },
-  filePickButtonText: { fontSize: 14, color: "#111" },
+  filePickButtonText: { fontSize: 14, color: COLORS.foreground },
   button: {
-    backgroundColor: "#111",
-    borderRadius: 8,
-    paddingVertical: 12,
+    borderRadius: 999,
+    paddingVertical: 14,
     alignItems: "center",
   },
-  buttonDisabled: { opacity: 0.4 },
-  buttonText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-  errorText: { color: "#dc2626", fontSize: 13 },
+  buttonText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  errorText: { color: "#c0503a", fontSize: 13 },
   playButton: {
     borderWidth: 1,
-    borderColor: "#d4d4d4",
-    borderRadius: 8,
-    paddingVertical: 10,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    paddingVertical: 12,
     alignItems: "center",
+    backgroundColor: "#fff",
   },
-  playButtonText: { fontSize: 14, color: "#111" },
+  playButtonText: { fontSize: 14, color: COLORS.foreground, fontWeight: "600" },
 });

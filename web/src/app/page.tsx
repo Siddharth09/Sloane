@@ -24,23 +24,31 @@ function ResultPlayer({ url, kind }: { url: string | null; kind: "audio" | "vide
 
 function Card({
   color,
+  icon,
   title,
   subtitle,
   children,
 }: {
   color: string;
+  icon: string;
   title: string;
   subtitle: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-      <div className="flex items-center gap-3">
-        <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
-        <h2 className="text-lg font-extrabold">{title}</h2>
+    <section className="shadow-soft rounded-[28px] border border-border bg-surface p-7 transition hover:shadow-soft-lg">
+      <div className="flex items-center gap-3.5">
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg ${color}`}
+        >
+          {icon}
+        </span>
+        <div>
+          <h2 className="text-lg font-extrabold tracking-tight">{title}</h2>
+          <p className="text-sm text-muted">{subtitle}</p>
+        </div>
       </div>
-      <p className="mt-1 text-sm text-muted">{subtitle}</p>
-      <div className="mt-4 flex flex-col gap-4">{children}</div>
+      <div className="mt-5 flex flex-col gap-4">{children}</div>
     </section>
   );
 }
@@ -71,7 +79,12 @@ function PresetVoiceSection() {
   }
 
   return (
-    <Card color="bg-rose" title="Text to speech" subtitle="Type anything, pick a voice, hear it narrated — no length limit.">
+    <Card
+      color="bg-rose/25 text-rose"
+      icon="✎"
+      title="Text to speech"
+      subtitle="Type anything, pick a voice, hear it narrated — no length limit."
+    >
       <textarea
         className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-coral"
         rows={4}
@@ -81,7 +94,7 @@ function PresetVoiceSection() {
       />
       <VoicePicker value={voiceId} onChange={setVoiceId} />
       <button
-        className="rounded-full bg-coral py-3 text-sm font-bold text-white transition disabled:opacity-40"
+        className="shadow-soft rounded-full bg-gradient-to-b from-coral to-coral-dark py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
         disabled={!text || loading}
         onClick={handleGenerate}
       >
@@ -121,7 +134,8 @@ function CloneVoiceSection() {
 
   return (
     <Card
-      color="bg-lavender"
+      color="bg-lavender/25 text-lavender"
+      icon="🎙"
       title="Clone any voice"
       subtitle="Record or upload ~10-20 seconds of a voice, then type what it should say."
     >
@@ -134,7 +148,7 @@ function CloneVoiceSection() {
         onChange={(e) => setText(e.target.value)}
       />
       <button
-        className="rounded-full bg-coral py-3 text-sm font-bold text-white transition disabled:opacity-40"
+        className="shadow-soft rounded-full bg-gradient-to-b from-coral to-coral-dark py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
         disabled={!text || !file || loading}
         onClick={handleGenerate}
       >
@@ -174,9 +188,10 @@ function VideoCloneSection() {
 
   return (
     <Card
-      color="bg-butter"
+      color="bg-butter/25 text-butter"
+      icon="🎬"
       title="Clone a video"
-      subtitle="Record with your camera or upload a clip, then type what it should say. (In progress — see PROJECT_CONTEXT.md.)"
+      subtitle="Record with your camera or upload a clip, then type what it should say. (In progress.)"
     >
       <RecordOrUpload kind="video" onChange={setFile} />
       <textarea
@@ -187,7 +202,7 @@ function VideoCloneSection() {
         onChange={(e) => setText(e.target.value)}
       />
       <button
-        className="rounded-full bg-coral py-3 text-sm font-bold text-white transition disabled:opacity-40"
+        className="shadow-soft rounded-full bg-gradient-to-b from-coral to-coral-dark py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
         disabled={!text || !file || loading}
         onClick={handleGenerate}
       >
@@ -201,13 +216,15 @@ function VideoCloneSection() {
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-background px-6 py-16">
-      <main className="mx-auto flex max-w-2xl flex-col gap-8">
-        <div>
-          <h1 className="text-3xl font-extrabold text-foreground">Lucy</h1>
-          <p className="mt-1 text-sm text-muted">
-            by Lucy Labs — private prototype. Requires the RunPod inference server; falls back to
-            a local mock if NEXT_PUBLIC_API_BASE isn&apos;t set.
+    <div className="min-h-screen px-6 py-20">
+      <main className="mx-auto flex max-w-2xl flex-col gap-10">
+        <div className="text-center">
+          <span className="shadow-soft inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-rose to-coral text-2xl font-extrabold text-white">
+            L
+          </span>
+          <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-foreground">Lucy</h1>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
+            by Lucy Labs — narrate, clone, and share, in a voice that sounds like someone real.
           </p>
         </div>
         <PresetVoiceSection />
