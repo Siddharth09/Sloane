@@ -12,6 +12,7 @@ out/
 raw_audio/
 clean_audio/
 training_data/
+zeroshot_test_output/
 *.wav
 *.mp4
 *.mov

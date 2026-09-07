@@ -209,16 +209,24 @@ the SSH details and the rest of Phase 1-2 gets run directly.
    music_instructor: 390 clips, 36.5 min**. Pod stopped after this
    (`sloane-pod-2`, ~34 min runtime, ~$0.42).
 
-### Phase 3 — Zero-shot validation ← **next up** (fast, unblocks both features immediately)
-7. Install Chatterbox on the pod (`pip install chatterbox-tts` or clone the
-   Resemble AI repo — confirm exact package name at install time, it's a
-   fast-moving repo).
-8. Pick one clean ~30-90 sec reference clip per instructor from
-   `clean_audio/`, run it through Chatterbox zero-shot with a few test
-   sentences. This validates voice-identity capture **before** any training
-   investment, and — because it's zero-shot — this is already a working
-   backend for **both Feature A and Feature B** in rough form (Feature A
-   just uses a fixed reference clip per preset instead of a user upload).
+### Phase 3 — Zero-shot validation ← **done** (2026-09-07)
+7. ~~Install Chatterbox on the pod~~ done — `pip install chatterbox-tts`.
+   Two bugs hit and fixed along the way: (a) `perth` (Resemble's bundled
+   audio watermarker — nice, means watermarking from §3 is already half
+   handled) failed to import because `pkg_resources` was missing under
+   newer `setuptools` (85+ dropped it); fixed by pinning `setuptools<80`.
+   (b) background/detached remote processes (`nohup`, even `setsid`) kept
+   getting silently killed on this pod for long-running installs — the
+   fix that actually worked was running the install directly over a single
+   held-open SSH connection (foreground from the client's side) rather than
+   detaching it remotely at all. Worth remembering for any future long job.
+8. ~~Pick one clean ~30-90 sec reference clip per instructor~~ done —
+   `scripts/04_zeroshot_test.py`, one ~14-15 sec clip per speaker from
+   `training_data/<speaker>/clips/`, 2 test sentences each. **All 4
+   generated successfully and were sent to the user to listen to.** This
+   is already a rough working backend for **both Feature A and Feature B**
+   (Feature A pins the reference clip server-side; Feature B takes it from
+   upload) — zero-shot, no fine-tuning yet.
 
 ### Phase 4 — Minimal backend API
 9. Small FastAPI service on the pod (or a RunPod Serverless handler) exposing
