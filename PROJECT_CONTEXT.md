@@ -245,10 +245,80 @@ the SSH details and the rest of Phase 1-2 gets run directly.
       `/api/clone-voice` → audio player.
 12. This is enough for **you to test both features end-to-end** privately.
 
-### Phase 6 — Quality upgrade (parallel, not blocking)
-13. Fine-tune Chatterbox per instructor using `training_data/` from Phase 2,
-    swap Feature A's preset voices from zero-shot-reference to the fine-tuned
-    checkpoints once ready. ~1-2 hrs GPU time per speaker.
+### Phase 6 — Quality upgrade ← **done** (2026-09-07)
+13. ~~Fine-tune Chatterbox per instructor~~ done. User feedback on the
+    zero-shot clips (Phase 3) was clear: **"they sound robotic... they don't
+    have the Australian accent, intonation, pitch, pausing, speed,
+    personality"** — expected for zero-shot (one 14-sec clip can't teach
+    accent/prosody, only approximate timbre). Fine-tuning fixes this because
+    it actually updates model weights on the full dataset.
+    - **Tooling**: [gokhaneraslan/chatterbox-finetuning](https://github.com/gokhaneraslan/chatterbox-finetuning)
+      (Apache-2.0, commercial-friendly), LoRA mode (recommended for <10hrs of
+      data — ours is 47.5/36.5 min). Vendors its own copy of the Chatterbox
+      code (`src/chatterbox_/`) rather than depending on the pip package.
+    - **Data format conversion**: our `filelist.csv` (from faster-whisper,
+      §4) → the toolkit's LJSpeech-style `metadata.csv`
+      (`filename|raw_text|normalized_text`, pipe-delimited, **no header** —
+      the parser uses `header=None`, an included header row gets treated as
+      a bogus, harmless data row). One 14-15 sec clip per speaker
+      (`training_data/<speaker>/clips/00266.wav` art, `00042.wav` music —
+      the same ones used for the Phase 3 zero-shot reference) reused as the
+      training-time reference prompt too.
+    - **Bugs hit and fixed, in order** (worth reading before doing this
+      again):
+      1. `check_pretrained_models()` in the toolkit hardcodes a relative
+         `./pretrained_models` path and **ignores** the `model_dir` config
+         value entirely (a bug in the toolkit) → fixed by symlinking
+         `pretrained_models` into each speaker's working directory rather
+         than patching the toolkit's source.
+      2. Missing `peft` package (listed in `requirements.txt` but not
+         actually installed until explicitly done).
+      3. `peft==0.17.1` vs. an already-installed `transformers==5.2.0`:
+         `ImportError: cannot import name 'HybridCache'` (newer transformers
+         renamed/removed classes peft 0.17.1 expects).
+      4. Missing `tensorboard` (also listed in `requirements.txt`, also not
+         actually installed — HuggingFace `Trainer` auto-detects and
+         requires it for logging).
+      5. **Root fix for #2-4**: stop installing packages one at a time —
+         `pip install -r requirements.txt` (the toolkit's own file) in one
+         shot resolved everything consistently, landing on
+         `chatterbox-tts==0.1.2` + `transformers==4.46.3` (the versions the
+         toolkit was actually built/tested against — note this downgrades
+         the pip `chatterbox-tts` package from the 0.1.7 used in Phase 3;
+         shouldn't matter for training since it uses vendored code, but
+         worth knowing if Phase 3's zero-shot script needs rerunning).
+      6. `inference.py`/`merge_lora.py` for **LoRA mode specifically**
+         require running `merge_lora.py` **before** `inference.py` (the
+         script looks for an already-merged `t3_finetuned_merged.safetensors`
+         file, not the raw adapter) — contradicts the README's stated
+         "test the adapter directly" workflow; treat merge-then-infer as the
+         real order.
+      7. `inference.py`'s test text/reference-audio/output path are
+         **hardcoded Python constants inside the script** (`TEXT_TO_SAY`,
+         `AUDIO_PROMPT`, `OUTPUT_FILE`), not read from `config.py` — edit the
+         script directly each time.
+    - **Reliability lesson (separate from the above, cost real time)**:
+      background/detached remote processes (plain `nohup`, even `nohup` +
+      `setsid`) kept getting silently killed on this pod with no error/OOM
+      evidence once the parent SSH connection's channel closed — even
+      though they should have survived detachment. What actually worked:
+      **`tmux`** (a real detached session, `tmux new-session -d`) for
+      anything that might run longer than a few minutes; a single
+      held-open SSH connection (no remote backgrounding at all) for
+      shorter one-shot commands. Don't trust `nohup`/`setsid` alone on this
+      environment.
+    - **Result**: both LoRA adapters trained fast once the environment was
+      correct — ~2.5 min actual training time each (712 clips/220 steps for
+      art, 390 clips/120 steps for music; 10 epochs, batch size 8 ×
+      grad_accum 4). Merged into standalone checkpoints
+      (`t3_finetuned_merged.safetensors`, ~2.1GB each) at
+      `/workspace/sloane/chatterbox-ft-<speaker>/chatterbox_output/` on the
+      pod's network volume (not downloaded locally — large binary
+      artifacts, not committed to git). Test clips generated and sent to
+      the user for a listen — **awaiting feedback** on whether quality is
+      good enough to wire into the real API (Phase 4) or needs another
+      pass (more epochs, more data, or hyperparameter changes).
+    - Pod runtime for all of Phase 6: ~45 min, ~$0.55.
 
 ### Phase 7 — Before any public/external user touches Feature B
 14. Build the consent-captcha, watermarking, rate limiting, and audit trail
