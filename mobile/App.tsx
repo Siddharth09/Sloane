@@ -246,9 +246,9 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.hero}>
           <LogoMark size={64} />
-          <Text style={styles.title}>Lucy</Text>
+          <Text style={styles.title}>Lucy Labs</Text>
           <Text style={styles.subtitle}>
-            by Lucy Labs — narrate, clone, and share, in a voice that sounds like someone real.
+            Narrate, clone, and share, in a voice that sounds like someone real.
             {Platform.OS !== "web" &&
               ' Set EXPO_PUBLIC_API_BASE to your pod\'s proxy URL — "localhost" won\'t reach your computer from a device.'}
           </Text>

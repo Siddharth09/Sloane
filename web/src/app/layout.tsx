@@ -9,7 +9,7 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: "Lucy",
+  title: "Lucy Labs",
   description: "Lucy Labs — voice and video cloning",
 };
 

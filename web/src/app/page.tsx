@@ -231,9 +231,9 @@ export default function Home() {
           <span className="shadow-soft inline-flex rounded-3xl">
             <LogoMark size={64} />
           </span>
-          <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-foreground">Lucy</h1>
+          <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-foreground">Lucy Labs</h1>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
-            by Lucy Labs — narrate, clone, and share, in a voice that sounds like someone real.
+            Narrate, clone, and share, in a voice that sounds like someone real.
           </p>
         </div>
         <PresetVoiceSection />
