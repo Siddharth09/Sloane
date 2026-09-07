@@ -507,6 +507,56 @@ covering weights specifically, VRAM/speed, and the metric that actually
 matters for the product, here identity preservation over generic FID/FVD
 scores) before vendoring/committing to a specific model.
 
+### What OmniTalker's paper teaches us, even though we can't use it
+
+Can't self-host OmniTalker (§ above), but its paper
+([arxiv.org/abs/2504.02433](https://arxiv.org/abs/2504.02433),
+[project page](https://humanaigc.github.io/omnitalker/)) is genuinely
+useful to study on its own merits — read in full 2026-09-07. It's a
+**joint** audio+video model (single dual-branch diffusion transformer, both
+modalities generated together); we're running a **cascaded** pipeline
+(Chatterbox generates audio, then EchoMimicV3 separately animates video to
+that audio) — most of its architecture isn't transferable to a
+black-box-model cascade, but several findings are directly useful:
+
+- **Confirms our EchoMimicV3 pick already uses the same speed trick.**
+  OmniTalker's 25 FPS real-time performance comes partly from **flow
+  matching** (Conditional Flow Matching / rectified flow) instead of
+  standard diffusion noise schedules — and the EchoMimicV3 repo we already
+  vendored ships `fm_solvers.py` / `fm_solvers_unipc.py`, meaning it already
+  uses flow-matching solvers too. Not a new lesson to apply — a reassuring
+  confirmation the alternative we picked isn't missing this optimization.
+- **Our cascade sidesteps a problem OmniTalker had to solve.** A real
+  chunk of their design (the duration-prediction module, estimating target
+  sequence length from a character-count ratio before generation) exists
+  because they generate audio and video *simultaneously* and need to agree
+  on length upfront. Since our pipeline generates audio *first*
+  (Chatterbox) and video is driven by that already-fixed-duration audio
+  track, this synchronization problem doesn't arise for us at all — a
+  genuine structural advantage of cascading for this specific concern, not
+  just a consolation prize for lacking joint generation.
+- **Evaluation gotcha worth remembering when judging our own output later**:
+  the paper's authors note some standard sync metrics (Sync-C, CSIM)
+  "favor forward-facing videos" and penalize models (like theirs) that
+  preserve the reference's actual head angle/orientation instead of
+  forcing a frontal bias. When we evaluate EchoMimicV3 output quality,
+  judge identity/likeness accuracy directly (the reason we picked it over
+  Hallo3) rather than leaning on generic sync scores that can reward the
+  wrong thing.
+- **If we ever fine-tune EchoMimicV3 per-instructor** (mirroring what we
+  did for Chatterbox voices): OmniTalker's style-capture trick is a
+  masked-infilling in-context method — split same-identity video into two
+  segments, mask one, learn to predict it from the other, discard the
+  reference at inference. Worth checking whether EchoMimicV3's own
+  (vendored) training scripts support something analogous before assuming
+  a from-scratch approach is needed — not yet checked, flag for when
+  Feature C fine-tuning actually starts.
+- **Reinforces, doesn't change, the safety posture already in §3**:
+  OmniTalker's own paper includes an explicit misuse-risk/ethics statement
+  — the same category of concern already driving our consent-capture/
+  watermarking/no-go-list requirements for Feature C before any public
+  exposure.
+
 ---
 
 ## 9. Expanded scope, decided 2026-09-07
