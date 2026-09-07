@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Footer } from "@/components/Footer";
+import { LogoMark } from "@/components/LogoMark";
 import { RecordOrUpload } from "@/components/RecordOrUpload";
 import { ShareButtons } from "@/components/ShareButtons";
 import { VoicePicker, PRESET_VOICES } from "@/components/VoicePicker";
@@ -227,8 +228,8 @@ export default function Home() {
     <div className="min-h-screen px-6 py-20">
       <main className="mx-auto flex max-w-2xl flex-col gap-10">
         <div className="text-center">
-          <span className="shadow-soft inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-rose to-coral text-2xl font-extrabold text-white">
-            L
+          <span className="shadow-soft inline-flex rounded-3xl">
+            <LogoMark size={64} />
           </span>
           <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-foreground">Lucy</h1>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted">

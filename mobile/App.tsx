@@ -13,6 +13,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useAudioPlayer } from "expo-audio";
 import * as DocumentPicker from "expo-document-picker";
+import { LogoMark } from "./LogoMark";
 
 // Same backend as the web app (web/src/app/page.tsx) - set via app.json "extra"
 // or an EXPO_PUBLIC_ env var. Defaults to localhost for a simulator/same-machine
@@ -244,9 +245,7 @@ export default function App() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.hero}>
-          <LinearGradient colors={[COLORS.rose, COLORS.coral]} style={styles.logoMark}>
-            <Text style={styles.logoMarkText}>L</Text>
-          </LinearGradient>
+          <LogoMark size={64} />
           <Text style={styles.title}>Lucy</Text>
           <Text style={styles.subtitle}>
             by Lucy Labs — narrate, clone, and share, in a voice that sounds like someone real.
@@ -265,16 +264,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.background },
   scrollContent: { padding: 20, gap: 20 },
   hero: { alignItems: "center", marginBottom: 4, gap: 4 },
-  logoMark: {
-    width: 56,
-    height: 56,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  logoMarkText: { color: "#fff", fontSize: 22, fontWeight: "800" },
-  title: { fontSize: 30, fontWeight: "800", color: COLORS.foreground },
+  title: { fontSize: 30, fontWeight: "800", color: COLORS.foreground, marginTop: 8 },
   subtitle: { fontSize: 13, color: COLORS.muted, textAlign: "center", maxWidth: 320 },
   card: {
     backgroundColor: COLORS.surface,
