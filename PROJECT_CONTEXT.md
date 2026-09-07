@@ -1,4 +1,11 @@
-# Sloane — Voice Clone Platform — Full Project Context
+# Lucy — Voice Clone Platform — Full Project Context
+
+**Naming note (2026-09-07):** the public/customer-facing product is named
+**Lucy** (domain: lucyvoice.ai). The codebase, local folder, and GitHub repo
+keep the original working name **Sloane** — a deliberate choice (internal
+codename vs. public product name is normal practice), not an oversight. Don't
+"fix" mismatched Sloane/Lucy references in file paths, the repo URL, or
+git history — those are correct as-is.
 
 Last updated: 2026-09-06. This file is meant to be self-contained — read this
 top to bottom on a fresh machine and you'll have full context to keep going
@@ -43,7 +50,8 @@ without re-explaining anything.
    teacher and a female art teacher) from an existing masterclass video
    series, as the testbed for the two features below. Consent for using this
    footage this way has been confirmed by the project owner (you).
-2. **Public platform ("Sloane")** — a web product, one page, two sections.
+2. **Public platform ("Lucy")** — a web + iOS product, three features (see
+   §9 for the expanded scope decided 2026-09-07).
 
 ## 2. Feature specs (precise)
 
@@ -360,21 +368,28 @@ costs low regardless.
 - **Audio storage**: Supabase Storage or Cloudflare R2 (no egress fees).
 - **Hosting**: Vercel (frontend), Fly.io/Render (API layer).
 
-### Domain
+### Domain & naming (decided 2026-09-07)
 
-Worth grabbing early if you like "Sloane" — cheap (~$10-40/yr via Cloudflare
-Registrar or Namecheap), squatting risk is real for a good name. This is a
-purchase you'll need to do yourself on your own account; happy to help
-brainstorm/check name variations.
+Product name: **Lucy**. Domain: **lucyvoice.ai** — grab it soon, cheap
+(~$10-40/yr via Cloudflare Registrar or Namecheap), squatting risk is real
+for a good name. Purchase is yours to do directly on your own account.
+
+Company/brand name alternatives to "Lucy Labs" (the "Labs" domain was
+taken): **Lucy Studio**, **Lucy Voice Co.**, **Lucy Audio**, **Lucy Sound**,
+**Lucy Forge**, **Lucy Works**, or singular **Lucy Lab** (worth checking —
+"Lab" singular is often still available when "Labs" plural is taken).
 
 ---
 
-## 8. v2 idea (not in current scope) — Feature C: video cloning
+## 8. Feature C: video cloning (OmniTalker) — **activated 2026-09-07**
 
 Raised 2026-09-06: a third feature where a user uploads a video of
 themselves and types text, and the system generates a video of them
 speaking that text in their own voice/likeness ("text-to-video" cloning,
-lip-synced). **Decision: defer this — do not fold it into Phases 1-7.** Ship
+lip-synced). **Update 2026-09-07: no longer deferred — user wants this
+built now, see §9.** Original deferral reasoning kept below for the
+cost/safety context, which still applies and still needs addressing before
+any public exposure of this feature specifically. Ship
 Features A+B first, validate the core product, then scope this properly as
 its own effort. Reasoning below, kept here so the idea isn't lost.
 
@@ -421,7 +436,76 @@ its own effort. Reasoning below, kept here so the idea isn't lost.
 
 ### When to pick this back up
 
-After Phases 1-6 are done and Features A+B are validated with real usage —
-scope it then as its own effort: real benchmarking on rented hardware for
-actual cost/latency numbers, a license check on whichever model is chosen,
-and a dedicated safety/consent design pass (not just an extension of §3).
+~~After Phases 1-6 are done~~ — Phases 1-6 are done (2026-09-07), and the
+user wants Feature C started now rather than waiting further. Still do the
+real benchmarking/license-check/safety-design pass described above before
+building on top of OmniTalker — none of that changed, just the timing.
+
+---
+
+## 9. Expanded scope, decided 2026-09-07
+
+After hearing the two fine-tuned voices, user confirmed quality is good
+enough to build the real product. Scope grew in this conversation:
+
+### Product surface: web + iOS app, three features
+1. **Feature A (preset voices)**: text box, no character limit, voice
+   picker — expanding from 2 to **5** preset voices (user will provide 3
+   more source audio sets; same consent posture as §3/§2 applies to each
+   new one — confirm consent before adding).
+2. **Feature B (upload-and-clone)**: user uploads a clip, types text (no
+   character limit), gets it read back in that voice. Minimum upload
+   length relaxed from the original "~30-60 sec" spec to **~10-20 seconds**
+   — Chatterbox's own reference-conditioning window is a fixed ~3 sec
+   internally (per the fine-tuning toolkit's `prompt_duration` config), so
+   feeding it much more than ~20 sec of reference doesn't meaningfully
+   improve zero-shot quality the way more data helps *fine-tuning*. Guidance
+   to users should still be "clean, single-speaker audio," not just "10 sec
+   of anything."
+3. **Feature C (video cloning)**: activated, see §8 — OmniTalker, not
+   deferred anymore.
+
+### No character limit — technical approach
+Chatterbox generates per-sentence/per-chunk, not arbitrary-length text in
+one call (there's a practical token/length ceiling per generation - our own
+scripts already split per sentence). "No character limit" is achievable by
+chunking input text into sentences/clauses, generating each separately, and
+concatenating the audio (trimming inter-chunk silence — the fine-tuning
+toolkit's `trim_silence_with_vad` utility already does this and can be
+reused). Not a blocker, just needs building into the real API (Phase 4).
+
+### Emotion/pacing control
+Chatterbox has real, non-per-word controls worth exposing in the product
+eventually: `exaggeration` (emotional intensity), `cfg_weight` (pacing/
+adherence to reference), `temperature` (natural micro-variation). True
+per-word emotional/pacing control isn't natively supported — the practical
+path is varying these per sentence-chunk (see above), not per word.
+
+### iOS + web platform decision — **open, needs input** (see conversation)
+Recommended: ship a mobile-responsive web app first (already have the
+Next.js base) — works on iOS today via browser/"Add to Home Screen", no
+Apple Developer Program ($99/yr), no App Store review (which can be
+stricter for AI voice/likeness apps specifically). Build a true native or
+React Native app once the core product is validated with real usage, not
+before. Alternative if "an actual iOS app" matters immediately: React
+Native/Expo, sharing most logic with the web app rather than a fully
+separate Swift codebase.
+
+### Making the fine-tuned voices even better — options, roughly in order of
+effort/impact
+1. **More training data**: several more hours of unprocessed source footage
+   already known about (§4) but not yet extracted/used — likely the single
+   highest-impact next step given how little (47.5/36.5 min) produced the
+   quality jump already heard.
+2. **More epochs / tune LoRA rank up** from the current defaults (10
+   epochs, `lora_r=128`) — cheap to experiment with given each run took
+   only ~2.5 min.
+3. **Per-speaker `exaggeration`/`cfg_weight`/`temperature` tuning** — quick,
+   cheap A/B listening tests once wired into inference.
+4. **Not recommended**: switching from LoRA to full fine-tune — the
+   toolkit's own guidance is full fine-tune needs "strictly larger than 10
+   hours" of data to be worth it; we're nowhere near that even with more
+   footage extracted.
+5. Keep iterating with real listening feedback (what's already working) —
+   quality judgments here are inherently subjective/human, not something to
+   over-automate.

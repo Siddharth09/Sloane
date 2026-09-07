@@ -147,7 +147,7 @@ export default function Home() {
     <div className="min-h-screen bg-zinc-50 px-6 py-16 dark:bg-black">
       <main className="mx-auto flex max-w-2xl flex-col gap-8">
         <div>
-          <h1 className="text-2xl font-bold">Sloane</h1>
+          <h1 className="text-2xl font-bold">Lucy</h1>
           <p className="mt-1 text-sm text-zinc-500">
             Private prototype — both sections currently return a mock tone until the RunPod
             Chatterbox backend is wired up (see PROJECT_CONTEXT.md, Phase 4).
