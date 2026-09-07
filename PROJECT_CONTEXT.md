@@ -481,15 +481,14 @@ adherence to reference), `temperature` (natural micro-variation). True
 per-word emotional/pacing control isn't natively supported — the practical
 path is varying these per sentence-chunk (see above), not per word.
 
-### iOS + web platform decision — **open, needs input** (see conversation)
-Recommended: ship a mobile-responsive web app first (already have the
-Next.js base) — works on iOS today via browser/"Add to Home Screen", no
-Apple Developer Program ($99/yr), no App Store review (which can be
-stricter for AI voice/likeness apps specifically). Build a true native or
-React Native app once the core product is validated with real usage, not
-before. Alternative if "an actual iOS app" matters immediately: React
-Native/Expo, sharing most logic with the web app rather than a fully
-separate Swift codebase.
+### iOS + web platform decision — **React Native/Expo, decided 2026-09-07**
+User chose to build the iOS app in React Native/Expo from the start (over
+"web-first, PWA on iOS" or "fully native Swift"), sharing logic with the
+Next.js web build rather than a fully separate codebase. Note this needs an
+Apple Developer Program membership ($99/yr, user's own account) and App
+Store review before public release — worth remembering App Store review
+can be stricter for AI voice/likeness apps specifically, separate from
+whatever web-side consent/safety work (§3) is needed.
 
 ### Making the fine-tuned voices even better — options, roughly in order of
 effort/impact
