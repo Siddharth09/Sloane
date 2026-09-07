@@ -1,7 +1,10 @@
 # Lucy — Voice Clone Platform — Full Project Context
 
 **Naming note (2026-09-07):** the public/customer-facing product is named
-**Lucy** (domain: lucyvoice.ai). The codebase, local folder, and GitHub repo
+**Lucy**, published by **Lucy Labs** (App Store publisher name — no conflict
+with the app's own display name "Lucy", totally normal setup). Domain
+purchased: **lucylabs.app** (supersedes the earlier lucyvoice.ai idea — not
+purchased, no longer the plan). The codebase, local folder, and GitHub repo
 keep the original working name **Sloane** — a deliberate choice (internal
 codename vs. public product name is normal practice), not an oversight. Don't
 "fix" mismatched Sloane/Lucy references in file paths, the repo URL, or
@@ -386,11 +389,15 @@ costs low regardless.
 - **Audio storage**: Supabase Storage or Cloudflare R2 (no egress fees).
 - **Hosting**: Vercel (frontend), Fly.io/Render (API layer).
 
-### Domain & naming (decided 2026-09-07)
+### Domain & naming (decided 2026-09-07, domain purchased same day)
 
-Product name: **Lucy**. Domain: **lucyvoice.ai** — grab it soon, cheap
-(~$10-40/yr via Cloudflare Registrar or Namecheap), squatting risk is real
-for a good name. Purchase is yours to do directly on your own account.
+Product name: **Lucy**, published by **Lucy Labs**. Domain: **lucylabs.app**
+— purchased. DNS not configured yet — nothing to point it at until the app
+is actually deployed (Vercel or wherever); once deployed, add the domain in
+that host's dashboard and it'll show the exact DNS records to add at the
+registrar. iOS App Store: "Lucy Labs" as the publisher/developer name and
+"Lucy" as the app's display name is a completely normal, non-conflicting
+setup (e.g. "Instagram" published by "Meta Platforms, Inc.").
 
 Company/brand name alternatives to "Lucy Labs" (the "Labs" domain was
 taken): **Lucy Studio**, **Lucy Voice Co.**, **Lucy Audio**, **Lucy Sound**,
@@ -641,3 +648,34 @@ effort/impact
 5. Keep iterating with real listening feedback (what's already working) —
    quality judgments here are inherently subjective/human, not something to
    over-automate.
+
+---
+
+## 10. Web app redesign, 2026-09-07
+
+Visual + UX overhaul of `web/` — warm pastel palette (cream background,
+coral/rose/sage/lavender/butter accents, Nunito font replacing the default
+Geist), replacing the plain black-and-white functional prototype look.
+
+- **Feature A**: circular color-coded voice avatars (`VoicePicker.tsx`)
+  instead of a plain dropdown.
+- **Feature B & C**: `RecordOrUpload.tsx` + `useMediaRecorder.ts` — a shared
+  component/hook for both audio and video, giving users a real in-browser
+  **record** option (mic for audio, live webcam preview for video via
+  `getUserMedia`/`MediaRecorder`) alongside file **upload**, not just a
+  file picker. Feature C's UI is built even though the backend isn't ready
+  yet (calls `/api/clone-video`, not yet implemented — shows a graceful
+  "coming soon" error until EchoMimicV3 is wired up).
+- **Social sharing** (`ShareButtons.tsx`): Facebook and WhatsApp have real
+  web share URLs (`facebook.com/sharer/sharer.php`, `wa.me`) and are wired
+  directly. **Instagram has no equivalent web share URL** — there's no
+  fabricating one. The real cross-platform answer is the native Web Share
+  API (`navigator.share`), which hands off to whatever's installed
+  (Instagram included) on supporting browsers; a "copy link" fallback
+  covers browsers without it.
+- No new icon library added — a handful of inline SVGs
+  (`components/Icons.tsx`) instead, keeping dependencies minimal.
+- Verified rendering and structure via the browser (screenshots + DOM
+  measurements + accessibility tree) — actual in-browser mic/camera
+  recording still needs testing on a real device with real hardware
+  permissions, not verifiable from this automated environment.
