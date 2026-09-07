@@ -439,7 +439,25 @@ its own effort. Reasoning below, kept here so the idea isn't lost.
 ~~After Phases 1-6 are done~~ — Phases 1-6 are done (2026-09-07), and the
 user wants Feature C started now rather than waiting further. Still do the
 real benchmarking/license-check/safety-design pass described above before
-building on top of OmniTalker — none of that changed, just the timing.
+building on top of whichever model is chosen — none of that changed, just
+the timing.
+
+### Important correction (2026-09-07): OmniTalker isn't actually available
+
+While vendoring dependencies for backup (see `vendor/README.md`), found that
+**OmniTalker has no public model code or weights** — its GitHub repo is only
+a project page (paper links, demo videos, no source), and its Hugging Face
+Space is a thin UI that calls a private internal Alibaba backend not
+reachable outside their infra. There's nothing to self-host. **Switched the
+Feature C candidate to [Hallo3](https://github.com/fudan-generative-vision/hallo3)**
+(Fudan, CVPR 2025) — confirmed real public repo, MIT-licensed code, real
+downloadable weights via `huggingface-cli download fudan-generative-ai/hallo3`.
+Cascaded pipeline as originally described for Hallo-family models (Chatterbox
+generates audio, Hallo3 separately animates the face to it) — the
+OmniTalker-vs-Hallo3 tradeoff discussion above (joint vs. cascaded) is now
+moot since only one of them is actually usable. Still need to verify the
+model *weights'* specific license terms (separate from the MIT-licensed
+code) before any commercial use.
 
 ---
 
