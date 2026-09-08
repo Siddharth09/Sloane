@@ -219,6 +219,43 @@ def apply_highpass(audio: np.ndarray, sr: int, cutoff_hz: float) -> np.ndarray:
     return sosfilt(sos, audio).astype(np.float32)
 
 
+MAX_GENERATION_ATTEMPTS = 4  # see generate_sentence_with_retry - the underlying bug this works around
+
+
+def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference_path: str, **kwargs) -> np.ndarray:
+    """
+    Chatterbox's alignment-stream safety mechanism occasionally forces an
+    early EOS on an otherwise-fine sentence (a real, reproducible glitch we
+    hit repeatedly while manually testing every voice this project has -
+    see PROJECT_CONTEXT.md "Generation-time repetition glitch"), producing
+    audio far too short for the text - a handful of words instead of the
+    full sentence. There was no retry for this in production, so users hit
+    it directly with no recovery (reported: "audio isn't playing for all
+    the text, just 3-4 words"). Retry with the same inputs (generation is
+    stochastic - a retry reliably gets a full-length result in the manual
+    testing that uncovered this) rather than silently shipping a truncated
+    clip.
+    """
+    word_count = len(sentence.split())
+    min_expected_seconds = max(0.3, word_count / 5.0)  # generous - real speech is rarely faster than this
+    last_trimmed = np.array([], dtype=np.float32)
+
+    for attempt in range(MAX_GENERATION_ATTEMPTS):
+        wav_tensor = engine.generate(text=sentence, audio_prompt_path=reference_path, **kwargs)
+        if isinstance(wav_tensor, tuple):
+            wav_tensor = wav_tensor[0]
+        wav_np = wav_tensor.squeeze().cpu().numpy()
+        trimmed = trim_silence_with_vad(wav_np, engine.sr)
+        last_trimmed = trimmed
+        duration = len(trimmed) / engine.sr
+        if duration >= min_expected_seconds:
+            return trimmed
+        print(f"[server] short generation ({duration:.2f}s for {word_count} words), retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+
+    print(f"[server] all {MAX_GENERATION_ATTEMPTS} attempts came back short - shipping the last one rather than failing outright")
+    return last_trimmed
+
+
 def synthesize(
     engine: ChatterboxTTS,
     text: str,
@@ -231,11 +268,7 @@ def synthesize(
     sr = 24000
     sentences = split_sentences(text)
     for sentence in sentences:
-        wav_tensor = engine.generate(text=sentence, audio_prompt_path=reference_path, **kwargs)
-        if isinstance(wav_tensor, tuple):
-            wav_tensor = wav_tensor[0]
-        wav_np = wav_tensor.squeeze().cpu().numpy()
-        trimmed = trim_silence_with_vad(wav_np, engine.sr)
+        trimmed = generate_sentence_with_retry(engine, sentence, reference_path, **kwargs)
         if len(trimmed) > 0:
             all_chunks.append(trimmed)
             sr = engine.sr

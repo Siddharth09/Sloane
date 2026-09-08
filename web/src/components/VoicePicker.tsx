@@ -31,15 +31,21 @@ export function VoicePicker({
             className="flex flex-col items-center gap-1.5"
           >
             <span
-              className={`shadow-soft flex h-14 w-14 items-center justify-center rounded-full text-lg font-bold text-white ${v.color} transition ${
+              className={`flex h-14 w-14 items-center justify-center rounded-full text-lg font-bold text-white ${v.color} transition-all ${
                 selected
-                  ? "ring-4 ring-coral ring-offset-2 ring-offset-surface"
-                  : "opacity-75 hover:opacity-100"
+                  ? "shadow-soft-lg scale-[1.15] ring-4 ring-coral ring-offset-2 ring-offset-surface"
+                  : "shadow-soft opacity-70 hover:opacity-100"
               }`}
             >
               {v.initial}
             </span>
-            <span className={`text-xs ${selected ? "font-semibold text-foreground" : "text-muted"}`}>
+            <span
+              className={`rounded-full transition-all ${
+                selected
+                  ? "shadow-soft bg-coral px-2.5 py-0.5 text-xs font-bold text-white"
+                  : "px-2.5 py-0.5 text-xs text-muted"
+              }`}
+            >
               {v.label}
             </span>
           </button>
