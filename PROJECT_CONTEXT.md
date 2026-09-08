@@ -1308,14 +1308,29 @@ Raised proactively, not yet discussed with the user:
 6. **Generated video storage/hosting** - fal returns results from its own
    infrastructure; no plan yet for whether/how we persist, re-serve, or
    offer download of generated clips (audio already has a real MP3
-   download button - video would want a comparable pattern).
+   download button - video would want a comparable pattern). **Partially
+   resolved 2026-09-09**: output format decided - plain MP4 (H.264/AAC),
+   same as the trailer clips already in `web/public/trailers/` and the
+   existing EchoMimic self-hosted demo. Persistence/re-serving mechanism
+   itself still undecided.
 7. **App Store privacy disclosure** - sending user photos/video/voice to
    third-party vendors (Kling/Veo/fal) will very likely need to be
    declared in Apple's App Store "privacy nutrition label" if this ships
    to iOS, on top of the already-known In-App Purchase question (Sec 11/
-   12). A new App Review consideration, not just IAP.
-8. **Mobile parity** - no plan yet for whether/how these two video modes
-   work in the Expo app vs. web-only initially.
+   12). A new App Review consideration, not just IAP. **Partially
+   addressed 2026-09-09**: a real privacy policy now exists
+   (`web/src/app/privacy/page.tsx`, linked from the footer) covering
+   current audio practices (self-hosted, no third-party sharing) and the
+   planned video third-party-sharing arrangement in plain language -
+   explicitly flagged in the policy itself as not lawyer-reviewed and not
+   yet addressing GDPR/CCPA specifics. The App Store privacy *nutrition
+   label* (a separate, structured disclosure Apple requires at submission
+   time, distinct from a website privacy policy) still needs completing
+   when iOS submission is actually attempted.
+8. **Mobile parity - resolved 2026-09-09**: both video modes (talking-head
+   and cinematic) are planned for **both web and mobile**, not web-only -
+   direct user instruction. Not yet built on either platform; this just
+   settles the target, not the implementation.
 
-None of the above are decided - listed so they don't get lost, not to
-block the spec above.
+Remaining open items above (1-5) are not decided - listed so they don't
+get lost, not to block the spec above.

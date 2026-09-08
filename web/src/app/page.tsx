@@ -9,6 +9,7 @@ import { ShareButtons } from "@/components/ShareButtons";
 import { VoicePicker, PRESET_VOICES } from "@/components/VoicePicker";
 import { DeliverySliders, DEFAULT_DELIVERY, type Delivery } from "@/components/DeliverySliders";
 import { useAccessToken } from "@/lib/useAccessToken";
+import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
 
 // Video cloning isn't wired to the gated proxy yet (Feature C backend still
 // in progress - see PROJECT_CONTEXT.md), so it still calls the inference
@@ -198,28 +199,99 @@ function CloneVoiceSection() {
   );
 }
 
+const CINEMATIC_PROMPT_EXAMPLES = [
+  "A sun-drenched clifftop terrace in Santorini, blue domes and the Aegean Sea behind me",
+  "Walking a neon-lit street in Tokyo at night, rain reflecting off the pavement",
+  "Standing in a quiet Kyoto bamboo forest at dawn, soft mist drifting through",
+  "On a black-sand beach in Iceland, glaciers in the distance, moody light",
+];
+
+function VideoModeCard({
+  badge,
+  title,
+  videoSrc,
+  description,
+  promptExamples,
+  footnote,
+}: {
+  badge: string;
+  title: string;
+  videoSrc: string;
+  description: string;
+  promptExamples?: string[];
+  footnote?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/60 bg-white/60 p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="rounded-full bg-purple px-2.5 py-0.5 text-xs font-bold text-white">{badge}</span>
+        <h3 className="text-sm font-bold text-foreground">{title}</h3>
+      </div>
+      <video className="w-full rounded-xl" src={videoSrc} controls loop muted playsInline />
+      <p className="mt-2 text-sm leading-relaxed text-muted">{description}</p>
+      {promptExamples && (
+        <div className="mt-2">
+          <p className="text-xs font-semibold text-foreground">Example prompts:</p>
+          <ul className="mt-1 list-disc pl-4 text-xs leading-relaxed text-muted">
+            {promptExamples.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {footnote && <p className="mt-2 text-xs italic leading-relaxed text-coral-dark">{footnote}</p>}
+    </div>
+  );
+}
+
 function VideoCloneSection() {
+  const plusCredits = PLANS.plus.videoCreditsPerMonth;
+  const proCredits = PLANS.pro.videoCreditsPerMonth;
+
   return (
     <Card
       wash="bg-purple-wash/90"
       iconColor="text-purple"
       icon="🎬"
       title="Video, coming later"
-      subtitle="Not a real feature yet — just a peek at where we're headed."
+      subtitle="Not live yet — here's exactly what's planned, shown with real early test clips."
     >
-      <video
-        className="w-full rounded-xl"
-        src="/echomimic-demo.mp4"
-        controls
-        loop
-        muted
-        playsInline
-      />
       <p className="text-sm leading-relaxed text-muted">
-        We at Lucy Labs aren&apos;t ready for video yet, but we&apos;re working on it. The clip above is
-        one of our own early tests — a still photo animated to match audio. It&apos;s clearly not
-        perfect, and we&apos;d rather be upfront about that than oversell it. If you need
-        production-quality AI video today, the current best options are{" "}
+        We at Lucy Labs aren&apos;t ready for video yet, but we&apos;re building toward two distinct modes.
+        Both clips below are real early tests, not polished demos — we&apos;d rather be upfront about
+        where things stand than oversell it.
+      </p>
+
+      <VideoModeCard
+        badge="Talking head"
+        title="Kling + your Lucy voice"
+        videoSrc="/trailers/kirsty-moon-kling-dub.mp4"
+        description="Upload a photo or short video of a face, plus audio — either type text narrated in your Lucy voice, or upload your own audio. We lip-sync it to that face. The voice is yours."
+      />
+
+      <VideoModeCard
+        badge="Cinematic"
+        title="Veo, any scene you describe"
+        videoSrc="/trailers/kirsty-moon-veo-audio.mp4"
+        description="Upload a photo and describe a scene in a prompt — Veo generates the video around it. The voice you hear is AI-generated dialogue, not your Lucy voice: dubbing a separate voice over this much camera motion doesn't sync convincingly, so we don't pretend it does."
+        promptExamples={CINEMATIC_PROMPT_EXAMPLES}
+        footnote="Faces can distort or drift from the original photo during generation — a real limitation of current AI video technology, ours included."
+      />
+
+      <p className="rounded-2xl bg-white/70 p-3 text-xs leading-relaxed text-muted">
+        <strong className="text-foreground">Video credits are shared across both modes</strong> — one
+        monthly balance, spend it on talking-head, cinematic, or a mix of both. 1 credit ≈{" "}
+        {VIDEO_CREDIT_COSTS.talkingHeadSecondsPerCredit}s of talking-head, or ≈
+        {Math.round(VIDEO_CREDIT_COSTS.cinematicSecondsPerCredit * 100) / 100}s of cinematic (cinematic
+        costs more to produce). Once this ships: Plus gets {plusCredits} credits/month, Pro gets{" "}
+        {proCredits} credits/month, Free gets none. Whichever mode you use, your photo, video, and any
+        reference audio are sent to third-party AI vendors (Kling, Veo, and the fal.ai platform we use
+        to reach them) for processing — different from our audio feature, which runs entirely on our
+        own servers.
+      </p>
+
+      <p className="text-sm leading-relaxed text-muted">
+        If you need production-quality AI video today, the current best options are{" "}
         <a
           href="https://kling.ai"
           target="_blank"
@@ -237,8 +309,8 @@ function VideoCloneSection() {
         >
           Utopai Studios&apos; PAI
         </a>{" "}
-        (the engine behind the &quot;Chloe vs History&quot; AI creator). We&apos;ll bring real video
-        cloning here once it&apos;s actually good.
+        (the engine behind the &quot;Chloe vs History&quot; AI creator). We&apos;ll bring both modes here
+        once they&apos;re actually good.
       </p>
     </Card>
   );

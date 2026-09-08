@@ -6,6 +6,10 @@ export function Footer() {
       <p className="mt-3 text-xs text-muted">
         <a href="mailto:support@astryks.com" className="underline decoration-border hover:text-foreground">
           support@astryks.com
+        </a>{" "}
+        ·{" "}
+        <a href="/privacy" className="underline decoration-border hover:text-foreground">
+          Privacy Policy
         </a>
       </p>
       <p className="mt-4 text-xs text-muted">
