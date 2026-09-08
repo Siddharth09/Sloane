@@ -24,8 +24,17 @@ COPY scripts/09_serverless_handler.py /app/handler.py
 # Serverless workers mount the network volume at /runpod-volume, not
 # /workspace like Pods do - symlink it so every hardcoded /workspace/sloane/...
 # path already in lucy_tts_engine.py (model paths, LoRA adapters, reference
-# clips) works completely unmodified. Then run the handler using the
-# network volume's own venv (already has runpod installed - see the
-# one-time `pip install runpod` setup step in STATUS.md), with /app on the
-# path so the handler's local imports resolve.
-CMD ["/bin/bash", "-c", "ln -sfn /runpod-volume /workspace && PYTHONPATH=/app /workspace/sloane/.venv/bin/python -u /app/handler.py"]
+# clips) works completely unmodified.
+#
+# `ln -sfn /runpod-volume /workspace` alone is NOT enough: the base image
+# (same one the Pods use) already has /workspace as a real, pre-existing
+# directory, and `ln`'s target-directory behavior means pointing a symlink
+# AT an existing directory nests it inside instead of replacing it - so
+# every hardcoded /workspace/sloane/... path would silently resolve to a
+# location that doesn't exist. Remove the pre-existing directory first so
+# the symlink actually replaces it. Also installs `runpod` into the shared
+# venv on every boot rather than relying on a one-time manual setup step -
+# a no-op in ~1s once it's already installed, but self-healing if it isn't.
+# Prints filesystem state before/after so a broken mount is visible in the
+# worker's Container logs instead of failing silently.
+CMD ["/bin/bash", "-c", "set -e; echo '[boot] /workspace before:'; ls -la /workspace 2>&1 || true; rm -rf /workspace; ln -s /runpod-volume /workspace; echo '[boot] /workspace after:'; ls -la /workspace; echo '[boot] venv python:'; ls -la /workspace/sloane/.venv/bin/python; /workspace/sloane/.venv/bin/python -m pip install --quiet runpod; echo '[boot] starting handler...'; PYTHONPATH=/app exec /workspace/sloane/.venv/bin/python -u /app/handler.py"]
