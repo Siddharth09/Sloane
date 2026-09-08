@@ -277,30 +277,6 @@ def chunk_sentences(sentences: list[str], max_words: int = MAX_CHUNK_WORDS) -> l
     return chunks
 
 
-def synthesize_breath(sr: int, duration: float = 0.18, rng: np.random.Generator | None = None) -> np.ndarray:
-    """A brief, quiet inhale-like sound for natural pause points instead of
-    pure digital silence. Real speech has audible micro-breaths at phrase
-    boundaries; their total absence is part of what reads as "rushed" in
-    stitched-together TTS output. Synthesized (band-passed shaped noise with
-    a soft attack/decay envelope), not a recorded sample - no new audio
-    asset to manage, and randomized per-call so it's not the exact same
-    clip looping every time.
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-    n = int(sr * duration)
-    noise = rng.normal(0, 1, n).astype(np.float32)
-    sos = butter(2, [200, 2200], btype="bandpass", fs=sr, output="sos")
-    breath = sosfilt(sos, noise).astype(np.float32)
-    envelope = np.ones(n, dtype=np.float32)
-    attack = max(1, int(n * 0.35))
-    envelope[:attack] = np.linspace(0, 1, attack, dtype=np.float32)
-    envelope[attack:] = np.linspace(1, 0, n - attack, dtype=np.float32)
-    breath *= envelope
-    peak = np.max(np.abs(breath)) or 1.0
-    breath = breath / peak * 0.035  # quiet - a hint of breath, not a gasp
-    return breath
-
 
 def apply_highpass(audio: np.ndarray, sr: int, cutoff_hz: float) -> np.ndarray:
     sos = butter(4, cutoff_hz, btype="highpass", fs=sr, output="sos")
@@ -526,12 +502,6 @@ def synthesize(
             # every time - real pause length between phrases isn't perfectly
             # uniform even from the same speaker
             jittered_pause = max(0.08, base_pause * rng.uniform(0.8, 1.25))
-            # a soft breath before the longer (sentence-ending) pauses, not
-            # every gap - real speakers don't audibly breathe after every
-            # short clause, and doing it constantly would itself sound
-            # mechanical
-            if base_pause >= PAUSE_SECONDS_BY_ENDING["."] and rng.random() < 0.55:
-                all_chunks.append(synthesize_breath(sr, rng=rng))
             all_chunks.append(np.zeros(int(sr * jittered_pause), dtype=np.float32))
     if not all_chunks:
         return None, None
