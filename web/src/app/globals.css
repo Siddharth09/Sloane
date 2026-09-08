@@ -64,20 +64,13 @@ body {
   flex: 1;
   background-size: cover;
   background-position: center;
-  /* the image itself is now sharpened/contrast-boosted (unsharp mask) to
-     bring out the paint-stroke texture - blurring it here would undo that,
-     so this only nudges saturation, no softening */
-  filter: saturate(1.1);
 }
 
 .art-backdrop::after {
   content: "";
   position: absolute;
   inset: 0;
-  /* lighter, purple-tinted wash (was a heavier cream wash) so the
-     backdrop's purple reads through instead of getting flattened toward
-     neutral cream */
-  background: rgba(233, 227, 250, 0.32);
+  background: rgba(253, 246, 240, 0.5);
 }
 
 .shadow-soft {
