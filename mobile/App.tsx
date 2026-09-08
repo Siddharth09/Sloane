@@ -17,6 +17,7 @@ import { LogoMark } from "./LogoMark";
 import { AccountWidget } from "./AccountWidget";
 import { useAccessToken } from "./useAccessToken";
 import { DeliverySliders, DEFAULT_DELIVERY, type Delivery } from "./DeliverySliders";
+import { VideoPreviewSection } from "./VideoPreviewSection";
 
 // Goes through the same Next.js proxy routes the web app uses (not the GPU
 // inference server directly) so mobile requests get the same billing/quota
@@ -296,6 +297,7 @@ export default function App() {
         <AccountWidget />
         <PresetVoiceSection />
         <CloneVoiceSection />
+        <VideoPreviewSection />
       </ScrollView>
     </SafeAreaView>
   );

@@ -11,8 +11,8 @@ type Status = {
   status: string;
   charactersUsed: number;
   charactersLimit: number;
-  videoSecondsUsed: number;
-  videoSecondsLimit: number;
+  videoCreditsUsed: number;
+  videoCreditsLimit: number;
 };
 
 const COLORS = {
@@ -89,7 +89,7 @@ export function AccountWidget() {
           <Text style={styles.planText}>{status.plan} plan</Text>
           <Text style={styles.muted}>
             {status.charactersUsed.toLocaleString()} / {status.charactersLimit.toLocaleString()} characters used this period
-            {status.videoSecondsLimit > 0 && ` · ${status.videoSecondsUsed}/${status.videoSecondsLimit}s video`}
+            {status.videoCreditsLimit > 0 && ` · ${status.videoCreditsUsed}/${status.videoCreditsLimit} video credits`}
           </Text>
           <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`)}>
             <Text style={styles.link}>Manage plan →</Text>
