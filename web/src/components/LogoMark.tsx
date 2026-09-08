@@ -4,7 +4,7 @@
  */
 export function LogoMark({ size = 64 }: { size?: number }) {
   const height = size;
-  const width = Math.round(size * (422 / 420));
+  const width = Math.round(size * (431 / 423));
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img

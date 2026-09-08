@@ -6,7 +6,7 @@ import { Image } from "react-native";
  */
 export function LogoMark({ size = 56 }: { size?: number }) {
   const height = size;
-  const width = Math.round(size * (422 / 420));
+  const width = Math.round(size * (431 / 423));
   return (
     <Image
       source={require("./assets/mic-logo.png")}
