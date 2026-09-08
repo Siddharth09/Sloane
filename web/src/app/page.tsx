@@ -114,7 +114,7 @@ function PresetVoiceSection() {
       iconColor="text-pink"
       icon="✎"
       title="Text to speech"
-      subtitle="Type anything, pick a voice, hear it narrated — no length limit."
+      subtitle="Type anything, pick a voice, hear it narrated — no per-message length cap, just your plan's monthly character allowance."
     >
       <textarea
         className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-pink"
