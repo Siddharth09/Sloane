@@ -28,6 +28,7 @@ from pathlib import Path
 
 import librosa
 import numpy as np
+import pyworld as pw
 import soundfile as sf
 import torch
 from faster_whisper import WhisperModel
@@ -232,37 +233,64 @@ def apply_speed(audio: np.ndarray, rate: float) -> np.ndarray:
     return librosa.effects.time_stretch(audio, rate=rate)
 
 
-TERMINAL_FALL_SEMITONES = -1.5  # subtle - a bigger glide reads as sarcastic/robotic, not natural
-TERMINAL_FALL_TAIL_MS = 280.0
+TERMINAL_FALL_SEMITONES = 3.5  # total forced pitch drop across the tail's voiced span
+TERMINAL_FALL_TAIL_MS = 350.0
 
 
 def apply_terminal_fall(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray:
-    """LoRA fine-tuning carries a voice's timbre but not reliably the natural
-    downward pitch glide English speakers put on a declarative sentence's
-    final syllables (reported: endings sound flat/unnatural) - that's a
-    time-varying pitch contour, not something a training run with this
-    little per-voice data would learn reliably, so it's added here as real
-    post-processing instead: pitch-shift the sentence's tail down and
-    crossfade it in with a ramp, so the shift is ~0 where the tail begins
-    and fully applied at the very end. Skipped for questions, which
-    naturally rise instead of fall.
+    """A flat pitch-shift-down (the first version of this) only lowers the
+    whole tail's register - it doesn't change whether the *contour* is
+    rising or falling, so a naturally-rising ending still sounded like it
+    was rising, just transposed lower (reported live: "it still appears
+    upward in his last words"). This instead uses the WORLD vocoder
+    (pyworld) to decompose the tail into F0 + spectral envelope +
+    aperiodicity, forces F0 to actually slope downward across the tail's
+    voiced span - overriding whatever shape it originally had, not just
+    shifting it - and resynthesizes with the original envelope/aperiodicity
+    untouched, so timbre is preserved. Skipped for questions, which should
+    keep their natural rise. Applies to every voice, not a per-character
+    tweak.
     """
     stripped = sentence.rstrip()
     if not stripped or stripped[-1] == "?":
         return audio
     tail_len = int(sr * TERMINAL_FALL_TAIL_MS / 1000)
     if len(audio) < tail_len * 2:
-        return audio  # too short for a glide to read as natural rather than warped
+        return audio  # too short for a contour edit to read as natural rather than warped
 
-    head, tail = audio[:-tail_len], audio[-tail_len:].astype(np.float32)
-    shifted_tail = librosa.effects.pitch_shift(tail, sr=sr, n_steps=TERMINAL_FALL_SEMITONES)
-    if len(shifted_tail) < len(tail):
-        shifted_tail = np.pad(shifted_tail, (0, len(tail) - len(shifted_tail)), mode="edge")
-    elif len(shifted_tail) > len(tail):
-        shifted_tail = shifted_tail[: len(tail)]
+    head, tail = audio[:-tail_len], audio[-tail_len:]
+    tail64 = np.ascontiguousarray(tail.astype(np.float64))
+    try:
+        f0, t = pw.harvest(tail64, sr)
+        sp = pw.cheaptrick(tail64, f0, t, sr)
+        ap = pw.d4c(tail64, f0, t, sr)
+    except Exception:
+        return audio  # WORLD can fail to analyze very short/quiet tails - ship the original rather than crash
+
+    voiced_idx = np.where(f0 > 0)[0]
+    if len(voiced_idx) < 2:
+        return audio  # nothing pitched to reshape (e.g. a trailing consonant/breath)
+
+    first, last = voiced_idx[0], voiced_idx[-1]
+    start_semitone = 69.0 + 12.0 * np.log2(f0[first] / 440.0)
+    target_f0 = f0.copy()
+    span = max(1, last - first)
+    for i in range(first, last + 1):
+        if f0[i] <= 0:
+            continue
+        frac = (i - first) / span
+        target_semitone = start_semitone - TERMINAL_FALL_SEMITONES * frac
+        target_f0[i] = 440.0 * (2.0 ** ((target_semitone - 69.0) / 12.0))
+
+    reshaped = pw.synthesize(target_f0, sp, ap, sr).astype(np.float32)
+    if len(reshaped) < len(tail):
+        reshaped = np.pad(reshaped, (0, len(tail) - len(reshaped)), mode="edge")
+    elif len(reshaped) > len(tail):
+        reshaped = reshaped[: len(tail)]
+
     ramp = np.linspace(0.0, 1.0, len(tail), dtype=np.float32) ** 1.5
-    blended = tail * (1 - ramp) + shifted_tail * ramp
-    return np.concatenate([head, blended.astype(np.float32)])
+    blended = tail.astype(np.float32) * (1 - ramp) + reshaped * ramp
+    return np.concatenate([head, blended])
 
 
 MAX_GENERATION_ATTEMPTS = 4  # see generate_sentence_with_retry - the underlying bugs this works around
