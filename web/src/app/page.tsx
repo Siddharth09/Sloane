@@ -10,6 +10,7 @@ import { VoicePicker, PRESET_VOICES } from "@/components/VoicePicker";
 import { DeliverySliders, DEFAULT_DELIVERY, type Delivery } from "@/components/DeliverySliders";
 import { WaitingGame } from "@/components/WaitingGame";
 import { useAccessToken } from "@/lib/useAccessToken";
+import { useFreeTierId } from "@/lib/useFreeTierId";
 import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
 
 // Video cloning isn't wired to the gated proxy yet (Feature C backend still
@@ -213,6 +214,7 @@ function Card({
   icon,
   title,
   subtitle,
+  headerRight,
   children,
 }: {
   wash: string;
@@ -220,35 +222,96 @@ function Card({
   icon: string;
   title: string;
   subtitle: string;
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section
       className={`shadow-soft-lg rounded-[28px] border border-white/60 p-7 backdrop-blur-xl transition hover:shadow-soft-lg ${wash}`}
     >
-      <div className="flex items-center gap-3.5">
-        <span
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-lg ${iconColor}`}
-        >
-          {icon}
-        </span>
-        <div>
-          <h2 className="text-lg font-extrabold tracking-tight">{title}</h2>
-          <p className="text-sm text-muted">{subtitle}</p>
+      <div className="flex items-start justify-between gap-3.5">
+        <div className="flex items-center gap-3.5">
+          <span
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-lg ${iconColor}`}
+          >
+            {icon}
+          </span>
+          <div>
+            <h2 className="text-lg font-extrabold tracking-tight">{title}</h2>
+            <p className="text-sm text-muted">{subtitle}</p>
+          </div>
         </div>
+        {headerRight}
       </div>
       <div className="mt-5 flex flex-col gap-4">{children}</div>
     </section>
   );
 }
 
+type FreeTierUsage = { charactersUsed: number; charactersLimit: number; periodEnd: string };
+
+// Only meaningful for anonymous (no access token) visitors - paying
+// subscribers have their own usage shown in AccountWidget. Refetches after
+// every generation so the count visibly ticks down as the free tier ask
+// requested, and once exhausted, blocks further generation client-side too
+// (the server enforces this either way - see @/lib/db's checkFreeQuota -
+// this is just to avoid a wasted round-trip and show the reset date/upgrade
+// link inline instead of as a generic error).
+function useFreeTierUsage(freeTierId: string | null) {
+  const [usage, setUsage] = useState<FreeTierUsage | null>(null);
+
+  async function refresh() {
+    if (!freeTierId) return;
+    try {
+      const res = await fetch(`/api/free-tier-status?id=${encodeURIComponent(freeTierId)}`);
+      const data = await res.json();
+      if (res.ok) setUsage(data);
+    } catch {
+      // Leave stale/no usage shown - not worth surfacing an error for a
+      // purely informational counter.
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freeTierId]);
+
+  return { usage, refresh };
+}
+
+function FreeTierBadge({ usage }: { usage: FreeTierUsage | null }) {
+  if (!usage) return null;
+  const remaining = Math.max(0, usage.charactersLimit - usage.charactersUsed);
+  const resetDate = new Date(usage.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+  return (
+    <div className="shrink-0 text-right">
+      <p className="text-xs font-semibold text-foreground">{remaining.toLocaleString()} characters left</p>
+      {remaining === 0 ? (
+        <p className="mt-0.5 text-[11px] text-coral-dark">
+          Resets {resetDate} —{" "}
+          <a href="/billing" className="underline">
+            see plans
+          </a>
+        </p>
+      ) : (
+        <p className="mt-0.5 text-[11px] text-muted">free tier · resets {resetDate}</p>
+      )}
+    </div>
+  );
+}
+
 function PresetVoiceSection() {
   const { token } = useAccessToken();
+  const freeTierId = useFreeTierId();
+  const { usage: freeUsage, refresh: refreshFreeUsage } = useFreeTierUsage(token ? null : freeTierId);
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const isPodMode = useIsPodMode();
   const { generate, loading, error, audioBase64, statusMessage, showWaitingUi } = useAudioGeneration("/api/generate-preset");
+
+  const freeTierExhausted = !token && !!freeUsage && freeUsage.charactersUsed >= freeUsage.charactersLimit;
 
   async function handleGenerate() {
     const form = new FormData();
@@ -257,7 +320,9 @@ function PresetVoiceSection() {
     form.append("exaggeration", String(delivery.expressiveness));
     form.append("speed", String(delivery.speed));
     if (token) form.append("access_token", token);
+    else if (freeTierId) form.append("free_tier_id", freeTierId);
     await generate(form);
+    if (!token) refreshFreeUsage();
   }
 
   return (
@@ -267,6 +332,7 @@ function PresetVoiceSection() {
       icon="✎"
       title="Text to speech"
       subtitle="Type anything, pick a voice, hear it narrated — no per-message length cap, just your plan's monthly character allowance."
+      headerRight={!token ? <FreeTierBadge usage={freeUsage} /> : undefined}
     >
       <textarea
         className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-pink"
@@ -280,7 +346,18 @@ function PresetVoiceSection() {
       {!isPodMode && (
         <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
       )}
-      <GenerateButton loading={loading} disabled={!text || loading} onClick={handleGenerate} colorClassName="bg-pink" />
+      {freeTierExhausted ? (
+        <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">
+          You&apos;ve used your free {freeUsage!.charactersLimit.toLocaleString()} characters this month. Resets{" "}
+          {new Date(freeUsage!.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })} — or{" "}
+          <a href="/billing" className="font-semibold underline">
+            see plans
+          </a>{" "}
+          to keep going now.
+        </p>
+      ) : (
+        <GenerateButton loading={loading} disabled={!text || loading} onClick={handleGenerate} colorClassName="bg-pink" />
+      )}
       {showWaitingUi && (
         <>
           <p className="text-sm text-muted">{statusMessage}</p>
@@ -295,6 +372,7 @@ function PresetVoiceSection() {
 
 function CloneVoiceSection() {
   const { token } = useAccessToken();
+  const freeTierId = useFreeTierId();
   const [text, setText] = useState("");
   const [file, setFile] = useState<Blob | File | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
@@ -309,6 +387,7 @@ function CloneVoiceSection() {
     form.append("exaggeration", String(delivery.expressiveness));
     form.append("speed", String(delivery.speed));
     if (token) form.append("access_token", token);
+    else if (freeTierId) form.append("free_tier_id", freeTierId);
     await generate(form);
   }
 
@@ -479,7 +558,7 @@ export default function Home() {
           </a>
           <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-foreground">Lucy Labs</h1>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
-            Narrate, clone, and share, in a voice that sounds like someone real.
+            The AI Voice Clone, narrate any text or upload your voice and try it out!
           </p>
         </div>
         <AccountWidget />

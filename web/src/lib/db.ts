@@ -53,6 +53,15 @@ export async function initSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS free_tier_usage (
+      id TEXT PRIMARY KEY,
+      characters_used INTEGER NOT NULL DEFAULT 0,
+      period_start TIMESTAMPTZ NOT NULL DEFAULT now(),
+      period_end TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '30 days'),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
 }
 
 // Generic runtime settings, switchable from the admin dashboard without a
@@ -163,14 +172,6 @@ export async function incrementUsage(token: string, characters: number, videoSec
   `;
 }
 
-/**
- * Returns null if the request is allowed, or a user-facing error message if
- * the subscriber is over their plan's cap. Free-tier (no token) requests
- * are checked against an anonymous per-IP-less character count is NOT
- * tracked server-side pre-launch - see api/generate-preset/route.ts for how
- * the free tier is currently handled (client-side soft limit only, until
- * real anonymous-usage tracking is worth building).
- */
 export function checkQuota(sub: Subscriber, additionalCharacters: number): string | null {
   const plan = PLANS[sub.plan];
   if (sub.status !== "active") {
@@ -180,4 +181,53 @@ export function checkQuota(sub: Subscriber, additionalCharacters: number): strin
     return `This would put you over your ${plan.name} plan's ${plan.charactersPerMonth.toLocaleString()} character/month limit. Upgrade or wait for your next billing period.`;
   }
   return null;
+}
+
+// Free-tier tracking for anonymous (no access token) users. There's no
+// login, so this is tied to a random id the browser generates and stores in
+// localStorage (see useFreeTierId.ts) - honest limitation: clearing site
+// data or switching browsers resets it. Deliberately not IP-based (this
+// site's privacy policy already commits to not collecting IP addresses,
+// and IP-based tracking is at least as easy to evade via a different
+// network anyway) - this is a soft nudge toward upgrading, not airtight
+// metering.
+export type FreeTierUsage = { charactersUsed: number; charactersLimit: number; periodEnd: string };
+
+export async function getFreeTierUsage(id: string): Promise<FreeTierUsage> {
+  const limit = PLANS.free.charactersPerMonth;
+  if (!id) return { charactersUsed: 0, charactersLimit: limit, periodEnd: new Date().toISOString() };
+  const rows = await sql`SELECT characters_used, period_end FROM free_tier_usage WHERE id = ${id}`;
+  const row = rows[0];
+  if (!row || new Date(row.period_end as string) < new Date()) {
+    // Never seen, or their period already rolled over - report a fresh
+    // allowance; recordFreeUsage performs the actual reset on next use.
+    const periodEnd = new Date();
+    periodEnd.setDate(periodEnd.getDate() + 30);
+    return { charactersUsed: 0, charactersLimit: limit, periodEnd: periodEnd.toISOString() };
+  }
+  return { charactersUsed: row.characters_used as number, charactersLimit: limit, periodEnd: row.period_end as string };
+}
+
+export async function checkFreeQuota(id: string, additionalCharacters: number): Promise<string | null> {
+  const usage = await getFreeTierUsage(id);
+  if (usage.charactersUsed + additionalCharacters > usage.charactersLimit) {
+    const resetDate = new Date(usage.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+    return `You've used your free ${usage.charactersLimit.toLocaleString()} characters this month. Resets ${resetDate}, or upgrade for more right away.`;
+  }
+  return null;
+}
+
+export async function recordFreeUsage(id: string, characters: number) {
+  if (!id) return;
+  await sql`
+    INSERT INTO free_tier_usage (id, characters_used, period_start, period_end)
+    VALUES (${id}, ${characters}, now(), now() + interval '30 days')
+    ON CONFLICT (id) DO UPDATE SET
+      characters_used = CASE
+        WHEN free_tier_usage.period_end < now() THEN ${characters}
+        ELSE free_tier_usage.characters_used + ${characters}
+      END,
+      period_start = CASE WHEN free_tier_usage.period_end < now() THEN now() ELSE free_tier_usage.period_start END,
+      period_end = CASE WHEN free_tier_usage.period_end < now() THEN now() + interval '30 days' ELSE free_tier_usage.period_end END
+  `;
 }
