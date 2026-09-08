@@ -64,10 +64,10 @@ body {
   flex: 1;
   background-size: cover;
   background-position: center;
-  /* source image is modest-resolution and gets stretched to fill the
-     viewport via cover - a slight blur hides the resulting upscale/
-     compression blockiness instead of letting it show as pixelation */
-  filter: blur(1.5px) saturate(1.15);
+  /* the image itself is now sharpened/contrast-boosted (unsharp mask) to
+     bring out the paint-stroke texture - blurring it here would undo that,
+     so this only nudges saturation, no softening */
+  filter: saturate(1.1);
 }
 
 .art-backdrop::after {
