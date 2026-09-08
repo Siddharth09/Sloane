@@ -62,8 +62,12 @@ body {
 
 .art-backdrop > div {
   flex: 1;
-  background-size: cover;
-  background-position: center;
+  /* zoomed in and shifted left/up so the doorway+balcony stays the focus
+     and the busy plant cluster on the right of the source image falls
+     mostly out of frame - less visual competition with the foreground
+     cards than the plain "cover" framing had */
+  background-size: 150%;
+  background-position: 30% 35%;
 }
 
 .art-backdrop::after {

@@ -18,7 +18,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${nunito.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <div className="art-backdrop" aria-hidden="true">
-          <div style={{ backgroundImage: "url(/backgrounds/abstract-column.png)" }} />
+          <div style={{ backgroundImage: "url(/backgrounds/mosaic-courtyard.png)" }} />
         </div>
         <div className="page-content flex min-h-full flex-1 flex-col">{children}</div>
       </body>
