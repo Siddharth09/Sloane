@@ -29,6 +29,10 @@ export async function POST(req: NextRequest) {
   const upstreamForm = new FormData();
   upstreamForm.append("text", text);
   if (referenceAudio) upstreamForm.append("reference_audio", referenceAudio);
+  const exaggeration = form.get("exaggeration");
+  if (exaggeration) upstreamForm.append("exaggeration", String(exaggeration));
+  const speed = form.get("speed");
+  if (speed) upstreamForm.append("speed", String(speed));
 
   const upstream = await fetch(`${INFERENCE_SERVER_URL}/api/clone-voice`, {
     method: "POST",

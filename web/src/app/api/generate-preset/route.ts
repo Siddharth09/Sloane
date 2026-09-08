@@ -37,6 +37,10 @@ export async function POST(req: NextRequest) {
   const upstreamForm = new FormData();
   upstreamForm.append("text", text);
   upstreamForm.append("voice_id", String(form.get("voice_id") ?? ""));
+  const exaggeration = form.get("exaggeration");
+  if (exaggeration) upstreamForm.append("exaggeration", String(exaggeration));
+  const speed = form.get("speed");
+  if (speed) upstreamForm.append("speed", String(speed));
 
   const upstream = await fetch(`${INFERENCE_SERVER_URL}/api/generate-preset`, {
     method: "POST",

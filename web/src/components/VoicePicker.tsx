@@ -33,7 +33,7 @@ export function VoicePicker({
             <span
               className={`flex h-14 w-14 items-center justify-center rounded-full text-lg font-bold text-white ${v.color} transition-all ${
                 selected
-                  ? "shadow-soft-lg scale-[1.15] ring-4 ring-coral ring-offset-2 ring-offset-surface"
+                  ? "shadow-soft-lg scale-[1.3] brightness-75 saturate-150 ring-4 ring-coral ring-offset-2 ring-offset-surface"
                   : "shadow-soft opacity-70 hover:opacity-100"
               }`}
             >

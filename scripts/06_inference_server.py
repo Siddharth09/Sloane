@@ -20,6 +20,7 @@ Usage (on the pod):
 Then reachable at the pod's RunPod HTTP-proxy URL for port 8000.
 """
 import re
+import string
 import sys
 import uuid
 from collections import OrderedDict
@@ -29,6 +30,7 @@ import librosa
 import numpy as np
 import soundfile as sf
 import torch
+from faster_whisper import WhisperModel
 from scipy.signal import butter, sosfilt
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -192,6 +194,9 @@ def get_preset_t3(voice_id: str):
     return t3
 
 
+print("[server] loading whisper for output content verification...")
+verifier_model = WhisperModel("small", device=DEVICE, compute_type="float16" if DEVICE == "cuda" else "int8")
+
 print("[server] shared engine loaded, starting API - preset voices load lazily on first use")
 
 app = FastAPI(title="Lucy Inference API")
@@ -219,22 +224,48 @@ def apply_highpass(audio: np.ndarray, sr: int, cutoff_hz: float) -> np.ndarray:
     return sosfilt(sos, audio).astype(np.float32)
 
 
-MAX_GENERATION_ATTEMPTS = 4  # see generate_sentence_with_retry - the underlying bug this works around
+def apply_speed(audio: np.ndarray, rate: float) -> np.ndarray:
+    """rate > 1.0 = faster, < 1.0 = slower. Real time-stretching (changes
+    duration, preserves pitch) - not the same as pitch_semitones, and a
+    genuine "speak slower" control, unlike emotion which Chatterbox has no
+    equivalent knob for (see PITCH_SEMITONES_BY_VOICE comment)."""
+    return librosa.effects.time_stretch(audio, rate=rate)
+
+
+MAX_GENERATION_ATTEMPTS = 4  # see generate_sentence_with_retry - the underlying bugs this works around
+MIN_WORD_OVERLAP_RATIO = 0.7  # below this, treat as a bad generation (words skipped/mangled) and retry
+
+
+def _normalize_words(text: str) -> set[str]:
+    stripped = text.lower().translate(str.maketrans("", "", string.punctuation))
+    return set(stripped.split())
+
+
+def word_overlap_ratio(input_text: str, transcribed_text: str) -> float:
+    input_words = _normalize_words(input_text)
+    if not input_words:
+        return 1.0
+    output_words = _normalize_words(transcribed_text)
+    return len(input_words & output_words) / len(input_words)
 
 
 def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference_path: str, **kwargs) -> np.ndarray:
     """
-    Chatterbox's alignment-stream safety mechanism occasionally forces an
-    early EOS on an otherwise-fine sentence (a real, reproducible glitch we
-    hit repeatedly while manually testing every voice this project has -
-    see PROJECT_CONTEXT.md "Generation-time repetition glitch"), producing
-    audio far too short for the text - a handful of words instead of the
-    full sentence. There was no retry for this in production, so users hit
-    it directly with no recovery (reported: "audio isn't playing for all
-    the text, just 3-4 words"). Retry with the same inputs (generation is
-    stochastic - a retry reliably gets a full-length result in the manual
-    testing that uncovered this) rather than silently shipping a truncated
-    clip.
+    Two distinct, real generation glitches this works around, both hit
+    repeatedly during manual testing across every voice this project has,
+    and both reported live in production with no recovery:
+    1. Chatterbox's alignment-stream safety mechanism occasionally forces
+       an early EOS on an otherwise-fine sentence, producing audio far too
+       short for the text ("audio isn't playing for all the text, just
+       3-4 words") - caught by the duration check below.
+    2. Separately, a generation can come back the *right* length but with
+       words dropped or mangled mid-sentence ("Alice skipped some words") -
+       duration alone can't catch this, so we transcribe the result with
+       Whisper and compare against the input text; too little word overlap
+       means retry, same as the duration case.
+    Generation is stochastic - a retry reliably gets a clean result in the
+    manual testing that uncovered both of these, so retrying with identical
+    inputs is a real fix, not a hack.
     """
     word_count = len(sentence.split())
     min_expected_seconds = max(0.3, word_count / 5.0)  # generous - real speech is rarely faster than this
@@ -248,11 +279,19 @@ def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference
         trimmed = trim_silence_with_vad(wav_np, engine.sr)
         last_trimmed = trimmed
         duration = len(trimmed) / engine.sr
-        if duration >= min_expected_seconds:
-            return trimmed
-        print(f"[server] short generation ({duration:.2f}s for {word_count} words), retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
 
-    print(f"[server] all {MAX_GENERATION_ATTEMPTS} attempts came back short - shipping the last one rather than failing outright")
+        if duration < min_expected_seconds:
+            print(f"[server] short generation ({duration:.2f}s for {word_count} words), retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+            continue
+
+        segments, _ = verifier_model.transcribe(trimmed, language="en")
+        transcribed_text = " ".join(seg.text for seg in segments)
+        overlap = word_overlap_ratio(sentence, transcribed_text)
+        if overlap >= MIN_WORD_OVERLAP_RATIO:
+            return trimmed
+        print(f"[server] word mismatch (overlap {overlap:.0%}) - said \"{transcribed_text[:80]}\" for \"{sentence[:80]}\", retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+
+    print(f"[server] all {MAX_GENERATION_ATTEMPTS} attempts came back bad - shipping the last one rather than failing outright")
     return last_trimmed
 
 
@@ -262,6 +301,7 @@ def synthesize(
     reference_path: str,
     pitch_semitones: float = 0.0,
     highpass_hz: float = 0.0,
+    speed: float = 1.0,
     **kwargs,
 ):
     all_chunks = []
@@ -280,6 +320,8 @@ def synthesize(
         audio = librosa.effects.pitch_shift(audio, sr=sr, n_steps=pitch_semitones)
     if highpass_hz:
         audio = apply_highpass(audio, sr, highpass_hz)
+    if speed and speed != 1.0:
+        audio = apply_speed(audio, speed)
     return audio, sr
 
 
@@ -290,6 +332,7 @@ async def generate_preset(
     exaggeration: float | None = Form(None),
     cfg_weight: float | None = Form(None),
     pitch_semitones: float | None = Form(None),
+    speed: float | None = Form(None),
 ):
     if voice_id not in PRESET_VOICES:
         return JSONResponse(
@@ -306,7 +349,9 @@ async def generate_preset(
     }
     pitch = pitch_semitones if pitch_semitones is not None else PITCH_SEMITONES_BY_VOICE.get(voice_id, 0.0)
     highpass = HIGHPASS_HZ_BY_VOICE.get(voice_id, 0.0)
-    audio, sr = synthesize(base_engine, text, reference, pitch_semitones=pitch, highpass_hz=highpass, **gen_params)
+    audio, sr = synthesize(
+        base_engine, text, reference, pitch_semitones=pitch, highpass_hz=highpass, speed=speed or 1.0, **gen_params
+    )
     if audio is None:
         return JSONResponse({"error": "no audio generated"}, status_code=500)
 
@@ -321,6 +366,7 @@ async def clone_voice(
     reference_audio: UploadFile = File(...),
     exaggeration: float | None = Form(None),
     cfg_weight: float | None = Form(None),
+    speed: float | None = Form(None),
 ):
     tmp_path = AUDIO_DIR / f"ref_{uuid.uuid4().hex}.wav"
     content = await reference_audio.read()
@@ -341,7 +387,7 @@ async def clone_voice(
         **({"cfg_weight": cfg_weight} if cfg_weight is not None else {}),
     }
     base_engine.t3 = base_t3  # zero-shot Feature B always uses the unmodified base T3, not a preset's LoRA
-    audio, sr = synthesize(base_engine, text, str(tmp_path), **gen_params)
+    audio, sr = synthesize(base_engine, text, str(tmp_path), speed=speed or 1.0, **gen_params)
     tmp_path.unlink(missing_ok=True)
     if audio is None:
         return JSONResponse({"error": "no audio generated"}, status_code=500)

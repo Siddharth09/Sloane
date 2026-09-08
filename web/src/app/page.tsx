@@ -7,6 +7,7 @@ import { LogoMark } from "@/components/LogoMark";
 import { RecordOrUpload } from "@/components/RecordOrUpload";
 import { ShareButtons } from "@/components/ShareButtons";
 import { VoicePicker, PRESET_VOICES } from "@/components/VoicePicker";
+import { DeliverySliders, DEFAULT_DELIVERY, type Delivery } from "@/components/DeliverySliders";
 import { useAccessToken } from "@/lib/useAccessToken";
 
 // Video cloning isn't wired to the gated proxy yet (Feature C backend still
@@ -70,6 +71,7 @@ function PresetVoiceSection() {
   const { token } = useAccessToken();
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
+  const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +83,8 @@ function PresetVoiceSection() {
       const form = new FormData();
       form.append("text", text);
       form.append("voice_id", voiceId);
+      form.append("exaggeration", String(delivery.expressiveness));
+      form.append("speed", String(delivery.speed));
       if (token) form.append("access_token", token);
       const res = await fetch("/api/generate-preset", { method: "POST", body: form });
       const data = await res.json();
@@ -109,6 +113,7 @@ function PresetVoiceSection() {
         onChange={(e) => setText(e.target.value)}
       />
       <VoicePicker value={voiceId} onChange={setVoiceId} />
+      <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-pink" />
       <button
         className="shadow-soft rounded-full bg-pink py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
         disabled={!text || loading}
@@ -126,6 +131,7 @@ function CloneVoiceSection() {
   const { token } = useAccessToken();
   const [text, setText] = useState("");
   const [file, setFile] = useState<Blob | File | null>(null);
+  const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +144,8 @@ function CloneVoiceSection() {
       const form = new FormData();
       form.append("text", text);
       form.append("reference_audio", file, "reference.webm");
+      form.append("exaggeration", String(delivery.expressiveness));
+      form.append("speed", String(delivery.speed));
       if (token) form.append("access_token", token);
       const res = await fetch("/api/clone-voice", { method: "POST", body: form });
       const data = await res.json();
@@ -166,6 +174,7 @@ function CloneVoiceSection() {
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
+      <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-blue" />
       <button
         className="shadow-soft rounded-full bg-blue py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
         disabled={!text || !file || loading}
