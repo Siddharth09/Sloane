@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -14,12 +13,15 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useAudioPlayer } from "expo-audio";
 import * as DocumentPicker from "expo-document-picker";
 import { LogoMark } from "./LogoMark";
+import { AccountWidget } from "./AccountWidget";
+import { useAccessToken } from "./useAccessToken";
 
-// Same backend as the web app (web/src/app/page.tsx) - set via app.json "extra"
-// or an EXPO_PUBLIC_ env var. Defaults to localhost for a simulator/same-machine
-// test; a physical device needs the pod's real proxy URL (Expo Go can't reach
-// "localhost" meaning your own machine).
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? "http://localhost:8000";
+// Goes through the same Next.js proxy routes the web app uses (not the GPU
+// inference server directly) so mobile requests get the same billing/quota
+// gate - see web/src/app/api/generate-preset/route.ts. AudioResult below
+// still needs the raw inference server host to actually play the returned
+// file, since audio_url comes back as an absolute URL to that host.
+const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
 
 const COLORS = {
   background: "#fdf6f0",
@@ -75,7 +77,9 @@ function GradientButton({
 }
 
 function AudioResult({ url }: { url: string | null }) {
-  const player = useAudioPlayer(url ? `${API_BASE}${url}` : null);
+  // audio_url now comes back absolute (the proxy route resolves it against
+  // the inference server host server-side) - no prefixing needed here.
+  const player = useAudioPlayer(url);
   if (!url) return null;
   return (
     <Pressable style={styles.playButton} onPress={() => player.play()}>
@@ -110,6 +114,7 @@ function Card({
 }
 
 function PresetVoiceSection() {
+  const { token } = useAccessToken();
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -123,9 +128,10 @@ function PresetVoiceSection() {
       const form = new FormData();
       form.append("text", text);
       form.append("voice_id", voiceId);
-      const res = await fetch(`${API_BASE}/api/generate-preset`, { method: "POST", body: form });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (token) form.append("access_token", token);
+      const res = await fetch(`${WEB_BASE}/api/generate-preset`, { method: "POST", body: form });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
       setAudioUrl(data.audio_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -182,6 +188,7 @@ function PresetVoiceSection() {
 }
 
 function CloneVoiceSection() {
+  const { token } = useAccessToken();
   const [text, setText] = useState("");
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -209,9 +216,10 @@ function CloneVoiceSection() {
         name: file.name,
         type: file.mimeType ?? "audio/wav",
       } as unknown as Blob);
-      const res = await fetch(`${API_BASE}/api/clone-voice`, { method: "POST", body: form });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (token) form.append("access_token", token);
+      const res = await fetch(`${WEB_BASE}/api/clone-voice`, { method: "POST", body: form });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
       setAudioUrl(data.audio_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -262,10 +270,9 @@ export default function App() {
           <Text style={styles.title}>Lucy Labs</Text>
           <Text style={styles.subtitle}>
             Narrate, clone, and share, in a voice that sounds like someone real.
-            {Platform.OS !== "web" &&
-              ' Set EXPO_PUBLIC_API_BASE to your pod\'s proxy URL — "localhost" won\'t reach your computer from a device.'}
           </Text>
         </View>
+        <AccountWidget />
         <PresetVoiceSection />
         <CloneVoiceSection />
       </ScrollView>
