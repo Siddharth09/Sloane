@@ -6,7 +6,7 @@ import { useAccessToken } from "@/lib/useAccessToken";
 import { LogoMark } from "@/components/LogoMark";
 import type { PlanId } from "@/lib/plans";
 
-const PLAN_CARDS: { id: PlanId; name: string; price: string; blurb: string; features: string[]; wash: string; accent: string }[] = [
+const PLAN_CARDS: { id: PlanId; name: string; price: string; blurb: string; features: string[]; note?: string; wash: string; accent: string }[] = [
   {
     id: "free",
     name: "Free",
@@ -30,7 +30,8 @@ const PLAN_CARDS: { id: PlanId; name: string; price: string; blurb: string; feat
     name: "Pro",
     price: "$9/mo",
     blurb: "For power users",
-    features: ["1,500,000 characters/month", "Clone any voice"],
+    features: ["1,500,000 characters/month", "Clone any voice", "30 seconds/month video cloning"],
+    note: "Honest heads-up: our video quality is a long way from realistic right now — well behind leading tools like Kling or Utopai Studios' PAI. We're actively working on closing that gap; this allotment is reserved for you the moment it's ready.",
     wash: "bg-purple-wash/90",
     accent: "text-purple",
   },
@@ -156,6 +157,7 @@ export default function BillingPage() {
                   </li>
                 ))}
               </ul>
+              {p.note && <p className="rounded-2xl bg-white/60 p-3 text-xs leading-relaxed text-muted">{p.note}</p>}
               {p.id === "free" ? (
                 <span className="rounded-full border border-border py-2.5 text-center text-sm font-bold text-muted">
                   Current default
