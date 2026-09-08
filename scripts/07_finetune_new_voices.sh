@@ -19,12 +19,14 @@ set -euo pipefail
 
 BASE_TOOLKIT=/workspace/sloane/chatterbox-finetuning
 PROJECT_ROOT=/workspace/sloane
-VOICES=(voice_comedy voice_meditation)
-# voice_business/voice_finance/voice_broadcast/voice_tech/voice_meditation
-# already trained. voice_comedy has only 1.9 min of usable audio after
-# chunking - trying it anyway per explicit request, expect weaker quality
-# (see PROJECT_CONTEXT.md "Speaker isolation" entry for the data-volume
-# comparison against the other voices).
+VOICES=(voice_meditation voice_sales)
+# Retraining both 2026-09-08 with newly-recovered/added source data:
+# voice_meditation went from 6.6 to 29.7 minutes (03_chunk_by_speech.py was
+# discarding long segments instead of splitting them - fixed). voice_sales
+# went from 16 clips/9MB to ~58 minutes of new source video, deliberately
+# NOT speaker-isolated - the new video has two similar-sounding men and the
+# ask was to blend both into one voice rather than isolate a single
+# speaker, unlike voice_business/voice_finance/voice_broadcast.
 
 for voice in "${VOICES[@]}"; do
   echo ""
