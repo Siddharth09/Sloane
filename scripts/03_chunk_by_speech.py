@@ -36,6 +36,41 @@ MAX_CLIP_SECONDS_OVERRIDE = {
 PAD_SECONDS = 0.15  # small buffer so words aren't clipped at boundaries
 
 
+def split_long_segment(words: list, max_seconds: float) -> list[tuple[float, float, str]]:
+    """A segment longer than max_seconds used to just get discarded outright
+    (see MAX_CLIP_SECONDS_OVERRIDE comment) - for pause-heavy narration like
+    guided meditation, whisper's VAD merges speech across long internal
+    silences into single long segments, so nearly everything got thrown
+    away (only 6.6 of ~50 minutes of cleaned voice_meditation audio
+    survived). Splitting at the largest internal word-to-word gap instead
+    of discarding recovers that audio as valid-length sub-clips - and for
+    this kind of narration the biggest gaps are real pauses, so the split
+    points land in natural places rather than mid-phrase.
+    """
+    if not words:
+        return []
+    total = words[-1].end - words[0].start
+    if total <= max_seconds:
+        text = "".join(w.word for w in words).strip()
+        return [(words[0].start, words[-1].end, text)] if text else []
+
+    best_gap = -1.0
+    best_idx = -1
+    for i in range(len(words) - 1):
+        gap = words[i + 1].start - words[i].end
+        if gap > best_gap:
+            best_gap = gap
+            best_idx = i
+    if best_idx == -1:
+        # no internal gap to split on (single run-on word list) - can't
+        # subdivide further, drop it rather than ship an over-length clip
+        return []
+
+    left = split_long_segment(words[: best_idx + 1], max_seconds)
+    right = split_long_segment(words[best_idx + 1 :], max_seconds)
+    return left + right
+
+
 def process_speaker(model: WhisperModel, speaker_dir: Path) -> None:
     speaker = speaker_dir.name
     max_clip_seconds = MAX_CLIP_SECONDS_OVERRIDE.get(speaker, MAX_CLIP_SECONDS)
@@ -49,31 +84,38 @@ def process_speaker(model: WhisperModel, speaker_dir: Path) -> None:
     for wav_path in sorted(speaker_dir.glob("*.wav")):
         print(f"transcribing: {wav_path.name}")
         audio, sr = sf.read(str(wav_path))
-        segments, _ = model.transcribe(str(wav_path), vad_filter=True)
+        segments, _ = model.transcribe(str(wav_path), vad_filter=True, word_timestamps=True)
 
         for seg in segments:
             duration = seg.end - seg.start
-            if duration < MIN_CLIP_SECONDS or duration > max_clip_seconds:
+            if duration < MIN_CLIP_SECONDS:
                 continue
-            text = seg.text.strip()
-            if not text:
-                continue
+            if duration > max_clip_seconds:
+                sub_segments = split_long_segment(list(seg.words or []), max_clip_seconds)
+            else:
+                text = seg.text.strip()
+                sub_segments = [(seg.start, seg.end, text)] if text else []
 
-            start_sample = max(0, int((seg.start - PAD_SECONDS) * sr))
-            end_sample = min(len(audio), int((seg.end + PAD_SECONDS) * sr))
-            clip = audio[start_sample:end_sample]
+            for sub_start, sub_end, text in sub_segments:
+                sub_duration = sub_end - sub_start
+                if sub_duration < MIN_CLIP_SECONDS or sub_duration > max_clip_seconds or not text:
+                    continue
 
-            clip_idx += 1
-            clip_name = f"{clip_idx:05d}.wav"
-            sf.write(str(clips_dir / clip_name), clip, sr)
-            rows.append(
-                {
-                    "clip": f"clips/{clip_name}",
-                    "text": text,
-                    "duration_sec": round(duration, 2),
-                    "source": wav_path.name,
-                }
-            )
+                start_sample = max(0, int((sub_start - PAD_SECONDS) * sr))
+                end_sample = min(len(audio), int((sub_end + PAD_SECONDS) * sr))
+                clip = audio[start_sample:end_sample]
+
+                clip_idx += 1
+                clip_name = f"{clip_idx:05d}.wav"
+                sf.write(str(clips_dir / clip_name), clip, sr)
+                rows.append(
+                    {
+                        "clip": f"clips/{clip_name}",
+                        "text": text,
+                        "duration_sec": round(sub_duration, 2),
+                        "source": wav_path.name,
+                    }
+                )
 
     with open(filelist_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["clip", "text", "duration_sec", "source"])

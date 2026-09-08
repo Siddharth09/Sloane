@@ -244,6 +244,21 @@ def pause_seconds_for(sentence: str) -> float:
 # instability was observed to get worse.
 MAX_CHUNK_WORDS = 40
 
+# Voices with very little training data (see PITCH_JITTER_BY_VOICE comment
+# for voice_sales; voice_meditation's clips were also capped short during
+# chunking - see PROJECT_CONTEXT.md) can't reliably produce a long
+# continuous generation the way the better-trained voices can. Reproduced
+# live 2026-09-08: grouping voice_meditation into 30-word chunks caused the
+# alignment-stream forced-EOS bug to fire on nearly every attempt, exhausting
+# all 4 retries and shipping a near-silent clip. Smaller per-voice caps here
+# keep those voices close to their original one-sentence-at-a-time
+# generation size while still letting the better-trained voices benefit
+# from multi-sentence chunking.
+MAX_CHUNK_WORDS_BY_VOICE: dict[str, int] = {
+    "voice_meditation": 14,
+    "voice_sales": 14,
+}
+
 
 def chunk_sentences(sentences: list[str], max_words: int = MAX_CHUNK_WORDS) -> list[str]:
     chunks: list[str] = []
@@ -492,12 +507,13 @@ def synthesize(
     highpass_hz: float = 0.0,
     pitch_jitter_semitones: float = 0.0,
     speed: float = 1.0,
+    max_chunk_words: int = MAX_CHUNK_WORDS,
     **kwargs,
 ):
     all_chunks = []
     sr = 24000
     sentences = split_sentences(text)
-    text_chunks = chunk_sentences(sentences)
+    text_chunks = chunk_sentences(sentences, max_words=max_chunk_words)
     rng = np.random.default_rng()
     for chunk in text_chunks:
         trimmed = generate_sentence_with_retry(engine, chunk, reference_path, **kwargs)
@@ -556,6 +572,7 @@ async def generate_preset(
     pitch = pitch_semitones if pitch_semitones is not None else PITCH_SEMITONES_BY_VOICE.get(voice_id, 0.0)
     highpass = HIGHPASS_HZ_BY_VOICE.get(voice_id, 0.0)
     jitter = PITCH_JITTER_BY_VOICE.get(voice_id, 0.0)
+    max_chunk_words = MAX_CHUNK_WORDS_BY_VOICE.get(voice_id, MAX_CHUNK_WORDS)
     audio, sr = synthesize(
         base_engine,
         text,
@@ -564,6 +581,7 @@ async def generate_preset(
         highpass_hz=highpass,
         pitch_jitter_semitones=jitter,
         speed=speed or 1.0,
+        max_chunk_words=max_chunk_words,
         **gen_params,
     )
     if audio is None:
