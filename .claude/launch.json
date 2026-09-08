@@ -20,6 +20,16 @@
         "cd 'C:\\Users\\SidMehta\\Downloads\\Sloane the voice clone\\api'; .\\.venv\\Scripts\\python.exe -m uvicorn main:app --reload --port 8000"
       ],
       "port": 8000
+    },
+    {
+      "name": "mobile-web",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-Command",
+        "cd 'C:\\Users\\SidMehta\\Downloads\\Sloane the voice clone\\mobile'; npx expo start --web"
+      ],
+      "port": 8081
     }
   ]
 }
