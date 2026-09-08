@@ -93,18 +93,26 @@ function CheckoutSuccess() {
 
 export default function BillingPage() {
   const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   async function subscribe(plan: PlanId) {
     setLoadingPlan(plan);
-    const res = await fetch("/api/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan }),
-    });
-    const data = await res.json();
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
+    setCheckoutError(null);
+    try {
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return; // keep the loading state while the browser navigates away
+      }
+      setCheckoutError(data.error ?? "Checkout failed - please try again.");
+    } catch {
+      setCheckoutError("Couldn't reach the checkout server - please try again.");
+    } finally {
       setLoadingPlan(null);
     }
   }
@@ -123,6 +131,12 @@ export default function BillingPage() {
         <Suspense>
           <CheckoutSuccess />
         </Suspense>
+
+        {checkoutError && (
+          <p className="mx-auto max-w-md rounded-2xl border border-white/60 bg-surface/90 px-6 py-3 text-center text-sm text-coral-dark shadow-soft backdrop-blur-xl">
+            {checkoutError}
+          </p>
+        )}
 
         <div className="grid gap-6 sm:grid-cols-3">
           {PLAN_CARDS.map((p) => (
