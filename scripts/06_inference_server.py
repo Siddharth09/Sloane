@@ -119,6 +119,17 @@ HIGHPASS_HZ_BY_VOICE: dict[str, float] = {}
 # Per-voice generation-parameter overrides, layered on DEFAULT_GEN_PARAMS.
 GEN_PARAMS_BY_VOICE: dict[str, dict] = {}
 
+# Per-voice natural pitch micro-jitter (semitones), applied across the whole
+# generation. Robbo (voice_sales) has only ~16 training clips vs. 500+ for
+# the other voices (confirmed 2026-09-08) - nowhere near enough for the
+# LoRA fine-tune to learn natural pitch variation, which is why he sounds
+# flat/robotic. The real fix is more source audio and a retrain; this is a
+# real signal-processing mitigation in the meantime, not a substitute -
+# it adds a slow, smoothed random walk to the F0 contour (mimicking the
+# micro-instability real voices have and robotic-sounding flat pitch
+# lacks), not a fake "sound human" trick.
+PITCH_JITTER_BY_VOICE: dict[str, float] = {"voice_sales": 0.4}
+
 # Chatterbox's real (previously unused) expressiveness controls - see
 # PROJECT_CONTEXT.md Sec "Voice quality improvements" for what these do and
 # why these starting values, and note they're overridable per-request below
@@ -306,6 +317,54 @@ def apply_terminal_fall(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray
     return np.concatenate([head, reshaped])
 
 
+def apply_pitch_jitter(audio: np.ndarray, sr: int, jitter_semitones: float, seed: int | None = None) -> np.ndarray:
+    """Adds a slow, smoothed random-walk wobble to the F0 contour across the
+    whole utterance - real human pitch is never perfectly steady, and a
+    LoRA voice trained on very little data (see PITCH_JITTER_BY_VOICE
+    comment) tends to produce an unnaturally flat, steady pitch that reads
+    as robotic. This is a mitigation, not a fix for the underlying data
+    shortage - it doesn't add natural word-level emphasis or pacing, only
+    removes some of the mechanical flatness in the raw pitch.
+    """
+    if jitter_semitones <= 0:
+        return audio
+    audio64 = np.ascontiguousarray(audio.astype(np.float64))
+    try:
+        f0, t = pw.harvest(audio64, sr)
+        sp = pw.cheaptrick(audio64, f0, t, sr)
+        ap = pw.d4c(audio64, f0, t, sr)
+    except Exception:
+        return audio
+
+    voiced = f0 > 0
+    if voiced.sum() < 2:
+        return audio
+
+    n = len(f0)
+    rng = np.random.default_rng(seed)
+    walk = np.cumsum(rng.normal(0, 0.15, size=n))
+    kernel_size = max(3, n // 20)
+    kernel = np.ones(kernel_size) / kernel_size
+    walk_smooth = np.convolve(walk, kernel, mode="same")
+    walk_smooth -= walk_smooth.mean()
+    peak = np.max(np.abs(walk_smooth)) or 1.0
+    walk_norm = walk_smooth / peak * jitter_semitones
+
+    new_f0 = f0.copy()
+    for i in range(n):
+        if f0[i] <= 0:
+            continue
+        semitone = 69.0 + 12.0 * np.log2(f0[i] / 440.0) + walk_norm[i]
+        new_f0[i] = 440.0 * (2.0 ** ((semitone - 69.0) / 12.0))
+
+    reshaped = pw.synthesize(new_f0, sp, ap, sr).astype(np.float32)
+    if len(reshaped) < len(audio):
+        reshaped = np.pad(reshaped, (0, len(audio) - len(reshaped)), mode="edge")
+    elif len(reshaped) > len(audio):
+        reshaped = reshaped[: len(audio)]
+    return reshaped
+
+
 MAX_GENERATION_ATTEMPTS = 4  # see generate_sentence_with_retry - the underlying bugs this works around
 MIN_WORD_OVERLAP_RATIO = 0.7  # below this, treat as a bad generation (words skipped/mangled) and retry
 
@@ -375,6 +434,7 @@ def synthesize(
     reference_path: str,
     pitch_semitones: float = 0.0,
     highpass_hz: float = 0.0,
+    pitch_jitter_semitones: float = 0.0,
     speed: float = 1.0,
     **kwargs,
 ):
@@ -391,6 +451,8 @@ def synthesize(
     if not all_chunks:
         return None, None
     audio = np.concatenate(all_chunks)
+    if pitch_jitter_semitones:
+        audio = apply_pitch_jitter(audio, sr, pitch_jitter_semitones)
     if pitch_semitones:
         audio = librosa.effects.pitch_shift(audio, sr=sr, n_steps=pitch_semitones)
     if highpass_hz:
@@ -424,8 +486,16 @@ async def generate_preset(
     }
     pitch = pitch_semitones if pitch_semitones is not None else PITCH_SEMITONES_BY_VOICE.get(voice_id, 0.0)
     highpass = HIGHPASS_HZ_BY_VOICE.get(voice_id, 0.0)
+    jitter = PITCH_JITTER_BY_VOICE.get(voice_id, 0.0)
     audio, sr = synthesize(
-        base_engine, text, reference, pitch_semitones=pitch, highpass_hz=highpass, speed=speed or 1.0, **gen_params
+        base_engine,
+        text,
+        reference,
+        pitch_semitones=pitch,
+        highpass_hz=highpass,
+        pitch_jitter_semitones=jitter,
+        speed=speed or 1.0,
+        **gen_params,
     )
     if audio is None:
         return JSONResponse({"error": "no audio generated"}, status_code=500)
