@@ -884,3 +884,160 @@ Geist), replacing the plain black-and-white functional prototype look.
   measurements + accessibility tree) — actual in-browser mic/camera
   recording still needs testing on a real device with real hardware
   permissions, not verifiable from this automated environment.
+
+## 11. Session updates, 2026-09-08
+
+Long session, many small real fixes plus two larger investigations. Full
+plain-language summary in `STATUS.md` — this section has the technical
+detail that doesn't fit there.
+
+**Audio generation bugs (all in `scripts/06_inference_server.py`):**
+- Added Whisper-based content verification (`faster_whisper`, model
+  `"small"`) alongside the existing duration-based retry in
+  `generate_sentence_with_retry()` — transcribes each generated sentence,
+  computes word-overlap ratio against the input text
+  (`word_overlap_ratio()`), retries (up to `MAX_GENERATION_ATTEMPTS = 4`)
+  when either duration is too short OR overlap < `MIN_WORD_OVERLAP_RATIO =
+  0.7`. Fixed a reported mid-sentence word-skipping bug (Alice) that the
+  duration check alone couldn't catch.
+- `apply_terminal_fall()`: forces a real downward F0 slope on each
+  sentence's tail using `pyworld` (WORLD vocoder — `harvest`/`cheaptrick`/
+  `d4c`/`synthesize`). Went through two broken iterations before landing
+  correctly: v1 did a flat `librosa.effects.pitch_shift` on the tail (only
+  transposes register, doesn't change contour shape — a rising ending
+  stayed rising, just lower-pitched). v2 computed a corrected F0 via
+  pyworld but then amplitude-crossfaded it back in with the original over
+  the whole tail — **wrong**, blending two differently-pitched signals in
+  the amplitude domain layers two simultaneous pitches rather than
+  replacing one, so the ear kept tracking the untouched original. v3 (final,
+  live): commits fully to the corrected pitch for the whole tail (only a
+  ~15ms crossfade at the splice point, to avoid a click — not a pitch
+  blend), and anchors the forced fall to the tail's actual F0 **peak**
+  rather than its first frame, since a rise can keep climbing past where
+  the tail window starts. `TERMINAL_FALL_SEMITONES = 5.0`,
+  `TERMINAL_FALL_TAIL_MS = 450.0`. Applies unconditionally to every voice
+  (not per-voice gated), skipped for sentences ending in `?`.
+- `apply_pitch_jitter()`: new per-voice mitigation for Robbo (`voice_sales`)
+  sounding robotic. Root cause confirmed by comparing
+  `training_data/<voice>/metadata.csv` row counts: voice_sales has 16
+  clips/9MB vs 514-2368 clips/143-609MB for voice_business/voice_tech/
+  voice_finance. Adds a smoothed random-walk wobble to the F0 contour
+  (`PITCH_JITTER_BY_VOICE = {"voice_sales": 0.4}`) via pyworld, mimicking
+  natural pitch micro-instability a data-starved LoRA doesn't produce on
+  its own. Explicitly documented in-code as a mitigation, not a fix — real
+  fix needs more source audio + a retrain.
+- `pyworld` added to `requirements-cloud.txt` (installed fine via pip on
+  the pod, no compiler issues despite building from source).
+
+**Billing / API surface (`web/src/`):**
+- `api/audio/[filename]/route.ts` (new) + `api/download-mp3/route.ts`
+  (new): stopped returning the raw `INFERENCE_SERVER_URL` to clients.
+  `generate-preset`/`clone-voice` routes now rewrite `audio_url` to
+  `/api/audio/<file>.wav` (same domain). MP3 download does a real
+  server-side transcode via `@breezystack/lamejs` + `node-wav` (pure JS,
+  no ffmpeg binary needed — kept Vercel serverless deploy simple). Both
+  new routes take a validated filename only (`^[a-zA-Z0-9_-]+\.wav$`),
+  never a client-supplied URL, to avoid SSRF.
+- `lib/plans.ts`: video removed from the Pro plan, then **restored** same
+  day per explicit user direction — keep the 30s/mo allotment listed (it's
+  reserved/aspirational) but make the "not ready yet" messaging explicit
+  in `billing/page.tsx` (a `note` field on the Pro plan card) referencing
+  Kling and Utopai Studios' PAI by name. Pro's character limit was bumped
+  750k→1.5M along the way and left there.
+- `app/page.tsx` `VideoCloneSection`: replaced the non-functional
+  upload/generate UI (called `/api/clone-video`, which was never wired up)
+  with a static embed of a real EchoMimicV3 test clip
+  (`public/echomimic-demo.mp4`) plus the same honest copy/model references.
+
+**Design assets:**
+- `design/logo-versions/` and `design/background-versions/` (new) — every
+  iteration of both, not just the final file, per explicit user request
+  ("save all logo versions and background versions"). ~14 logo iterations,
+  3 background iterations.
+- Final logo: transparent background (smooth per-pixel alpha falloff based
+  on distance-from-white, not a hard threshold — the earlier hard-threshold
+  version left a visible halo against non-pure-white page backgrounds),
+  white heartbeat/pulse-line waveform (multiple rounds of position/
+  thickness feedback), recolored via HSV hue/saturation swap (keeping
+  per-pixel value/brightness for the existing glossy-3D shading) to match
+  a purple swatch the user sampled directly from a reference painting, plus
+  a low-strength (35%) overlay-blend texture pass using that same
+  painting's canvas-grain as the blend source.
+- Background: swapped between the original `mosaic-courtyard.png` and an
+  AI-generated abstract painting a couple of times based on feedback (the
+  abstract one read as too similar to a real Rothko to some viewers,
+  despite not matching any actual Rothko composition — reverted back to
+  mosaic-courtyard as the shipped choice). Landed on breakpoint-specific
+  `background-size`/`background-position` (not just `cover` + one
+  position) because `cover` crops a different dimension depending on
+  viewport aspect ratio, so a single framing that avoided one problem
+  (a distracting element in the source image) on desktop created a new one
+  (landing on a hard color-block seam in the source art) on mobile.
+
+**Video model comparison (real, not simulated):**
+- Ran actual EchoMimicV3 and Hallo2 zero-shot inference on the same
+  `art_instructor.png` + `driving_audio.wav`, on the `sloane-video` pod
+  (host machine `ddqsq8hvnt1h`, network volume `oc6yvg9b19` shared with
+  `sloane-retrain`). User's verdict: EchoMimicV3 better.
+- Hallo2 setup completed for real this session (earlier attempts had
+  failed with "connection reset by peer" — turned out to just be the pod
+  going idle/stopped, not a real install bug): all deps installed clean
+  (torch 2.2.2+cu121, confirmed CUDA available), 13GB of pretrained
+  weights downloaded via `huggingface-cli download fudan-generative-ai/
+  hallo2 --local-dir ./pretrained_models` (36 files, ~90s on this pod's
+  bandwidth), inference run via `scripts/inference_long.py` with
+  `--source_image`/`--driving_audio` CLI overrides.
+- Real EchoMimicV3 timing captured via a dedicated timed test
+  (`infer_flash.py`, the 8-step "flash" checkpoint,
+  `video_length 81, fps 25` = 3.24s output): **~14s actual sampling time**,
+  ~9.5min cold-start (one-time per pod boot, model loading from disk).
+  Warm per-generation cost ≈ $0.005 at $0.74/hr. This directly
+  contradicts an earlier-session assumption that a user-facing "upload a
+  photo, get a fun demo video" feature would be too expensive to run —
+  the real fixed cost is keeping a pod warm 24/7, not the generation
+  itself.
+- Hallo2's training code (`configs/train/stage1.yaml`,
+  `stage2_long.yaml`) is full-scale training, not a lightweight per-
+  persona adapter: `max_train_steps: 30000` for both stages,
+  `accelerate_config.yaml` defaults to `num_processes: 8`
+  (DeepSpeed ZeRO stage 2), README says "Tested GPUs: A100." No LoRA/
+  DreamBooth-style path exists in the repo. On a single RTX 4090 this is
+  plausibly hundreds of GPU-hours, not the "few hours" originally assumed
+  — corrected course with the user on this mid-session.
+
+**RunPod operational notes:**
+- Full pod inventory fetched via `GET https://rest.runpod.io/v1/pods`:
+  9 pods total, only `sloane-retrain` (`q613gzxs6xrs3h`) should stay
+  `RUNNING`. `sloane-video` (`25cqq216cqtfkn`) was started/stopped twice
+  this session for the comparison + timing test work, each time hitting
+  `"not enough free GPUs on the host machine"` on the first several start
+  attempts (resolved by polling `POST /v1/pods/{id}/start` every 30s —
+  succeeded within 8-18 minutes both times).
+  Balance checked via GraphQL (`POST https://api.runpod.io/graphql` with
+  `query { myself { clientBalance } }` — the REST API has no equivalent
+  endpoint) — hovered $3-5 across the session.
+- `RUNPOD_API_KEY` saved to `web/.env.local` (gitignored — does not
+  transfer via git, must be copied manually to any new machine).
+
+**Mobile app** (`mobile/App.tsx`, `mobile/DeliverySliders.tsx` new):
+- Brought to parity with the web redesign: delivery sliders (added
+  `@react-native-community/slider` dependency — mobile had no sliders at
+  all before, silently generating with default params), voice-picker
+  selected-state styling (scale transform + translucent scrim, since RN
+  has no CSS `filter` equivalent), a native `Share.share()` button, and a
+  fix for 10 voice circles overflowing an unwrapped flex row off-screen
+  (`flexWrap: "wrap"`).
+- Fixed a background-fill bug: `ScrollView`'s content container only
+  sizes to its content by default, leaving a gap at the bottom on screens
+  taller than the content, showing the wrong background color. Fixed with
+  `style={{flex:1}}` on the ScrollView + `flexGrow: 1` on
+  `contentContainerStyle`. Verified via `expo start --web` (added as a
+  `mobile-web` entry in `.claude/launch.json`) using `react-native-web`,
+  **not yet verified on a real device/simulator** — this environment is
+  Windows and cannot run the iOS Simulator; real-device testing via Expo
+  Go was handed off to the user to run from their own machine.
+- App Store readiness assessed and found lacking: never run on a real
+  device before this session, billing routes to a Stripe web checkout
+  (likely needs real Apple In-App Purchase for digital subscriptions,
+  unresolved), and voice/video-cloning apps draw extra App Review
+  scrutiny that hasn't been specifically prepared for.
