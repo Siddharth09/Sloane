@@ -232,6 +232,39 @@ def apply_speed(audio: np.ndarray, rate: float) -> np.ndarray:
     return librosa.effects.time_stretch(audio, rate=rate)
 
 
+TERMINAL_FALL_SEMITONES = -1.5  # subtle - a bigger glide reads as sarcastic/robotic, not natural
+TERMINAL_FALL_TAIL_MS = 280.0
+
+
+def apply_terminal_fall(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray:
+    """LoRA fine-tuning carries a voice's timbre but not reliably the natural
+    downward pitch glide English speakers put on a declarative sentence's
+    final syllables (reported: endings sound flat/unnatural) - that's a
+    time-varying pitch contour, not something a training run with this
+    little per-voice data would learn reliably, so it's added here as real
+    post-processing instead: pitch-shift the sentence's tail down and
+    crossfade it in with a ramp, so the shift is ~0 where the tail begins
+    and fully applied at the very end. Skipped for questions, which
+    naturally rise instead of fall.
+    """
+    stripped = sentence.rstrip()
+    if not stripped or stripped[-1] == "?":
+        return audio
+    tail_len = int(sr * TERMINAL_FALL_TAIL_MS / 1000)
+    if len(audio) < tail_len * 2:
+        return audio  # too short for a glide to read as natural rather than warped
+
+    head, tail = audio[:-tail_len], audio[-tail_len:].astype(np.float32)
+    shifted_tail = librosa.effects.pitch_shift(tail, sr=sr, n_steps=TERMINAL_FALL_SEMITONES)
+    if len(shifted_tail) < len(tail):
+        shifted_tail = np.pad(shifted_tail, (0, len(tail) - len(shifted_tail)), mode="edge")
+    elif len(shifted_tail) > len(tail):
+        shifted_tail = shifted_tail[: len(tail)]
+    ramp = np.linspace(0.0, 1.0, len(tail), dtype=np.float32) ** 1.5
+    blended = tail * (1 - ramp) + shifted_tail * ramp
+    return np.concatenate([head, blended.astype(np.float32)])
+
+
 MAX_GENERATION_ATTEMPTS = 4  # see generate_sentence_with_retry - the underlying bugs this works around
 MIN_WORD_OVERLAP_RATIO = 0.7  # below this, treat as a bad generation (words skipped/mangled) and retry
 
@@ -310,6 +343,7 @@ def synthesize(
     for sentence in sentences:
         trimmed = generate_sentence_with_retry(engine, sentence, reference_path, **kwargs)
         if len(trimmed) > 0:
+            trimmed = apply_terminal_fall(trimmed, sr, sentence)
             all_chunks.append(trimmed)
             sr = engine.sr
             all_chunks.append(np.zeros(int(sr * pause_seconds_for(sentence)), dtype=np.float32))

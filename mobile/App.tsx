@@ -41,8 +41,8 @@ const COLORS = {
 };
 
 const PRESET_VOICES = [
-  { id: "art_instructor", label: "Kirsty", color: COLORS.rose, initial: "K" },
-  { id: "music_instructor", label: "Matt", color: COLORS.sage, initial: "M" },
+  { id: "art_instructor", label: "Vicky", color: COLORS.rose, initial: "V" },
+  { id: "music_instructor", label: "Patrick", color: COLORS.sage, initial: "P" },
   { id: "voice_business", label: "Alice", color: COLORS.pink, initial: "A" },
   { id: "voice_finance", label: "Megan", color: COLORS.blue, initial: "M" },
   { id: "voice_broadcast", label: "Katie", color: COLORS.purple, initial: "K" },

@@ -1,8 +1,8 @@
 export type Voice = { id: string; label: string; color: string; initial: string };
 
 export const PRESET_VOICES: Voice[] = [
-  { id: "art_instructor", label: "Kirsty", color: "bg-rose", initial: "K" },
-  { id: "music_instructor", label: "Matt", color: "bg-sage", initial: "M" },
+  { id: "art_instructor", label: "Vicky", color: "bg-rose", initial: "V" },
+  { id: "music_instructor", label: "Patrick", color: "bg-sage", initial: "P" },
   { id: "voice_business", label: "Alice", color: "bg-pink", initial: "A" },
   { id: "voice_finance", label: "Megan", color: "bg-blue", initial: "M" },
   { id: "voice_broadcast", label: "Katie", color: "bg-purple", initial: "K" },
