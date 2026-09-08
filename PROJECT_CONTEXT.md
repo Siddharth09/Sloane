@@ -1041,3 +1041,162 @@ detail that doesn't fit there.
   (likely needs real Apple In-App Purchase for digital subscriptions,
   unresolved), and voice/video-cloning apps draw extra App Review
   scrutiny that hasn't been specifically prepared for.
+
+## 12. Session updates, 2026-09-08 (evening) - natural pacing, Michelle root
+cause, Robbo new source, RunPod host-availability incident
+
+Continuation of the same day's session (see Sec 11). Full plain-language
+summary in `STATUS.md`.
+
+**Multi-sentence naturalness (`scripts/06_inference_server.py`):**
+User reported multi-sentence audio sounds "rushed and has no emotion."
+Correctly diagnosed as a pipeline architecture problem, not a training
+problem: `synthesize()` generated one sentence per isolated model call
+(zero cross-sentence context) and stitched with an identical fixed-length
+silence gap - true for every voice equally, so no amount of retraining a
+single voice would fix it.
+- `chunk_sentences()`: groups consecutive sentences into one generation
+  call up to `MAX_CHUNK_WORDS = 40`, returning `list[tuple[chunk_text,
+  last_sentence]]` so pause/terminal-fall selection can still key off the
+  actual last sentence's punctuation even when several sentences were
+  generated together. Handles the over-length-single-sentence edge case
+  by emitting it as its own chunk rather than looping incorrectly.
+  Deliberately conservative (not "whole paragraph in one call") because
+  longer generations are more prone to Chatterbox's alignment-stream
+  forced-EOS bug - the original reason sentences were split one-at-a-time.
+- Pause length between chunks: randomized +/-20% instead of identical
+  every time.
+- A synthesized breath sound (`synthesize_breath()` - band-passed shaped
+  noise, attack/decay envelope, inserted before ~55% of sentence-ending
+  pauses) was added, tested live, and then **fully removed** per direct
+  feedback ("very unnatural") - deleted the function and its call site
+  entirely rather than leaving it disabled, since it wasn't going to be
+  revisited.
+- `MAX_CHUNK_WORDS_BY_VOICE = {"voice_meditation": 14, "voice_sales": 14}`:
+  the two data-scarce voices can't reliably produce a long continuous
+  generation the way better-trained voices can. Reproduced live: grouping
+  voice_meditation into ~30-word chunks caused the alignment-stream
+  forced-EOS bug to fire on nearly every attempt (2 of 3 test generations
+  exhausted all 4 retries, shipped near-silent). Capping their chunk size
+  much smaller fixed it (confirmed live, 3x retest, all healthy 7.5-10s).
+
+**`plan_delivery()` - built via a parallel Claude Code session on the
+user's Mac, working the same file concurrently, reviewed and deployed by
+this session:** a punctuation/discourse-cue heuristic (question marks,
+exclamation count, ellipsis/hesitation, quoted dialogue, list structure via
+regex, soft-lexical-marker list e.g. "gently"/"softly"/"breathe", energetic-
+marker list e.g. "amazing"/"let's go") producing bounded offsets to
+exaggeration/cfg_weight/temperature and a pause multiplier, clamped to
+explicit ranges (`EXAGGERATION_RANGE`, `CFG_WEIGHT_RANGE`,
+`TEMPERATURE_RANGE`, `PAUSE_MULTIPLIER_RANGE`). New `resolve_gen_params()`
+merges DEFAULT_GEN_PARAMS -> GEN_PARAMS_BY_VOICE -> plan_delivery offsets
+-> explicit client-supplied overrides (client always wins). Also fixed a
+subtler pre-existing bug as part of the same change: pauses are now
+computed and inserted only between chunks that generated successfully
+(after generation completes, not interleaved with it), so a failed final
+chunk can no longer leave trailing metronomic silence at the end of a
+clip. Verified: full file reviewed line-by-line for consistency (all
+referenced range constants exist, chunk_sentences/synthesize/
+generate_sentence_with_retry integration checked), deployed to the live
+pod, tested with a real request exercising multiple punctuation cues at
+once - clean generation, retry logic and terminal-fall still correctly
+keyed off the last sentence in each chunk.
+
+**Michelle (voice_meditation) - actual root cause found and fixed, not
+just mitigated, via `scripts/03_chunk_by_speech.py`:**
+The chunking script was discarding (not splitting) any whisper-transcribed
+segment longer than a voice's `max_clip_seconds` override. Guided-
+meditation narration has long deliberate pauses; whisper's `vad_filter=True`
+merges speech across those pauses into single long segments, so nearly
+everything exceeded her 8.0s override and was silently thrown away - only
+6.6 of ~50 minutes of her already-demucs-cleaned source audio (confirmed:
+`clean_audio/voice_meditation/source_01.wav` 1641s + `source_02.wav` 1360s,
+both already vocal-isolated from a prior session) ever reached
+`training_data/voice_meditation/`.
+- Fix: `split_long_segment(words, max_seconds)` - recursive split at the
+  single largest internal word-to-word timing gap (the biggest real pause),
+  repeated until every sub-segment fits. Requires `word_timestamps=True` on
+  `model.transcribe()` (previously not passed). Ships a segment as-is if it
+  already fits; drops only if literally no internal gap exists to split on
+  (a genuine run-on with no pause at all).
+- Result: reprocessing the same two source files produced **318 clips /
+  29.7 minutes** (`training_data/voice_meditation/filelist.csv`), a 4.5x
+  increase in usable duration from identical source audio. Ran via a
+  one-off wrapper (`/workspace/rechunk_michelle.py`, imports
+  `03_chunk_by_speech.py` directly and calls `process_speaker()` for just
+  this one speaker dir, clearing old clips first) rather than the full
+  `main()` loop, to avoid re-transcribing every other voice unnecessarily.
+- **Real regression caught and fixed in the same pass**: re-running
+  `05_prepare_finetune_metadata.py` (which loops over all 10 speakers)
+  regenerates *unfiltered* `metadata.csv` for every voice as a side effect
+  - this silently reverted the speaker-isolation filtering already applied
+  to `voice_business`/`voice_finance`/`voice_broadcast` via
+  `09_finalize_speaker_data.py` in an earlier session. Caught before any
+  retraining happened; re-ran `09_finalize_speaker_data.py` and confirmed
+  identical row counts to the pre-existing isolated state (374/514,
+  329/2368, 168/226 respectively) - `09`'s `metadata_unfiltered.csv` backup
+  (written once, on first run only) meant no data was actually lost, just
+  needed the filter step re-applied. `voice_comedy` was confirmed unaffected
+  - its speaker separation was done via source-level timestamp trimming in
+  an earlier session, not the 08/09 cluster-filter pipeline, so it has no
+  `metadata_unfiltered.csv` and re-running 05 for it is a no-op concern.
+  **Lesson reinforced for next time**: 05 must always be followed by 09 for
+  any voice in `KEEP_CLUSTER` (`voice_business`, `voice_finance`,
+  `voice_broadcast`) whenever 05 is re-run for *any* reason, even if that
+  voice's own source data didn't change.
+- Retraining Michelle's LoRA on the expanded dataset was queued
+  (`scripts/07_finetune_new_voices.sh` updated: `VOICES=(voice_meditation
+  voice_sales)`) but never executed this session - blocked on GPU pod
+  availability (see below).
+
+**Robbo (voice_sales) - new source material added, deliberately not
+speaker-isolated:**
+User provided `Downloads/robbo.mp4` (1.15GB, 58 minutes, 1920x1080, found
+via case-insensitive search - user referred to it as a "folder called
+robbo" but it was two flat files, `robbo.mp4` + an unrelated small
+`robbo.wav` that was actually a leftover test-output file from earlier in
+this same session, not source material). Video contains two similar-
+sounding men; explicit instruction was to blend both into one voice rather
+than isolate a single speaker (the opposite of the
+voice_business/finance/broadcast treatment).
+- Audio extracted locally via a discovered local ffmpeg binary
+  (`AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg.../ffmpeg.exe` -
+  no local Python available in this environment, but ffmpeg was present)
+  rather than uploading the full 1.15GB video: `-vn -ac 1 -ar 48000 -c:a
+  pcm_s16le`, producing a 334.7MB WAV, uploaded to
+  `raw_audio/voice_sales/source_02.wav` (alongside the existing tiny
+  `source_01.wav`, ~6.2MB, the original 16-clip source).
+- A combined processing script was written and uploaded to the pod
+  (`/workspace/process_robbo.py`): runs demucs vocal separation targeted
+  at just `voice_sales` (checks `out_path.exists()` per-file so it's safe
+  to run without re-processing already-separated speakers), then the fixed
+  chunking script (clears old `training_data/voice_sales/` first), then
+  `05_prepare_finetune_metadata.py` (all speakers, idempotent for the
+  unaffected ones), then `09_finalize_speaker_data.py` again as a
+  precaution (same regression class as Michelle's, above) - **written and
+  uploaded but never executed**, blocked on GPU pod availability.
+
+**RunPod host-availability incident - the "not enough free GPUs" failure
+persisted far longer than the normal range observed twice earlier the same
+day (8-18 minutes each):** three full 30-minute retry cycles (using the
+same `for i in 1..60; sleep 30` pattern as before) against `sloane-video`
+(host `ddqsq8hvnt1h`) all failed completely - 90+ minutes with zero
+successful starts, also tried the other 6 stopped pods on the account
+during this window, all returned the identical error (broader capacity
+pressure on that RunPod tier at the time, not specific to one host).
+Presented the user a real alternative (create a fresh pod on a different
+host - the network volume `oc6yvg9b19` makes this low-risk since training
+data/venvs/scripts are already there regardless of which pod mounts it) via
+`AskUserQuestion`; user gave no preference, then before the new pod was
+actually created, called off the work for the day (`cancel for today shut
+pod down`). Confirmed via `GET /v1/pods` that all 8 non-production pods
+were already `EXITED` (the failed start attempts never left anything
+running/billing), killed the background retry-loop process directly (`ps
+-ef | grep retry_start_pod`, `kill`) to prevent a lucky late success from
+starting a pod after the "stand down" instruction. Balance dipped to $1.36
+mid-session (below the user's self-set $2 alert - flagged immediately) and
+was topped up by the user to ~$10.27 before the session ended.
+**Unresolved and queued for next session**: create a new pod (recommended
+over continuing to retry `sloane-video`) and run
+`process_robbo.py` + `07_finetune_new_voices.sh` for both voice_meditation
+and voice_sales.
