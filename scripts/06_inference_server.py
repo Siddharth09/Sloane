@@ -231,6 +231,62 @@ def pause_seconds_for(sentence: str) -> float:
     return DEFAULT_PAUSE_SECONDS
 
 
+# Generating one isolated sentence per model call (the original design) is
+# exactly why multi-sentence text sounds rushed/disconnected/emotionless -
+# each sentence gets zero context about what came before or after it, so
+# there's no cross-sentence prosody: no building emphasis, no continuity of
+# pacing, nothing. Grouping consecutive sentences into one generation call
+# lets the model produce real continuous delivery within a chunk. Kept
+# conservative (not "the whole paragraph in one call") because longer single
+# generations are more prone to Chatterbox's alignment-stream forced-EOS
+# bug (see generate_sentence_with_retry) - this is a real tradeoff, not a
+# free win, so MAX_CHUNK_WORDS deliberately stays well under where that
+# instability was observed to get worse.
+MAX_CHUNK_WORDS = 40
+
+
+def chunk_sentences(sentences: list[str], max_words: int = MAX_CHUNK_WORDS) -> list[str]:
+    chunks: list[str] = []
+    current: list[str] = []
+    current_words = 0
+    for sentence in sentences:
+        word_count = len(sentence.split())
+        if current and current_words + word_count > max_words:
+            chunks.append(" ".join(current))
+            current = []
+            current_words = 0
+        current.append(sentence)
+        current_words += word_count
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+
+
+def synthesize_breath(sr: int, duration: float = 0.18, rng: np.random.Generator | None = None) -> np.ndarray:
+    """A brief, quiet inhale-like sound for natural pause points instead of
+    pure digital silence. Real speech has audible micro-breaths at phrase
+    boundaries; their total absence is part of what reads as "rushed" in
+    stitched-together TTS output. Synthesized (band-passed shaped noise with
+    a soft attack/decay envelope), not a recorded sample - no new audio
+    asset to manage, and randomized per-call so it's not the exact same
+    clip looping every time.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+    n = int(sr * duration)
+    noise = rng.normal(0, 1, n).astype(np.float32)
+    sos = butter(2, [200, 2200], btype="bandpass", fs=sr, output="sos")
+    breath = sosfilt(sos, noise).astype(np.float32)
+    envelope = np.ones(n, dtype=np.float32)
+    attack = max(1, int(n * 0.35))
+    envelope[:attack] = np.linspace(0, 1, attack, dtype=np.float32)
+    envelope[attack:] = np.linspace(1, 0, n - attack, dtype=np.float32)
+    breath *= envelope
+    peak = np.max(np.abs(breath)) or 1.0
+    breath = breath / peak * 0.035  # quiet - a hint of breath, not a gasp
+    return breath
+
+
 def apply_highpass(audio: np.ndarray, sr: int, cutoff_hz: float) -> np.ndarray:
     sos = butter(4, cutoff_hz, btype="highpass", fs=sr, output="sos")
     return sosfilt(sos, audio).astype(np.float32)
@@ -441,13 +497,26 @@ def synthesize(
     all_chunks = []
     sr = 24000
     sentences = split_sentences(text)
-    for sentence in sentences:
-        trimmed = generate_sentence_with_retry(engine, sentence, reference_path, **kwargs)
+    text_chunks = chunk_sentences(sentences)
+    rng = np.random.default_rng()
+    for chunk in text_chunks:
+        trimmed = generate_sentence_with_retry(engine, chunk, reference_path, **kwargs)
         if len(trimmed) > 0:
-            trimmed = apply_terminal_fall(trimmed, sr, sentence)
+            trimmed = apply_terminal_fall(trimmed, sr, chunk)
             all_chunks.append(trimmed)
             sr = engine.sr
-            all_chunks.append(np.zeros(int(sr * pause_seconds_for(sentence)), dtype=np.float32))
+            base_pause = pause_seconds_for(chunk)
+            # subtle randomization instead of an identical, metronomic gap
+            # every time - real pause length between phrases isn't perfectly
+            # uniform even from the same speaker
+            jittered_pause = max(0.08, base_pause * rng.uniform(0.8, 1.25))
+            # a soft breath before the longer (sentence-ending) pauses, not
+            # every gap - real speakers don't audibly breathe after every
+            # short clause, and doing it constantly would itself sound
+            # mechanical
+            if base_pause >= PAUSE_SECONDS_BY_ENDING["."] and rng.random() < 0.55:
+                all_chunks.append(synthesize_breath(sr, rng=rng))
+            all_chunks.append(np.zeros(int(sr * jittered_pause), dtype=np.float32))
     if not all_chunks:
         return None, None
     audio = np.concatenate(all_chunks)
