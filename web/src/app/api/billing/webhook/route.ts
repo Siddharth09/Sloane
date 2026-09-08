@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
-import { upsertSubscriberForCheckout, setSubscriberStatus, initSchema } from "@/lib/db";
+import { upsertSubscriberForCheckout, setSubscriberStatus, linkSubscriberToUser, initSchema } from "@/lib/db";
 import { planFromStripePriceId } from "@/lib/plans";
 import { sendAccessCodeEmail, sendPaymentFailedEmail } from "@/lib/email";
 import type Stripe from "stripe";
@@ -48,6 +48,12 @@ export async function POST(req: NextRequest) {
       // monthly too) - a "welcome, here's your code" email every renewal
       // would be spammy and confusing.
       await sendAccessCodeEmail(email, accessToken, plan);
+      // If checkout was started from a logged-in session, link this
+      // subscriber straight to that account so /account shows it immediately
+      // without waiting for a lazy email-match on next login.
+      if (session.client_reference_id && email) {
+        await linkSubscriberToUser(email, session.client_reference_id);
+      }
       break;
     }
 

@@ -62,6 +62,53 @@ export async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email TEXT UNIQUE NOT NULL,
+      google_id TEXT UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS login_tokens (
+      token TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS generations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      voice_label TEXT,
+      text_preview TEXT NOT NULL,
+      audio_url TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+  await sql`ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS pending_generations (
+      job_id TEXT PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      voice_label TEXT,
+      text_preview TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
 }
 
 // Generic runtime settings, switchable from the admin dashboard without a
@@ -230,4 +277,187 @@ export async function recordFreeUsage(id: string, characters: number) {
       period_start = CASE WHEN free_tier_usage.period_end < now() THEN now() ELSE free_tier_usage.period_start END,
       period_end = CASE WHEN free_tier_usage.period_end < now() THEN now() + interval '30 days' ELSE free_tier_usage.period_end END
   `;
+}
+
+// --- Real sign-in (magic link + Google), sessions, and generation history ---
+//
+// Deliberately hand-rolled the same way as `access_token` above and the
+// admin password gate, rather than pulling in an auth library: opaque
+// random tokens, looked up by exact match in Postgres. `login_tokens` are
+// single-use email verification codes (consumed by DELETE ... RETURNING);
+// `sessions` are long-lived opaque ids stored in an httpOnly cookie (see
+// @/lib/auth). This intentionally does NOT replace the access_token/quota
+// system above - logging in just syncs a subscriber's existing access_token
+// into the browser (see /api/account), so generate-preset/clone-voice need
+// no changes at all.
+
+export type User = {
+  id: string;
+  email: string;
+  google_id: string | null;
+  created_at: string;
+};
+
+export type Generation = {
+  id: string;
+  user_id: string;
+  kind: "preset" | "clone";
+  voice_label: string | null;
+  text_preview: string;
+  audio_url: string;
+  created_at: string;
+  expires_at: string;
+};
+
+function generateOpaqueToken(bytes = 32): string {
+  return randomBytes(bytes).toString("hex");
+}
+
+export async function createLoginToken(email: string): Promise<string> {
+  const token = generateOpaqueToken();
+  await sql`
+    INSERT INTO login_tokens (token, email, expires_at)
+    VALUES (${token}, ${email}, now() + interval '15 minutes')
+  `;
+  return token;
+}
+
+// Single-use: the DELETE...RETURNING both validates and consumes the token
+// in one round trip, so a token can never be replayed even under a race.
+export async function consumeLoginToken(token: string): Promise<string | null> {
+  const rows = await sql`
+    DELETE FROM login_tokens WHERE token = ${token} AND expires_at > now()
+    RETURNING email
+  `;
+  return (rows[0]?.email as string) ?? null;
+}
+
+export async function upsertUserByEmail(email: string): Promise<User> {
+  const rows = await sql`
+    INSERT INTO users (email) VALUES (${email})
+    ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+    RETURNING *
+  `;
+  return rows[0] as User;
+}
+
+export async function upsertUserByGoogle(email: string, googleId: string): Promise<User> {
+  const existingByGoogle = await sql`SELECT * FROM users WHERE google_id = ${googleId}`;
+  if (existingByGoogle[0]) return existingByGoogle[0] as User;
+  const rows = await sql`
+    INSERT INTO users (email, google_id) VALUES (${email}, ${googleId})
+    ON CONFLICT (email) DO UPDATE SET google_id = EXCLUDED.google_id
+    RETURNING *
+  `;
+  return rows[0] as User;
+}
+
+export async function getUserById(id: string): Promise<User | null> {
+  const rows = await sql`SELECT * FROM users WHERE id = ${id}`;
+  return (rows[0] as User) ?? null;
+}
+
+export async function createSessionRow(userId: string): Promise<string> {
+  const id = generateOpaqueToken();
+  await sql`INSERT INTO sessions (id, user_id, expires_at) VALUES (${id}, ${userId}, now() + interval '30 days')`;
+  return id;
+}
+
+export async function getSessionUserRow(sessionId: string): Promise<User | null> {
+  const rows = await sql`
+    SELECT u.* FROM sessions s
+    JOIN users u ON u.id = s.user_id
+    WHERE s.id = ${sessionId} AND s.expires_at > now()
+  `;
+  return (rows[0] as User) ?? null;
+}
+
+export async function deleteSessionRow(sessionId: string) {
+  await sql`DELETE FROM sessions WHERE id = ${sessionId}`;
+}
+
+// Lazily attaches any pre-existing subscriber (from a checkout made before
+// this person had a real account) to their new user id, matched by email.
+// Only claims rows nobody has claimed yet, so this is safe to call on every
+// login with no risk of stealing another account's subscription.
+export async function linkSubscriberToUser(email: string, userId: string) {
+  await sql`UPDATE subscribers SET user_id = ${userId} WHERE email = ${email} AND user_id IS NULL`;
+}
+
+export async function getSubscriberByUserId(userId: string): Promise<Subscriber | null> {
+  const rows = await sql`SELECT * FROM subscribers WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT 1`;
+  return (rows[0] as Subscriber) ?? null;
+}
+
+// Tunable from /admin without a redeploy, same pattern as the inference
+// backend toggle - lets retention (and therefore Blob storage cost) be
+// adjusted after seeing real traffic instead of guessing once and shipping.
+export async function getGenerationRetentionDays(): Promise<number> {
+  const stored = await getSetting("generation_retention_days");
+  const n = stored ? parseInt(stored, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 14;
+}
+
+export async function recordGeneration(params: {
+  userId: string;
+  kind: "preset" | "clone";
+  voiceLabel: string | null;
+  textPreview: string;
+  audioUrl: string;
+}) {
+  const retentionDays = await getGenerationRetentionDays();
+  await sql`
+    INSERT INTO generations (user_id, kind, voice_label, text_preview, audio_url, expires_at)
+    VALUES (${params.userId}, ${params.kind}, ${params.voiceLabel}, ${params.textPreview}, ${params.audioUrl}, now() + (${retentionDays} * interval '1 day'))
+  `;
+}
+
+export async function listGenerationsForUser(userId: string): Promise<Generation[]> {
+  const rows = await sql`
+    SELECT * FROM generations WHERE user_id = ${userId} AND expires_at > now() ORDER BY created_at DESC
+  `;
+  return rows as Generation[];
+}
+
+export async function getExpiredGenerations(): Promise<Generation[]> {
+  const rows = await sql`SELECT * FROM generations WHERE expires_at <= now()`;
+  return rows as Generation[];
+}
+
+export async function deleteGenerationsByIds(ids: string[]) {
+  if (ids.length === 0) return;
+  await sql`DELETE FROM generations WHERE id = ANY(${ids}::uuid[])`;
+}
+
+// Serverless generation is async (submit job -> poll job-status), so at
+// submission time we only know who asked for it, not the finished audio -
+// this bridges the two requests. Pod mode never needs this since audio
+// comes back synchronously in the same request that knows the user.
+export type PendingGeneration = {
+  job_id: string;
+  user_id: string;
+  kind: "preset" | "clone";
+  voice_label: string | null;
+  text_preview: string;
+};
+
+export async function createPendingGeneration(params: {
+  jobId: string;
+  userId: string;
+  kind: "preset" | "clone";
+  voiceLabel: string | null;
+  text: string;
+}) {
+  await sql`
+    INSERT INTO pending_generations (job_id, user_id, kind, voice_label, text_preview)
+    VALUES (${params.jobId}, ${params.userId}, ${params.kind}, ${params.voiceLabel}, ${params.text.slice(0, 200)})
+  `;
+}
+
+// Single-use, same DELETE...RETURNING pattern as consumeLoginToken - a
+// completed job could in principle be polled more than once before the
+// client stops, and this ensures it's only ever recorded once.
+export async function consumePendingGeneration(jobId: string): Promise<PendingGeneration | null> {
+  const rows = await sql`DELETE FROM pending_generations WHERE job_id = ${jobId} RETURNING *`;
+  return (rows[0] as PendingGeneration) ?? null;
 }

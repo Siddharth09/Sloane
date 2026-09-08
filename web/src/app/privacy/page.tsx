@@ -1,8 +1,15 @@
 import { LogoMark } from "@/components/LogoMark";
+import { getGenerationRetentionDays, initSchema } from "@/lib/db";
 
 export const metadata = {
   title: "Privacy Policy — Lucy Labs",
 };
+
+// Reads a live, admin-tunable setting (generation retention days) - without
+// this the page would statically bake in whatever that value was at build
+// time and drift out of sync after the next /admin change, same mistake
+// this rewrite exists to fix.
+export const dynamic = "force-dynamic";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -13,7 +20,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  await initSchema();
+  const retentionDays = await getGenerationRetentionDays();
   return (
     <div className="min-h-screen px-6 py-16">
       <main className="mx-auto flex max-w-2xl flex-col gap-8">
@@ -86,9 +95,12 @@ export default function PrivacyPage() {
 
           <Section title="Data retention &amp; deletion">
             <p>
-              Generated audio/video clips and uploaded samples are kept so you can access your history
-              and re-download past generations. If you&apos;d like anything deleted — your account,
-              uploaded samples, or generated clips — email us and we&apos;ll take care of it.
+              If you generate audio or video without signing in, nothing is stored on our servers — it
+              exists only in your browser for that session. If you sign in, we keep a short history of
+              your generations (currently {retentionDays} days) so you can play them back and re-download
+              them from your account; anything older is automatically deleted. If you&apos;d like anything deleted
+              sooner — your account, uploaded samples, or generated clips — email us and we&apos;ll take
+              care of it.
             </p>
           </Section>
 

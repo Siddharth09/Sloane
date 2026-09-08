@@ -59,9 +59,14 @@ export function AccountWidget() {
             Save
           </button>
         </div>
-        <a href="/billing" className="text-xs font-semibold text-coral-dark underline">
-          See plans →
-        </a>
+        <div className="flex gap-4">
+          <a href="/billing" className="text-xs font-semibold text-coral-dark underline">
+            See plans →
+          </a>
+          <a href="/account" className="text-xs font-semibold text-coral-dark underline">
+            Sign in →
+          </a>
+        </div>
       </div>
     );
   }

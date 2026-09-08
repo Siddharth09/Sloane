@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getJobStatus } from "@/lib/runpod";
+import { consumePendingGeneration } from "@/lib/db";
+import { saveGenerationAudio } from "@/lib/generationHistory";
 
 // Polled by the client after generate-preset/clone-voice hand back a jobId
 // (see web/src/app/page.tsx's handleGenerate). On COMPLETED, the audio comes
@@ -38,6 +40,22 @@ export async function GET(req: NextRequest) {
   const output = result.output as { audio_base64?: string; sample_rate?: number; voice_id?: string; error?: string } | undefined;
   if (!output?.audio_base64) {
     return NextResponse.json({ status: "FAILED", error: output?.error ?? "No audio in job output" });
+  }
+
+  // If generate-preset/clone-voice recorded a pending entry for this job
+  // (i.e. the requester was signed in), this is the first point the actual
+  // audio exists - Serverless mode never has it any earlier. consumePendingGeneration
+  // is single-use so a repeated poll on an already-completed job can't
+  // double-save it.
+  const pending = await consumePendingGeneration(jobId);
+  if (pending) {
+    await saveGenerationAudio({
+      userId: pending.user_id,
+      kind: pending.kind,
+      voiceLabel: pending.voice_label,
+      text: pending.text_preview,
+      audioBase64: output.audio_base64,
+    });
   }
 
   return NextResponse.json({

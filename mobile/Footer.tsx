@@ -27,6 +27,10 @@ export function Footer() {
         <Text style={styles.link} onPress={() => Linking.openURL(`${WEB_BASE}/privacy`)}>
           Privacy Policy
         </Text>
+        <Text style={styles.muted}> · </Text>
+        <Text style={styles.link} onPress={() => Linking.openURL(`${WEB_BASE}/account`)}>
+          Account
+        </Text>
       </View>
       <Text style={styles.copyright}>© {new Date().getFullYear()} Astryks Group. All rights reserved.</Text>
     </View>
