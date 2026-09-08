@@ -8,8 +8,8 @@ type Status = {
   status: string;
   charactersUsed: number;
   charactersLimit: number;
-  videoSecondsUsed: number;
-  videoSecondsLimit: number;
+  videoCreditsUsed: number;
+  videoCreditsLimit: number;
 };
 
 export function AccountWidget() {
@@ -80,8 +80,8 @@ export function AccountWidget() {
           <p className="font-semibold text-foreground">{status.plan} plan</p>
           <p className="text-muted">
             {status.charactersUsed.toLocaleString()} / {status.charactersLimit.toLocaleString()} characters used this period
-            {status.videoSecondsLimit > 0 && (
-              <> · {status.videoSecondsUsed}/{status.videoSecondsLimit}s video</>
+            {status.videoCreditsLimit > 0 && (
+              <> · {status.videoCreditsUsed}/{status.videoCreditsLimit} video credits</>
             )}
           </p>
           <a href="/billing" className="text-xs font-semibold text-coral-dark underline">

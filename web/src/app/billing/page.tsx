@@ -4,37 +4,26 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAccessToken } from "@/lib/useAccessToken";
 import { LogoMark } from "@/components/LogoMark";
-import type { PlanId } from "@/lib/plans";
+import { PLANS, VIDEO_CREDIT_COSTS, type PlanId } from "@/lib/plans";
 
-const PLAN_CARDS: { id: PlanId; name: string; price: string; blurb: string; features: string[]; note?: string; wash: string; accent: string }[] = [
-  {
-    id: "free",
-    name: "Free",
-    price: "$0",
-    blurb: "Try it out",
-    features: ["10,000 characters/month", "All preset voices"],
-    wash: "bg-surface",
-    accent: "text-muted",
-  },
-  {
-    id: "plus",
-    name: "Plus",
-    price: "$3/mo",
-    blurb: "For regular use",
-    features: ["200,000 characters/month", "Clone any voice"],
-    wash: "bg-pink-wash/90",
-    accent: "text-pink",
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: "$9/mo",
-    blurb: "For power users",
-    features: ["1,500,000 characters/month", "Clone any voice", "30 seconds/month video cloning"],
-    note: "Honest heads-up: our video quality is a long way from realistic right now — well behind leading tools like Kling or Utopai Studios' PAI. We're actively working on closing that gap; this allotment is reserved for you the moment it's ready.",
-    wash: "bg-purple-wash/90",
-    accent: "text-purple",
-  },
+// Talking-head/cinematic equivalents shown per plan are derived from the
+// same ratios used for real vendor billing (VIDEO_CREDIT_COSTS in
+// lib/plans.ts) so this display can never drift out of sync with the
+// numbers actually enforced server-side once video ships.
+function videoCreditsBlurb(credits: number): string | null {
+  if (credits <= 0) return null;
+  const talkSeconds = Math.round(credits * VIDEO_CREDIT_COSTS.talkingHeadSecondsPerCredit);
+  const cineSeconds = Math.round(credits * VIDEO_CREDIT_COSTS.cinematicSecondsPerCredit);
+  return `${credits} video credits/month (≈${talkSeconds}s talking-head, or ≈${cineSeconds}s cinematic)`;
+}
+
+const VIDEO_NOTE =
+  "Honest heads-up: video isn't live yet — our quality is a long way from realistic right now, well behind leading tools like Kling or Veo. Credits above are reserved for the moment it ships. When it does: talking-head and cinematic scenes will be sent to third-party AI vendors for processing (not fully self-hosted like audio is today) — we'll disclose that clearly in the product before you use it.";
+
+const PLAN_CARDS: { id: PlanId; blurb: string; wash: string; accent: string }[] = [
+  { id: "free", blurb: "Try it out", wash: "bg-surface", accent: "text-muted" },
+  { id: "plus", blurb: "For regular use", wash: "bg-pink-wash/90", accent: "text-pink" },
+  { id: "pro", blurb: "For power users", wash: "bg-purple-wash/90", accent: "text-purple" },
 ];
 
 function CheckoutSuccess() {
@@ -140,39 +129,51 @@ export default function BillingPage() {
         )}
 
         <div className="grid gap-6 sm:grid-cols-3">
-          {PLAN_CARDS.map((p) => (
-            <div
-              key={p.id}
-              className={`flex flex-col gap-4 rounded-[28px] border border-white/60 p-6 shadow-soft backdrop-blur-xl ${p.wash}`}
-            >
-              <div>
-                <h2 className="text-lg font-extrabold tracking-tight">{p.name}</h2>
-                <p className="text-sm text-muted">{p.blurb}</p>
+          {PLAN_CARDS.map((p) => {
+            const plan = PLANS[p.id];
+            const price = plan.priceUsdCents === 0 ? "$0" : `$${(plan.priceUsdCents / 100).toFixed(0)}/mo`;
+            const videoBlurb = videoCreditsBlurb(plan.videoCreditsPerMonth);
+            const features = [
+              `${plan.charactersPerMonth.toLocaleString()} characters of audio/month`,
+              p.id === "free" ? "All 10 preset voices" : "Clone any voice from an upload",
+              videoBlurb ?? "No video credits",
+            ];
+            return (
+              <div
+                key={p.id}
+                className={`flex flex-col gap-4 rounded-[28px] border border-white/60 p-6 shadow-soft backdrop-blur-xl ${p.wash}`}
+              >
+                <div>
+                  <h2 className="text-lg font-extrabold tracking-tight">{plan.name}</h2>
+                  <p className="text-sm text-muted">{p.blurb}</p>
+                </div>
+                <p className={`text-3xl font-extrabold ${p.accent}`}>{price}</p>
+                <ul className="flex flex-1 flex-col gap-2 text-sm text-foreground">
+                  {features.map((f) => (
+                    <li key={f} className="flex items-start gap-2">
+                      <span className={p.accent}>✓</span> {f}
+                    </li>
+                  ))}
+                </ul>
+                {videoBlurb && (
+                  <p className="rounded-2xl bg-white/60 p-3 text-xs leading-relaxed text-muted">{VIDEO_NOTE}</p>
+                )}
+                {p.id === "free" ? (
+                  <span className="rounded-full border border-border py-2.5 text-center text-sm font-bold text-muted">
+                    Current default
+                  </span>
+                ) : (
+                  <button
+                    className="shadow-soft rounded-full bg-foreground py-2.5 text-sm font-bold text-white transition hover:brightness-110 disabled:opacity-50"
+                    disabled={loadingPlan !== null}
+                    onClick={() => subscribe(p.id)}
+                  >
+                    {loadingPlan === p.id ? "Redirecting…" : "Subscribe"}
+                  </button>
+                )}
               </div>
-              <p className={`text-3xl font-extrabold ${p.accent}`}>{p.price}</p>
-              <ul className="flex flex-1 flex-col gap-2 text-sm text-foreground">
-                {p.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2">
-                    <span className={p.accent}>✓</span> {f}
-                  </li>
-                ))}
-              </ul>
-              {p.note && <p className="rounded-2xl bg-white/60 p-3 text-xs leading-relaxed text-muted">{p.note}</p>}
-              {p.id === "free" ? (
-                <span className="rounded-full border border-border py-2.5 text-center text-sm font-bold text-muted">
-                  Current default
-                </span>
-              ) : (
-                <button
-                  className="shadow-soft rounded-full bg-foreground py-2.5 text-sm font-bold text-white transition hover:brightness-110 disabled:opacity-50"
-                  disabled={loadingPlan !== null}
-                  onClick={() => subscribe(p.id)}
-                >
-                  {loadingPlan === p.id ? "Redirecting…" : "Subscribe"}
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <p className="text-center text-xs text-muted">
