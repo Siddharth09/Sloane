@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AccountWidget } from "@/components/AccountWidget";
 import { Footer } from "@/components/Footer";
 import { LogoMark } from "@/components/LogoMark";
@@ -17,10 +17,30 @@ import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
 // server's public URL directly for now.
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
-// Mirrors the server-side INFERENCE_BACKEND toggle (@/lib/inferenceBackend)
-// so this one piece of UI copy can be accurate before a request is even
-// made - keep both env vars in sync, nothing enforces that automatically.
-const IS_POD_MODE = process.env.NEXT_PUBLIC_INFERENCE_BACKEND === "pod";
+// Backend mode is switchable at runtime from /admin (see
+// @/lib/inferenceBackend) - fetched here rather than read from a build-time
+// env var, so the UI copy stays accurate without needing a redeploy every
+// time the mode is flipped. Module-level cache so both generation sections
+// share one fetch instead of duplicating it.
+let cachedPodMode: boolean | null = null;
+
+function useIsPodMode(): boolean {
+  const [isPodMode, setIsPodMode] = useState(cachedPodMode ?? false);
+  useEffect(() => {
+    if (cachedPodMode !== null) return;
+    fetch("/api/inference-mode")
+      .then((r) => r.json())
+      .then((data) => {
+        cachedPodMode = data.mode === "pod";
+        setIsPodMode(cachedPodMode);
+      })
+      .catch(() => {
+        // Leave the default (Serverless-style copy) - harmless either way,
+        // it's just informational text, not enforcement.
+      });
+  }, []);
+  return isPodMode;
+}
 
 function base64ToBlob(base64: string, mimeType: string): Blob {
   const byteChars = atob(base64);
@@ -227,6 +247,7 @@ function PresetVoiceSection() {
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
+  const isPodMode = useIsPodMode();
   const { generate, loading, error, audioBase64, statusMessage, showWaitingUi } = useAudioGeneration("/api/generate-preset");
 
   async function handleGenerate() {
@@ -256,7 +277,7 @@ function PresetVoiceSection() {
       />
       <VoicePicker value={voiceId} onChange={setVoiceId} />
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-pink" />
-      {!IS_POD_MODE && (
+      {!isPodMode && (
         <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
       )}
       <GenerateButton loading={loading} disabled={!text || loading} onClick={handleGenerate} colorClassName="bg-pink" />
@@ -277,6 +298,7 @@ function CloneVoiceSection() {
   const [text, setText] = useState("");
   const [file, setFile] = useState<Blob | File | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
+  const isPodMode = useIsPodMode();
   const { generate, loading, error, audioBase64, statusMessage, showWaitingUi } = useAudioGeneration("/api/clone-voice");
 
   async function handleGenerate() {
@@ -307,7 +329,7 @@ function CloneVoiceSection() {
         onChange={(e) => setText(e.target.value)}
       />
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-blue" />
-      {!IS_POD_MODE && (
+      {!isPodMode && (
         <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
       )}
       <GenerateButton loading={loading} disabled={!text || !file || loading} onClick={handleGenerate} colorClassName="bg-blue" />

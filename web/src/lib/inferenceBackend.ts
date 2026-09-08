@@ -1,17 +1,35 @@
+import { initSchema, getSetting, setSetting } from "./db";
+
 // Dual-backend toggle: audio generation can run against either the
 // always-on GPU Pod (fast, billed hourly - good for a launch window with
 // real concurrent traffic where latency matters) or RunPod Serverless
 // (cheap, cold starts - good once traffic is quiet). See
 // STATUS.md "Dual backend toggle" for the operational runbook.
 //
-// Controlled by INFERENCE_BACKEND=pod|serverless (server-only) and mirrored
-// to NEXT_PUBLIC_INFERENCE_BACKEND for the one piece of UI copy that needs
-// to know before a request is even made (the "may take 20-60s" note).
-// Keep both env vars in sync - nothing enforces that automatically.
+// Switchable at runtime from the admin dashboard (/admin), stored in
+// Postgres rather than an env var - env vars need a fresh Vercel deploy to
+// take effect (the CLI's `redeploy` turned out not to reliably pick up
+// changed values), which is real friction for something that should be a
+// one-click operational toggle, especially mid-incident. Falls back to the
+// INFERENCE_BACKEND env var (default "serverless") only if the DB has never
+// been set - that's the one-time initial value, not the source of truth.
 const INFERENCE_SERVER_URL = process.env.INFERENCE_SERVER_URL;
+const SETTING_KEY = "inference_backend";
 
-export function isPodMode(): boolean {
-  return process.env.INFERENCE_BACKEND === "pod";
+export async function getInferenceBackend(): Promise<"pod" | "serverless"> {
+  await initSchema();
+  const stored = await getSetting(SETTING_KEY);
+  if (stored === "pod" || stored === "serverless") return stored;
+  return process.env.INFERENCE_BACKEND === "pod" ? "pod" : "serverless";
+}
+
+export async function setInferenceBackend(mode: "pod" | "serverless") {
+  await initSchema();
+  await setSetting(SETTING_KEY, mode);
+}
+
+export async function isPodMode(): Promise<boolean> {
+  return (await getInferenceBackend()) === "pod";
 }
 
 // Pod mode fetches synchronously and returns already-decoded base64 audio,

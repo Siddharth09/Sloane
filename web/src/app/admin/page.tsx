@@ -11,12 +11,16 @@ type Stats = {
   activePaths: { path: string; visitors: number }[];
 };
 
+type BackendMode = "pod" | "serverless";
+
 export default function AdminDashboard() {
   const [password, setPassword] = useState<string | null>(null);
   const [passwordInput, setPasswordInput] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [backendMode, setBackendMode] = useState<BackendMode | null>(null);
+  const [switchingMode, setSwitchingMode] = useState(false);
 
   useEffect(() => {
     const saved = sessionStorage.getItem(PASSWORD_KEY);
@@ -55,6 +59,35 @@ export default function AdminDashboard() {
       clearInterval(interval);
     };
   }, [password]);
+
+  useEffect(() => {
+    if (!password) return;
+    fetch("/api/admin/backend-mode", { headers: { "x-admin-password": password } })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.mode === "pod" || data.mode === "serverless") setBackendMode(data.mode);
+      })
+      .catch(() => {});
+  }, [password]);
+
+  async function switchBackendMode(mode: BackendMode) {
+    if (!password || mode === backendMode) return;
+    setSwitchingMode(true);
+    try {
+      const res = await fetch("/api/admin/backend-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        body: JSON.stringify({ mode }),
+      });
+      const data = await res.json();
+      if (res.ok) setBackendMode(data.mode);
+      else setError(data.error ?? "Failed to switch mode");
+    } catch {
+      setError("Couldn't reach the server.");
+    } finally {
+      setSwitchingMode(false);
+    }
+  }
 
   if (!password) {
     return (
@@ -99,6 +132,43 @@ export default function AdminDashboard() {
         </div>
 
         {error && <p className="text-sm text-coral-dark">{error}</p>}
+
+        <div className="rounded-[28px] border border-white/60 bg-surface/90 p-7 shadow-soft-lg backdrop-blur-xl">
+          <h2 className="text-sm font-bold text-foreground">Audio generation backend</h2>
+          <p className="mt-1 text-sm text-muted">
+            Switches instantly, no redeploy needed. Use Pod during a launch window with real traffic
+            (fast, no cold starts, billed hourly whether used or not). Switch to Serverless once traffic
+            is quiet (billed only for actual usage, but cold starts can take 20-60s+).
+          </p>
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={() => switchBackendMode("pod")}
+              disabled={switchingMode || backendMode === "pod"}
+              className={`flex-1 rounded-full py-2.5 text-sm font-bold transition disabled:cursor-default ${
+                backendMode === "pod"
+                  ? "bg-coral text-white"
+                  : "border border-border bg-white text-foreground hover:bg-white/70"
+              }`}
+            >
+              Pod (fast, $/hr)
+            </button>
+            <button
+              onClick={() => switchBackendMode("serverless")}
+              disabled={switchingMode || backendMode === "serverless"}
+              className={`flex-1 rounded-full py-2.5 text-sm font-bold transition disabled:cursor-default ${
+                backendMode === "serverless"
+                  ? "bg-coral text-white"
+                  : "border border-border bg-white text-foreground hover:bg-white/70"
+              }`}
+            >
+              Serverless (cheap, cold starts)
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            Current: {backendMode ?? "loading…"}
+            {backendMode === "pod" && " — make sure a pod is actually running and INFERENCE_SERVER_URL points at it."}
+          </p>
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-[28px] border border-white/60 bg-surface/90 p-7 text-center shadow-soft-lg backdrop-blur-xl">

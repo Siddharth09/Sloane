@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   const speed = form.get("speed");
 
   try {
-    if (isPodMode()) {
+    if (await isPodMode()) {
       const upstreamForm = new FormData();
       upstreamForm.append("text", text);
       upstreamForm.append("reference_audio", referenceAudio, "reference.wav");

@@ -46,6 +46,30 @@ export async function initSchema() {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS page_visits_created_at_idx ON page_visits (created_at)`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+}
+
+// Generic runtime settings, switchable from the admin dashboard without a
+// redeploy - see @/lib/inferenceBackend for why this exists (env vars
+// require a fresh Vercel deploy to take effect, which turned out to be
+// unreliable via the CLI's `redeploy` and is real friction either way for
+// something that should be a one-click operational toggle).
+export async function getSetting(key: string): Promise<string | null> {
+  const rows = await sql`SELECT value FROM settings WHERE key = ${key}`;
+  return (rows[0]?.value as string) ?? null;
+}
+
+export async function setSetting(key: string, value: string) {
+  await sql`
+    INSERT INTO settings (key, value, updated_at) VALUES (${key}, ${value}, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `;
 }
 
 // "Real time" here means a heartbeat, not a persistent connection - the
