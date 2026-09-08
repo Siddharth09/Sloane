@@ -22,6 +22,7 @@ Then reachable at the pod's RunPod HTTP-proxy URL for port 8000.
 import re
 import sys
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 
 import librosa
@@ -82,8 +83,14 @@ PRESET_VOICES = {
         "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_sales/chatterbox_output/new_lang_adapter",
         "reference": "/workspace/sloane/training_data/voice_sales/clips/00008.wav",
     },
-    # voice_comedy (Izzy) and voice_meditation (Francois-Michelle) are
-    # mid-retrain as of 2026-09-08 - added once those checkpoints land.
+    "voice_comedy": {  # Izzy
+        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_comedy/chatterbox_output/new_lang_adapter",
+        "reference": "/workspace/sloane/training_data/voice_comedy/clips/00001.wav",
+    },
+    "voice_meditation": {  # Michelle
+        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_meditation/chatterbox_output/new_lang_adapter",
+        "reference": "/workspace/sloane/training_data/voice_meditation/clips/00001.wav",
+    },
 }
 
 # Runtime pitch adjustment, applied as post-processing (librosa.effects.
@@ -137,12 +144,19 @@ DEFAULT_PAUSE_SECONDS = 0.22
 # VRAM than needed) even though only the T3 module actually differs
 # per-voice (that's what the LoRA adapter is fine-tuned on) - s3gen/ve are
 # identical, untrained, shared weights across every voice including the
-# zero-shot base engine. Loading 10 preset voices this way OOM'd at ~23.5GB
-# on a 24GB card. Fixed by loading s3gen/ve exactly once and only building
-# a separate (much smaller) T3+LoRA per voice, swapped onto the one shared
-# engine right before each generation call - safe because this server
-# processes one generation at a time anyway (no thread offloading), so
-# there's no concurrent-request race on the shared engine object.
+# zero-shot base engine. Loading all preset voices this way OOM'd at ~23.5GB
+# on a 24GB card even after sharing s3gen/ve, once the roster grew past ~8
+# voices. Fixed with lazy loading: only the shared components load at
+# startup (fast); each voice's much-smaller T3+LoRA loads on its first
+# request and is kept in an LRU cache capped at MAX_CACHED_VOICES, evicting
+# the least-recently-used voice if a new one is requested at capacity. This
+# also directly answers "can we run this on-demand instead of 24/7" - this
+# is the same fix that makes serverless (scale-to-zero) viable, since it
+# turns "load all 10 voices, several minutes" into "load shared components
+# once (still needed even cold), then ~seconds per new voice."
+MAX_CACHED_VOICES = 6  # ~2GB/voice + ~10GB shared comfortably fits a 24GB card with headroom for inference itself
+
+
 def load_finetuned_t3(pretrained_state: dict, t3_hp, adapter_dir: str):
     t3_hp.text_tokens_dict_size = NEW_VOCAB_SIZE
     new_t3 = T3(hp=t3_hp)
@@ -158,12 +172,27 @@ base_engine = ChatterboxTTS.from_local(BASE_MODEL_DIR, device=DEVICE)
 base_t3 = base_engine.t3  # kept aside so Feature B (arbitrary voice clone) can always swap back to it
 pretrained_t3_state = base_engine.t3.state_dict()
 
-preset_t3_by_voice: dict[str, object] = {}
-for name, cfg in PRESET_VOICES.items():
-    print(f"[server] loading fine-tuned T3: {name}...")
-    preset_t3_by_voice[name] = load_finetuned_t3(pretrained_t3_state, base_engine.t3.hp, cfg["adapter_dir"])
+preset_t3_cache: "OrderedDict[str, object]" = OrderedDict()  # voice_id -> loaded T3+LoRA, most-recently-used last
 
-print("[server] all engines loaded, starting API")
+
+def get_preset_t3(voice_id: str):
+    if voice_id in preset_t3_cache:
+        preset_t3_cache.move_to_end(voice_id)
+        return preset_t3_cache[voice_id]
+
+    if len(preset_t3_cache) >= MAX_CACHED_VOICES:
+        evicted_id, evicted_t3 = preset_t3_cache.popitem(last=False)
+        del evicted_t3
+        torch.cuda.empty_cache()
+        print(f"[server] evicted '{evicted_id}' from GPU cache to make room for '{voice_id}'")
+
+    print(f"[server] loading fine-tuned T3 for '{voice_id}' (cache miss)...")
+    t3 = load_finetuned_t3(pretrained_t3_state, base_engine.t3.hp, PRESET_VOICES[voice_id]["adapter_dir"])
+    preset_t3_cache[voice_id] = t3
+    return t3
+
+
+print("[server] shared engine loaded, starting API - preset voices load lazily on first use")
 
 app = FastAPI(title="Lucy Inference API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -229,12 +258,12 @@ async def generate_preset(
     cfg_weight: float | None = Form(None),
     pitch_semitones: float | None = Form(None),
 ):
-    if voice_id not in preset_t3_by_voice:
+    if voice_id not in PRESET_VOICES:
         return JSONResponse(
-            {"error": f"unknown voice_id, expected one of {sorted(preset_t3_by_voice)}"},
+            {"error": f"unknown voice_id, expected one of {sorted(PRESET_VOICES)}"},
             status_code=400,
         )
-    base_engine.t3 = preset_t3_by_voice[voice_id]  # swap onto the one shared engine (see load_finetuned_t3 note)
+    base_engine.t3 = get_preset_t3(voice_id)  # swap onto the one shared engine (see load_finetuned_t3 note); loads on first use
     reference = PRESET_VOICES[voice_id]["reference"]
     gen_params = {
         **DEFAULT_GEN_PARAMS,
@@ -291,4 +320,15 @@ async def clone_voice(
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "device": DEVICE, "preset_voices": sorted(preset_t3_by_voice)}
+    return {
+        "status": "ok",
+        "device": DEVICE,
+        "preset_voices": sorted(PRESET_VOICES),
+        "voices_cached_in_gpu": list(preset_t3_cache.keys()),
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

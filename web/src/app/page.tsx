@@ -156,7 +156,7 @@ function CloneVoiceSection() {
       iconColor="text-blue"
       icon="🎙"
       title="Clone any voice"
-      subtitle="Record or upload ~10-20 seconds of a voice, then type what it should say."
+      subtitle="Record or upload ~10-20 seconds of a voice, then type what it should say. Custom audio generation has some latency — it may take a couple minutes to load."
     >
       <RecordOrUpload kind="audio" onChange={setFile} />
       <textarea

@@ -224,7 +224,7 @@ function CloneVoiceSection() {
     <Card
       icon="🎙"
       title="Clone any voice"
-      subtitle="Upload ~10-20 seconds of a voice, type any text."
+      subtitle="Upload ~10-20 seconds of a voice, type any text. Custom audio generation has some latency — it may take a couple minutes to load."
     >
       <Pressable style={styles.filePickButton} onPress={handlePickFile}>
         <Text style={styles.filePickButtonText}>{file ? file.name : "Choose an audio file"}</Text>
