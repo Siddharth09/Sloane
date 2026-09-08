@@ -285,7 +285,7 @@ function CloneVoiceSection() {
 export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.hero}>
           <LogoMark size={64} />
           <Text style={styles.title}>Lucy Labs</Text>
@@ -303,7 +303,13 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.background },
-  scrollContent: { padding: 20, gap: 20 },
+  // ScrollView's content container only takes up as much height as its
+  // content by default - on a screen taller than the content, that left a
+  // gap at the bottom showing the window's default background instead of
+  // COLORS.background. flex:1 on the ScrollView itself + flexGrow:1 on the
+  // content container makes it fill the screen even when content is short.
+  scrollView: { flex: 1, backgroundColor: COLORS.background },
+  scrollContent: { flexGrow: 1, padding: 20, gap: 20 },
   hero: { alignItems: "center", marginBottom: 4, gap: 4 },
   title: { fontSize: 30, fontWeight: "800", color: COLORS.foreground, marginTop: 8 },
   subtitle: { fontSize: 13, color: COLORS.muted, textAlign: "center", maxWidth: 320 },
