@@ -117,7 +117,33 @@ PITCH_SEMITONES_BY_VOICE: dict[str, float] = {}
 HIGHPASS_HZ_BY_VOICE: dict[str, float] = {}
 
 # Per-voice generation-parameter overrides, layered on DEFAULT_GEN_PARAMS.
-GEN_PARAMS_BY_VOICE: dict[str, dict] = {}
+# These are baseline *delivery* biases for Chatterbox's real knobs only
+# (exaggeration / cfg_weight / temperature) — not fake happy/sad emotion
+# classes. plan_delivery() may nudge further from punctuation/discourse;
+# explicit request form fields still win last.
+GEN_PARAMS_BY_VOICE: dict[str, dict] = {
+    # Softer / more measured: lower exaggeration + slightly higher cfg for a
+    # steadier, slower-feeling pace without a fake "calm emotion" class.
+    "voice_meditation": {
+        "exaggeration": 0.4,
+        "cfg_weight": 0.5,
+        "temperature": 0.7,
+    },
+    # Punchier comedy timing — a bit more expressive intensity, looser cfg.
+    "voice_comedy": {
+        "exaggeration": 0.75,
+        "cfg_weight": 0.35,
+        "temperature": 0.85,
+    },
+    # Sales energy (Robbo): slightly higher exaggeration. Pitch jitter below
+    # still mitigates flatness; more training data is the real fix.
+    "voice_sales": {
+        "exaggeration": 0.7,
+        "cfg_weight": 0.35,
+        "temperature": 0.85,
+    },
+    # Broadcast / instructor voices stay near DEFAULT_GEN_PARAMS (no entry).
+}
 
 # Per-voice natural pitch micro-jitter (semitones), applied across the whole
 # generation. Robbo (voice_sales) has only ~16 training clips vs. 500+ for
@@ -150,7 +176,14 @@ PAUSE_SECONDS_BY_ENDING = {
     "!": 0.28,
     ".": 0.24,
 }
+ELLIPSIS_PAUSE_SECONDS = 0.42  # hesitation / trailing-off
 DEFAULT_PAUSE_SECONDS = 0.22
+
+# Safe clamps for Chatterbox knobs (plan_delivery offsets land inside these).
+EXAGGERATION_RANGE = (0.25, 0.95)
+CFG_WEIGHT_RANGE = (0.15, 0.85)
+TEMPERATURE_RANGE = (0.5, 1.15)
+PAUSE_MULTIPLIER_RANGE = (0.7, 1.6)
 
 
 # Every preset voice previously loaded a FULL separate ChatterboxTTS
@@ -220,15 +253,163 @@ app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 
 def split_sentences(text: str) -> list[str]:
-    sentences = re.split(r"(?<=[.?!])\s+", text.strip())
-    return [s for s in sentences if s.strip()]
+    """Split on sentence endings and blank/newline boundaries.
+
+    Ellipses ("..." / "…") are protected so three dots are not treated as
+    three period boundaries; a trailing ellipsis stays one unit. Bare
+    newlines still create separate chunks even without terminal punctuation.
+    """
+    if not text or not text.strip():
+        return []
+    normalized = text.replace("\u2026", "...").strip()
+    parts: list[str] = []
+    ellipsis_token = "\0ELLIPSIS\0"
+    for paragraph in re.split(r"\n+", normalized):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+        protected = paragraph.replace("...", ellipsis_token)
+        for piece in re.split(r"(?<=[.?!])\s+", protected):
+            restored = piece.replace(ellipsis_token, "...").strip()
+            if restored:
+                parts.append(restored)
+    return parts
 
 
 def pause_seconds_for(sentence: str) -> float:
     stripped = sentence.rstrip()
-    if stripped and stripped[-1] in PAUSE_SECONDS_BY_ENDING:
+    if not stripped:
+        return DEFAULT_PAUSE_SECONDS
+    if stripped.endswith("...") or stripped.endswith("\u2026"):
+        return ELLIPSIS_PAUSE_SECONDS
+    if stripped[-1] in PAUSE_SECONDS_BY_ENDING:
         return PAUSE_SECONDS_BY_ENDING[stripped[-1]]
     return DEFAULT_PAUSE_SECONDS
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def plan_delivery(text: str, voice_id: str | None = None) -> dict:
+    """Lightweight punctuation/discourse delivery hints for Chatterbox knobs.
+
+    Inspects surface cues only (questions, exclamations, ellipses, lists,
+    quotes, soft lexical markers). Returns *offsets* / multipliers — not fake
+    happy/sad emotion classes. Caller merges: DEFAULT -> GEN_PARAMS_BY_VOICE
+    -> these offsets -> explicit request overrides (which still win).
+    """
+    del voice_id  # reserved for future per-voice discourse biases; voice baselines live in GEN_PARAMS_BY_VOICE
+    t = (text or "").strip()
+    lower = t.lower()
+
+    exaggeration_offset = 0.0
+    cfg_weight_offset = 0.0
+    temperature_offset = 0.0
+    pause_multiplier = 1.0
+
+    q_count = t.count("?")
+    excl_count = t.count("!")
+    ellipsis_count = t.count("...") + t.count("\u2026")
+    quote_count = len(re.findall(r"[\"\'“”‘’]", t))
+    # rough list cues: newlines with bullets/numbers, or many semicolons
+    list_cues = bool(re.search(r"(?m)^\s*([-*•]|\d+[.)])\s+", t)) or t.count(";") >= 2
+
+    soft_markers = (
+        "please", "gently", "gently,", "calm", "softly", "slowly", "quietly",
+        "carefully", "peacefully", "breathe", "relax", "soothing", "tender",
+    )
+    soft_hits = sum(1 for m in soft_markers if m in lower)
+
+    energetic_markers = (
+        "wow", "amazing", "incredible", "let's go", "exciting", "fantastic",
+        "awesome", "hurry", "now!",
+    )
+    energy_hits = sum(1 for m in energetic_markers if m in lower)
+
+    if q_count:
+        # Questions: slight lift in expressiveness; a touch looser cfg for rise.
+        exaggeration_offset += min(0.08, 0.04 * q_count)
+        cfg_weight_offset -= min(0.06, 0.03 * q_count)
+        pause_multiplier *= 1.0 + min(0.15, 0.06 * q_count)
+
+    if excl_count:
+        exaggeration_offset += min(0.12, 0.05 * excl_count)
+        temperature_offset += min(0.06, 0.03 * excl_count)
+        pause_multiplier *= 1.0 + min(0.1, 0.04 * excl_count)
+
+    if ellipsis_count:
+        # Hesitation / trailing-off: softer, longer gaps — not "sad".
+        exaggeration_offset -= min(0.1, 0.04 * ellipsis_count)
+        cfg_weight_offset += min(0.08, 0.03 * ellipsis_count)
+        temperature_offset -= min(0.06, 0.02 * ellipsis_count)
+        pause_multiplier *= 1.0 + min(0.35, 0.12 * ellipsis_count)
+
+    if soft_hits:
+        exaggeration_offset -= min(0.15, 0.05 * soft_hits)
+        cfg_weight_offset += min(0.12, 0.04 * soft_hits)
+        temperature_offset -= min(0.08, 0.03 * soft_hits)
+        pause_multiplier *= 1.0 + min(0.25, 0.08 * soft_hits)
+
+    if energy_hits:
+        exaggeration_offset += min(0.1, 0.04 * energy_hits)
+        cfg_weight_offset -= min(0.06, 0.02 * energy_hits)
+
+    if quote_count >= 2:
+        # Light dialogue lift when quoted speech is present.
+        exaggeration_offset += 0.04
+        temperature_offset += 0.02
+
+    if list_cues:
+        # Lists read clearer with slightly tighter inter-chunk gaps.
+        pause_multiplier *= 0.9
+        cfg_weight_offset += 0.03
+
+    pause_multiplier = _clamp(pause_multiplier, *PAUSE_MULTIPLIER_RANGE)
+    return {
+        "exaggeration_offset": exaggeration_offset,
+        "cfg_weight_offset": cfg_weight_offset,
+        "temperature_offset": temperature_offset,
+        "pause_multiplier": pause_multiplier,
+    }
+
+
+def resolve_gen_params(
+    text: str,
+    voice_id: str | None = None,
+    exaggeration: float | None = None,
+    cfg_weight: float | None = None,
+    temperature: float | None = None,
+) -> tuple[dict, float]:
+    """Merge DEFAULT -> per-voice -> plan_delivery offsets -> request overrides.
+
+    Returns (gen_params, pause_multiplier). Explicit exaggeration/cfg/temperature
+    from the client win when provided; speed is handled separately by callers.
+    """
+    plan = plan_delivery(text, voice_id)
+    params = {
+        **DEFAULT_GEN_PARAMS,
+        **(GEN_PARAMS_BY_VOICE.get(voice_id, {}) if voice_id else {}),
+    }
+    params["exaggeration"] = _clamp(
+        float(params["exaggeration"]) + plan["exaggeration_offset"],
+        *EXAGGERATION_RANGE,
+    )
+    params["cfg_weight"] = _clamp(
+        float(params["cfg_weight"]) + plan["cfg_weight_offset"],
+        *CFG_WEIGHT_RANGE,
+    )
+    params["temperature"] = _clamp(
+        float(params["temperature"]) + plan["temperature_offset"],
+        *TEMPERATURE_RANGE,
+    )
+    if exaggeration is not None:
+        params["exaggeration"] = float(exaggeration)
+    if cfg_weight is not None:
+        params["cfg_weight"] = float(cfg_weight)
+    if temperature is not None:
+        params["temperature"] = float(temperature)
+    return params, plan["pause_multiplier"]
 
 
 # Generating one isolated sentence per model call (the original design) is
@@ -260,20 +441,30 @@ MAX_CHUNK_WORDS_BY_VOICE: dict[str, int] = {
 }
 
 
-def chunk_sentences(sentences: list[str], max_words: int = MAX_CHUNK_WORDS) -> list[str]:
-    chunks: list[str] = []
+def chunk_sentences(sentences: list[str], max_words: int = MAX_CHUNK_WORDS) -> list[tuple[str, str]]:
+    """Group sentences into generation chunks.
+
+    Returns list of (chunk_text, last_sentence) so pause / terminal-fall
+    selection can use the *last* sentence's ending even when several
+    sentences were generated together.
+    """
+    chunks: list[tuple[str, str]] = []
     current: list[str] = []
     current_words = 0
     for sentence in sentences:
         word_count = len(sentence.split())
+        # Over-length single sentence: emit as its own chunk (do not discard).
+        if word_count > max_words and not current:
+            chunks.append((sentence, sentence))
+            continue
         if current and current_words + word_count > max_words:
-            chunks.append(" ".join(current))
+            chunks.append((" ".join(current), current[-1]))
             current = []
             current_words = 0
         current.append(sentence)
         current_words += word_count
     if current:
-        chunks.append(" ".join(current))
+        chunks.append((" ".join(current), current[-1]))
     return chunks
 
 
@@ -484,6 +675,7 @@ def synthesize(
     pitch_jitter_semitones: float = 0.0,
     speed: float = 1.0,
     max_chunk_words: int = MAX_CHUNK_WORDS,
+    pause_multiplier: float = 1.0,
     **kwargs,
 ):
     all_chunks = []
@@ -491,17 +683,26 @@ def synthesize(
     sentences = split_sentences(text)
     text_chunks = chunk_sentences(sentences, max_words=max_chunk_words)
     rng = np.random.default_rng()
-    for chunk in text_chunks:
+    pause_mult = _clamp(pause_multiplier, *PAUSE_MULTIPLIER_RANGE)
+    # Generate first, then insert pauses only between kept chunks so a failed
+    # final attempt cannot leave trailing metronomic silence.
+    generated: list[tuple[np.ndarray, str]] = []
+    for chunk, last_sentence in text_chunks:
         trimmed = generate_sentence_with_retry(engine, chunk, reference_path, **kwargs)
         if len(trimmed) > 0:
-            trimmed = apply_terminal_fall(trimmed, sr, chunk)
-            all_chunks.append(trimmed)
+            # Terminal fall keyed off the *last* sentence ending in this chunk
+            # (questions keep their rise; statements get the forced fall).
+            trimmed = apply_terminal_fall(trimmed, sr, last_sentence)
+            generated.append((trimmed, last_sentence))
             sr = engine.sr
-            base_pause = pause_seconds_for(chunk)
+    for i, (trimmed, last_sentence) in enumerate(generated):
+        all_chunks.append(trimmed)
+        if i < len(generated) - 1:
+            base_pause = pause_seconds_for(last_sentence)
             # subtle randomization instead of an identical, metronomic gap
             # every time - real pause length between phrases isn't perfectly
             # uniform even from the same speaker
-            jittered_pause = max(0.08, base_pause * rng.uniform(0.8, 1.25))
+            jittered_pause = max(0.08, base_pause * pause_mult * rng.uniform(0.8, 1.25))
             all_chunks.append(np.zeros(int(sr * jittered_pause), dtype=np.float32))
     if not all_chunks:
         return None, None
@@ -533,12 +734,13 @@ async def generate_preset(
         )
     base_engine.t3 = get_preset_t3(voice_id)  # swap onto the one shared engine (see load_finetuned_t3 note); loads on first use
     reference = PRESET_VOICES[voice_id]["reference"]
-    gen_params = {
-        **DEFAULT_GEN_PARAMS,
-        **GEN_PARAMS_BY_VOICE.get(voice_id, {}),
-        **({"exaggeration": exaggeration} if exaggeration is not None else {}),
-        **({"cfg_weight": cfg_weight} if cfg_weight is not None else {}),
-    }
+    # DEFAULT -> per-voice -> plan_delivery offsets -> explicit form overrides
+    gen_params, pause_multiplier = resolve_gen_params(
+        text,
+        voice_id=voice_id,
+        exaggeration=exaggeration,
+        cfg_weight=cfg_weight,
+    )
     pitch = pitch_semitones if pitch_semitones is not None else PITCH_SEMITONES_BY_VOICE.get(voice_id, 0.0)
     highpass = HIGHPASS_HZ_BY_VOICE.get(voice_id, 0.0)
     jitter = PITCH_JITTER_BY_VOICE.get(voice_id, 0.0)
@@ -550,8 +752,9 @@ async def generate_preset(
         pitch_semitones=pitch,
         highpass_hz=highpass,
         pitch_jitter_semitones=jitter,
-        speed=speed or 1.0,
+        speed=speed if speed is not None else 1.0,
         max_chunk_words=max_chunk_words,
+        pause_multiplier=pause_multiplier,
         **gen_params,
     )
     if audio is None:
@@ -583,13 +786,21 @@ async def clone_voice(
             status_code=400,
         )
 
-    gen_params = {
-        **DEFAULT_GEN_PARAMS,
-        **({"exaggeration": exaggeration} if exaggeration is not None else {}),
-        **({"cfg_weight": cfg_weight} if cfg_weight is not None else {}),
-    }
+    gen_params, pause_multiplier = resolve_gen_params(
+        text,
+        voice_id=None,
+        exaggeration=exaggeration,
+        cfg_weight=cfg_weight,
+    )
     base_engine.t3 = base_t3  # zero-shot Feature B always uses the unmodified base T3, not a preset's LoRA
-    audio, sr = synthesize(base_engine, text, str(tmp_path), speed=speed or 1.0, **gen_params)
+    audio, sr = synthesize(
+        base_engine,
+        text,
+        str(tmp_path),
+        speed=speed if speed is not None else 1.0,
+        pause_multiplier=pause_multiplier,
+        **gen_params,
+    )
     tmp_path.unlink(missing_ok=True)
     if audio is None:
         return JSONResponse({"error": "no audio generated"}, status_code=500)
