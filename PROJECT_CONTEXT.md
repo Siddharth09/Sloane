@@ -1200,3 +1200,122 @@ was topped up by the user to ~$10.27 before the session ended.
 over continuing to retry `sloane-video`) and run
 `process_robbo.py` + `07_finetune_new_voices.sh` for both voice_meditation
 and voice_sales.
+
+## 13. Video product spec - locked 2026-09-09
+
+Four-product structure, decided directly by the user. Supersedes the fal
+research doc's "product split" as a rough direction (Sec 12) - this is the
+actual spec to build against.
+
+### The four products
+
+1. **Audio, preset voices** (existing, live) - type text, hear it in one of
+   the 10 named voices. Unchanged.
+2. **Audio, custom voice** (existing, live) - upload ~10-20s of a voice,
+   type any text, get it cloned back. Unchanged.
+3. **Video, talking head (Kling)** - user uploads a photo *or* a short
+   video of a person, plus audio - either typed text narrated in a Lucy
+   preset/cloned voice, or a separately uploaded audio file. Kling Avatar
+   lip-syncs the face to that audio. **Voice is ours (Lucy)** - this is the
+   "our dub over their face" product.
+   - **Explicitly unresolved (user's own words: "we'll have to work that
+     out so it's seamless")**: the exact UX for the photo-vs-video input
+     and the typed-text-vs-uploaded-audio input - four input combinations
+     exist and none of the flows for them are designed yet. This is real
+     design work, not a small detail.
+4. **Video, cinematic (Veo)** - user gives a text prompt (e.g. "an exotic
+   beach at sunset") plus a photo, and Veo generates a cinematic scene.
+   **Voice is Veo's own generated dialogue, not Lucy's** - deliberate,
+   because dubbing a separately-generated voice over a fully-animated
+   cinematic scene doesn't lip-sync convincingly (confirmed in the fal
+   research, Sec 12: "native Kling/Veo speech will not reliably match
+   Vicky's accent" was about the reverse case, but the same lip-sync
+   mismatch problem applies here in full force since there's much more
+   camera/face motion to sync against than a static talking-head shot).
+
+### Honesty requirement - explicit, non-negotiable per the user
+
+Ship a visible, upfront pros/cons disclaimer before any video generation,
+not buried in fine print. Required content, per direct instruction:
+- Cinematic (Veo) generation **may distort or drift the person's face**
+  from the reference photo - a known, real limitation of current I2V
+  models with no face-lock, not something we can promise away.
+- **Data sharing**: the uploaded photo/video and any reference audio go to
+  third-party AI vendors (Kling, Veo, and the fal.ai platform connecting to
+  them) for processing - materially different from the audio pipeline,
+  which is fully self-hosted. Say this plainly, don't imply everything is
+  processed in-house.
+- General framing: be honest that AI video generation overall has real
+  failure modes (identity drift, occasional lip-sync mismatch, generation
+  failures) - not a promise of consistent, perfect output every time.
+
+Draft copy (needs final wording/design pass before shipping, but this is
+the substance that must be conveyed):
+
+> **Before you generate a video, know this:**
+> - **Talking head**: uses your uploaded photo/video, dubbed with your
+>   Lucy voice. Lip-sync quality depends on your source photo/video -
+>   a clear, front-facing shot works best.
+> - **Cinematic**: uses your photo to generate a scene anywhere you
+>   describe. The voice you hear is AI-generated dialogue, not your Lucy
+>   voice - dubbing a separate voice over this much camera motion doesn't
+>   sync convincingly. **Faces can distort or drift from the original
+>   photo during generation** - this is a real limitation of current AI
+>   video technology, ours included.
+> - **Your photo, video, and any reference audio are sent to third-party
+>   AI vendors (Kling, Veo, and the fal.ai platform we use to reach them)
+>   for processing** - this is different from our audio feature, which
+>   runs entirely on our own servers. Only upload what you're comfortable
+>   sharing with those vendors.
+> - Each generation uses video credits from your plan (see pricing) -
+>   separate from your audio character limit.
+
+### Caps (already real code, not just this spec - see Sec 12/STATUS.md)
+
+- **Video**: credit-based, `VIDEO_CREDIT_COSTS` in `web/src/lib/plans.ts` -
+  Free 0/mo, Plus 15/mo, Pro 60/mo, at current live prices (no Stripe
+  change). 1 credit = 1s talking-head or 1/3s cinematic, reviewed against
+  worst-case fal COGS at ~56-59% margin.
+- **Audio**: unchanged, character-based, increasing by tier - Free 10,000/
+  mo, Plus 200,000/mo, Pro 1,500,000/mo.
+- Both are real, live constraints in `lib/plans.ts` and enforced via
+  `src/lib/db.ts` for audio today; video enforcement doesn't exist yet
+  since `/api/generate-video` doesn't exist yet (see below).
+
+### Gaps not yet addressed - flagged, not decided
+
+Raised proactively, not yet discussed with the user:
+
+1. **Photo/likeness consent for video is a new surface**, distinct from
+   the existing voice-consent posture (Sec 3). A user could upload someone
+   else's photo. At minimum needs the same kind of attestation step voice
+   cloning presumably needs - not yet designed for video.
+2. **Content moderation for cinematic prompts** - Veo will attempt
+   virtually any text prompt; no filtering exists for requests that would
+   produce inappropriate scenes involving a real uploaded photo.
+3. **Failed-generation credit policy** - if Kling/Veo returns a policy
+   block (like Seedance did in testing) or a low-quality/unusable result,
+   is the credit refunded? The fal research doc says "debit only on
+   success" but doesn't define what counts as a usable success vs. a
+   technically-completed-but-bad result.
+4. **Photo/video quality guidance** - the fal research found tight face
+   crops dramatically outperform wide/full-body shots for talking-head
+   lip-sync. The product should probably guide or auto-crop uploads rather
+   than silently producing a worse result from a bad source photo.
+5. **Preview/confirm before spending credits** - given credits map to real
+   vendor cost, consider a "this will use N credits" confirmation step
+   before generating, especially for cinematic (3x the per-second cost).
+6. **Generated video storage/hosting** - fal returns results from its own
+   infrastructure; no plan yet for whether/how we persist, re-serve, or
+   offer download of generated clips (audio already has a real MP3
+   download button - video would want a comparable pattern).
+7. **App Store privacy disclosure** - sending user photos/video/voice to
+   third-party vendors (Kling/Veo/fal) will very likely need to be
+   declared in Apple's App Store "privacy nutrition label" if this ships
+   to iOS, on top of the already-known In-App Purchase question (Sec 11/
+   12). A new App Review consideration, not just IAP.
+8. **Mobile parity** - no plan yet for whether/how these two video modes
+   work in the Expo app vs. web-only initially.
+
+None of the above are decided - listed so they don't get lost, not to
+block the spec above.
