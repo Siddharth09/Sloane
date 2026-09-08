@@ -62,12 +62,22 @@ body {
 
 .art-backdrop > div {
   flex: 1;
-  /* zoomed in and shifted left/up so the doorway+balcony stays the focus
-     and the busy plant cluster on the right of the source image falls
-     mostly out of frame - less visual competition with the foreground
-     cards than the plain "cover" framing had */
-  background-size: 150%;
-  background-position: 30% 35%;
+  /* "cover" alone crops very differently depending on viewport aspect
+     ratio (which dimension overflows changes with shape), so a single
+     size/position doesn't frame well on both mobile and desktop -
+     tuned separately per breakpoint below. Mobile default avoids a
+     harsh hard-edged color-block seam in the source painting; desktop
+     zooms in on the doorway/balcony and keeps the red plant on the
+     right out of frame. */
+  background-size: cover;
+  background-position: 60% 15%;
+}
+
+@media (min-width: 768px) {
+  .art-backdrop > div {
+    background-size: 150%;
+    background-position: 15% 30%;
+  }
 }
 
 .art-backdrop::after {
