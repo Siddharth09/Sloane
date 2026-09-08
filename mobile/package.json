@@ -8,6 +8,7 @@
     "expo": "~57.0.20",
     "expo-audio": "~57.0.4",
     "expo-document-picker": "~57.0.1",
+    "expo-file-system": "~57.0.6",
     "expo-linear-gradient": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "expo-video": "~57.0.3",
@@ -15,7 +16,8 @@
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-svg": "15.15.4",
-    "react-native-web": "^0.21.2"
+    "react-native-web": "^0.21.2",
+    "react-native-webview": "13.16.1"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

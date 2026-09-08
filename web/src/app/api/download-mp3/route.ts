@@ -2,14 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import wav from "node-wav";
 import lamejs from "@breezystack/lamejs";
 
-const INFERENCE_SERVER_URL = process.env.INFERENCE_SERVER_URL!;
-
-// The client only ever supplies the generated clip's filename, never a URL -
-// taking an arbitrary URL from the client and fetching it server-side would
-// be a textbook SSRF vector. We build the upstream URL ourselves from a
-// validated filename instead.
-const SAFE_FILENAME = /^[a-zA-Z0-9_-]+\.wav$/;
-
+// Takes the already-generated audio as base64 in the request body - the
+// client has it in memory from the completed job (see job-status/route.ts),
+// there's no longer a server-side file to fetch by filename now that audio
+// isn't persisted anywhere on our infra (see STATUS.md "Serverless
+// migration"). POST because the payload can be a few MB, too big for a
+// clean query-string GET.
 function floatTo16BitPCM(samples: Float32Array): Int16Array {
   const out = new Int16Array(samples.length);
   for (let i = 0; i < samples.length; i++) {
@@ -19,19 +17,15 @@ function floatTo16BitPCM(samples: Float32Array): Int16Array {
   return out;
 }
 
-export async function GET(req: NextRequest) {
-  const file = req.nextUrl.searchParams.get("file");
-  const name = req.nextUrl.searchParams.get("name") ?? "lucy-audio";
-  if (!file || !SAFE_FILENAME.test(file)) {
-    return NextResponse.json({ error: "Invalid audio file" }, { status: 400 });
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const audioBase64 = body.audioBase64 as string | undefined;
+  const name = (body.name as string | undefined) ?? "lucy-audio";
+  if (!audioBase64) {
+    return NextResponse.json({ error: "Missing audioBase64" }, { status: 400 });
   }
 
-  const upstream = await fetch(`${INFERENCE_SERVER_URL}/audio/${file}`);
-  if (!upstream.ok) {
-    return NextResponse.json({ error: "Could not fetch source audio" }, { status: 502 });
-  }
-  const wavBuffer = Buffer.from(await upstream.arrayBuffer());
-
+  const wavBuffer = Buffer.from(audioBase64, "base64");
   const decoded = wav.decode(wavBuffer);
   const channelCount = decoded.channelData.length;
   const sampleRate = decoded.sampleRate;

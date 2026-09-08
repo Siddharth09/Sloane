@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSubscriberByToken, checkQuota, incrementUsage } from "@/lib/db";
 import { PLANS } from "@/lib/plans";
+import { submitJob } from "@/lib/runpod";
 
-const INFERENCE_SERVER_URL = process.env.INFERENCE_SERVER_URL!;
+// RunPod's /run input cap is 10MB - a base64-encoded reference clip much
+// past a minute or two of decent-quality audio could exceed that. The UI
+// only asks for ~10-20s, but nothing enforced it upstream before either;
+// this is a clearer failure than RunPod's own rejection would be.
+const MAX_REFERENCE_AUDIO_BYTES = 7 * 1024 * 1024;
 
+// See generate-preset/route.ts for why this submits a job instead of
+// blocking on generation - same reasoning applies here.
 export async function POST(req: NextRequest) {
   const form = await req.formData();
   const text = String(form.get("text") ?? "");
@@ -26,29 +33,39 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const upstreamForm = new FormData();
-  upstreamForm.append("text", text);
-  if (referenceAudio) upstreamForm.append("reference_audio", referenceAudio);
+  if (!(referenceAudio instanceof Blob)) {
+    return NextResponse.json({ error: "Missing reference_audio" }, { status: 400 });
+  }
+  if (referenceAudio.size > MAX_REFERENCE_AUDIO_BYTES) {
+    return NextResponse.json(
+      { error: `Reference audio is too large (max ${Math.round(MAX_REFERENCE_AUDIO_BYTES / 1024 / 1024)}MB) - try a shorter clip.` },
+      { status: 400 },
+    );
+  }
+  const referenceAudioBase64 = Buffer.from(await referenceAudio.arrayBuffer()).toString("base64");
+
   const exaggeration = form.get("exaggeration");
-  if (exaggeration) upstreamForm.append("exaggeration", String(exaggeration));
   const speed = form.get("speed");
-  if (speed) upstreamForm.append("speed", String(speed));
 
-  const upstream = await fetch(`${INFERENCE_SERVER_URL}/api/clone-voice`, {
-    method: "POST",
-    body: upstreamForm,
-  });
-  const data = await upstream.json();
+  let jobId: string;
+  try {
+    ({ jobId } = await submitJob({
+      action: "clone-voice",
+      text,
+      reference_audio_base64: referenceAudioBase64,
+      ...(exaggeration ? { exaggeration: Number(exaggeration) } : {}),
+      ...(speed ? { speed: Number(speed) } : {}),
+    }));
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not start generation" },
+      { status: 502 },
+    );
+  }
 
-  if (upstream.ok && accessToken) {
+  if (accessToken) {
     await incrementUsage(accessToken, text.length, 0);
   }
 
-  // Route through our own /api/audio proxy rather than exposing the raw
-  // GPU pod URL (see generate-preset/route.ts).
-  if (data.audio_url) {
-    data.audio_url = `/api/audio/${data.audio_url.split("/").pop()}`;
-  }
-
-  return NextResponse.json(data, { status: upstream.status });
+  return NextResponse.json({ jobId });
 }

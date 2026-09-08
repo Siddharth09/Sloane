@@ -19,13 +19,8 @@ import { useAccessToken } from "./useAccessToken";
 import { DeliverySliders, DEFAULT_DELIVERY, type Delivery } from "./DeliverySliders";
 import { VideoPreviewSection } from "./VideoPreviewSection";
 import { Footer } from "./Footer";
-
-// Goes through the same Next.js proxy routes the web app uses (not the GPU
-// inference server directly) so mobile requests get the same billing/quota
-// gate - see web/src/app/api/generate-preset/route.ts. AudioResult below
-// still needs the raw inference server host to actually play the returned
-// file, since audio_url comes back as an absolute URL to that host.
-const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
+import { useAudioGeneration } from "./useAudioGeneration";
+import { WaitingGame } from "./WaitingGame";
 
 const COLORS = {
   background: "#fdf6f0",
@@ -80,11 +75,16 @@ function GradientButton({
   );
 }
 
-function AudioResult({ url }: { url: string | null }) {
-  // audio_url now comes back absolute (the proxy route resolves it against
-  // the inference server host server-side) - no prefixing needed here.
-  const player = useAudioPlayer(url);
-  if (!url) return null;
+function AudioResult({ uri }: { uri: string | null }) {
+  // uri is now a local cache-file:// path decoded from the job's base64
+  // audio (see useAudioGeneration.ts) - RunPod Serverless has no persisted
+  // hosted URL for generated audio anymore (see STATUS.md "Serverless
+  // migration"), so there's nothing meaningful to paste as a link. Share
+  // still works on iOS (attaches the local file via the `url` field);
+  // Android's Share API only reads `message`, so it just shares the promo
+  // text there rather than a broken local path.
+  const player = useAudioPlayer(uri);
+  if (!uri) return null;
   return (
     <View style={{ gap: 8 }}>
       <Pressable style={styles.playButton} onPress={() => player.play()}>
@@ -92,7 +92,7 @@ function AudioResult({ url }: { url: string | null }) {
       </Pressable>
       <Pressable
         style={styles.shareButton}
-        onPress={() => Share.share({ message: "Listen to what I made with Lucy! " + url, url })}
+        onPress={() => Share.share({ message: "Listen to what I made with Lucy!", url: uri })}
       >
         <Text style={styles.shareButtonText}>Share</Text>
       </Pressable>
@@ -130,29 +130,16 @@ function PresetVoiceSection() {
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { generate, loading, error, audioUri, statusMessage } = useAudioGeneration("/api/generate-preset");
 
   async function handleGenerate() {
-    setLoading(true);
-    setError(null);
-    try {
-      const form = new FormData();
-      form.append("text", text);
-      form.append("voice_id", voiceId);
-      form.append("exaggeration", String(delivery.expressiveness));
-      form.append("speed", String(delivery.speed));
-      if (token) form.append("access_token", token);
-      const res = await fetch(`${WEB_BASE}/api/generate-preset`, { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      setAudioUrl(data.audio_url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+    const form = new FormData();
+    form.append("text", text);
+    form.append("voice_id", voiceId);
+    form.append("exaggeration", String(delivery.expressiveness));
+    form.append("speed", String(delivery.speed));
+    if (token) form.append("access_token", token);
+    await generate(form);
   }
 
   return (
@@ -192,6 +179,9 @@ function PresetVoiceSection() {
 
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor={COLORS.pink} />
 
+      <Text style={styles.helperText}>
+        Generation can take 20-60 seconds, sometimes a little longer after a quiet period.
+      </Text>
       <GradientButton
         onPress={handleGenerate}
         disabled={!text || loading}
@@ -199,8 +189,14 @@ function PresetVoiceSection() {
         label="Generate"
       />
 
+      {loading && (
+        <>
+          <Text style={styles.helperText}>{statusMessage}</Text>
+          <WaitingGame />
+        </>
+      )}
       {error && <Text style={styles.errorText}>{error}</Text>}
-      <AudioResult url={audioUrl} />
+      <AudioResult uri={audioUri} />
     </Card>
   );
 }
@@ -210,9 +206,7 @@ function CloneVoiceSection() {
   const [text, setText] = useState("");
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { generate, loading, error, audioUri, statusMessage } = useAudioGeneration("/api/clone-voice");
 
   async function handlePickFile() {
     const result = await DocumentPicker.getDocumentAsync({ type: "audio/*" });
@@ -223,37 +217,26 @@ function CloneVoiceSection() {
 
   async function handleGenerate() {
     if (!file) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const form = new FormData();
-      form.append("text", text);
-      // React Native's fetch/FormData accepts this {uri, name, type} shape for
-      // file uploads - not the web File object, which doesn't exist here.
-      form.append("reference_audio", {
-        uri: file.uri,
-        name: file.name,
-        type: file.mimeType ?? "audio/wav",
-      } as unknown as Blob);
-      form.append("exaggeration", String(delivery.expressiveness));
-      form.append("speed", String(delivery.speed));
-      if (token) form.append("access_token", token);
-      const res = await fetch(`${WEB_BASE}/api/clone-voice`, { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      setAudioUrl(data.audio_url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+    const form = new FormData();
+    form.append("text", text);
+    // React Native's fetch/FormData accepts this {uri, name, type} shape for
+    // file uploads - not the web File object, which doesn't exist here.
+    form.append("reference_audio", {
+      uri: file.uri,
+      name: file.name,
+      type: file.mimeType ?? "audio/wav",
+    } as unknown as Blob);
+    form.append("exaggeration", String(delivery.expressiveness));
+    form.append("speed", String(delivery.speed));
+    if (token) form.append("access_token", token);
+    await generate(form);
   }
 
   return (
     <Card
       icon="🎙"
       title="Clone any voice"
-      subtitle="Upload ~10-20 seconds of a voice, type any text. Custom audio generation has some latency — it may take a couple minutes to load."
+      subtitle="Upload ~10-20 seconds of a voice, type any text."
     >
       <Pressable style={styles.filePickButton} onPress={handlePickFile}>
         <Text style={styles.filePickButtonText}>{file ? file.name : "Choose an audio file"}</Text>
@@ -271,6 +254,9 @@ function CloneVoiceSection() {
 
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor={COLORS.blue} />
 
+      <Text style={styles.helperText}>
+        Generation can take 20-60 seconds, sometimes a little longer after a quiet period.
+      </Text>
       <GradientButton
         onPress={handleGenerate}
         disabled={!text || !file || loading}
@@ -278,8 +264,14 @@ function CloneVoiceSection() {
         label="Generate"
       />
 
+      {loading && (
+        <>
+          <Text style={styles.helperText}>{statusMessage}</Text>
+          <WaitingGame />
+        </>
+      )}
       {error && <Text style={styles.errorText}>{error}</Text>}
-      <AudioResult url={audioUrl} />
+      <AudioResult uri={audioUri} />
     </Card>
   );
 }
@@ -408,6 +400,7 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: "#fff", fontSize: 14, fontWeight: "700" },
   errorText: { color: "#c0503a", fontSize: 13 },
+  helperText: { fontSize: 12, color: COLORS.muted },
   playButton: {
     borderWidth: 1,
     borderColor: COLORS.border,

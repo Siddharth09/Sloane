@@ -9,9 +9,36 @@ import { useState } from "react";
  * browsers. We offer that as the primary button, with explicit WhatsApp/
  * Facebook web links as a fallback for desktop browsers that don't support
  * navigator.share.
+ *
+ * Generated audio no longer has a stable hosted URL to share (it comes back
+ * as base64 straight from a RunPod Serverless job, never written to a
+ * public path - see STATUS.md "Serverless migration") - pass `file` instead
+ * of `url` for that case and this shares the actual clip via the Web Share
+ * API's file support instead of a link. Link-based sharing (WhatsApp/
+ * Facebook/copy-link) only makes sense for a real URL, so those are hidden
+ * when sharing a file; if the browser can't share files either, this
+ * renders nothing rather than a broken/misleading link.
  */
-export function ShareButtons({ url, text }: { url: string; text: string }) {
+type ShareButtonsProps = { text: string } & ({ url: string; file?: undefined } | { file: File; url?: undefined });
+
+export function ShareButtons({ text, url, file }: ShareButtonsProps) {
   const [copied, setCopied] = useState(false);
+
+  if (file) {
+    const canShareFile = typeof navigator !== "undefined" && !!navigator.share && !!navigator.canShare?.({ files: [file] });
+    if (!canShareFile) return null;
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => navigator.share({ title: "Lucy", text, files: [file] }).catch(() => {})}
+          className="rounded-full bg-butter px-4 py-2 text-xs font-semibold text-white"
+        >
+          Share…
+        </button>
+      </div>
+    );
+  }
+
   const canNativeShare = typeof navigator !== "undefined" && !!navigator.share;
 
   async function handleNativeShare() {
@@ -23,13 +50,13 @@ export function ShareButtons({ url, text }: { url: string; text: string }) {
   }
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(url);
+    await navigator.clipboard.writeText(url!);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   const whatsappHref = `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`;
-  const facebookHref = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
+  const facebookHref = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url!)}`;
 
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">

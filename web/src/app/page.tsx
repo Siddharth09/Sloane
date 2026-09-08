@@ -8,6 +8,7 @@ import { RecordOrUpload } from "@/components/RecordOrUpload";
 import { ShareButtons } from "@/components/ShareButtons";
 import { VoicePicker, PRESET_VOICES } from "@/components/VoicePicker";
 import { DeliverySliders, DEFAULT_DELIVERY, type Delivery } from "@/components/DeliverySliders";
+import { WaitingGame } from "@/components/WaitingGame";
 import { useAccessToken } from "@/lib/useAccessToken";
 import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
 
@@ -16,30 +17,149 @@ import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
 // server's public URL directly for now.
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
-function ResultPlayer({ url, kind }: { url: string | null; kind: "audio" | "video" }) {
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  return new Blob([new Uint8Array(byteNumbers)], { type: mimeType });
+}
+
+function VideoResultPlayer({ url }: { url: string | null }) {
   if (!url) return null;
-  // generate-preset/clone-voice now return a path on our own domain
-  // (/api/audio/<file>.wav); clone-video still returns a path relative to
-  // API_BASE (not yet wired through a proxy - still hits the GPU pod directly).
-  const fullUrl = url.startsWith("http") ? url : `${url.startsWith("/api/") ? "" : API_BASE}${url}`;
-  const filename = url.split("/").pop();
+  // clone-video still returns a path relative to API_BASE (not yet wired
+  // through a proxy - still hits the GPU pod directly).
+  const fullUrl = url.startsWith("http") ? url : `${API_BASE}${url}`;
   return (
     <div className="mt-4">
-      {kind === "video" ? (
-        <video className="w-full rounded-xl" src={fullUrl} controls />
-      ) : (
-        <audio className="w-full" src={fullUrl} controls />
-      )}
-      {kind === "audio" && filename && (
-        <a
-          href={`/api/download-mp3?file=${encodeURIComponent(filename)}&name=lucy-${Date.now()}`}
-          className="mt-3 inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
-        >
-          Download MP3
-        </a>
-      )}
+      <video className="w-full rounded-xl" src={fullUrl} controls />
       <ShareButtons url={fullUrl} text="Listen to what I made with Lucy!" />
     </div>
+  );
+}
+
+// Generated audio now comes back as base64 straight from a RunPod
+// Serverless job (see web/src/lib/runpod.ts) - nothing is written to a
+// persisted, shareable URL anywhere on our infra anymore (see STATUS.md
+// "Serverless migration"). Playback uses a data: URL directly; MP3 download
+// POSTs the base64 to /api/download-mp3 for server-side transcoding and
+// triggers a local file download from the response.
+function AudioResultPlayer({ audioBase64 }: { audioBase64: string | null }) {
+  if (!audioBase64) return null;
+  const dataUrl = `data:audio/wav;base64,${audioBase64}`;
+  const shareFile = new File([base64ToBlob(audioBase64, "audio/wav")], "lucy-audio.wav", { type: "audio/wav" });
+
+  async function handleDownloadMp3() {
+    const res = await fetch("/api/download-mp3", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audioBase64, name: `lucy-${Date.now()}` }),
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = `lucy-${Date.now()}.mp3`;
+    a.click();
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  return (
+    <div className="mt-4">
+      <audio className="w-full" src={dataUrl} controls />
+      <button
+        onClick={handleDownloadMp3}
+        className="mt-3 inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
+      >
+        Download MP3
+      </button>
+      <ShareButtons file={shareFile} text="Listen to what I made with Lucy!" />
+    </div>
+  );
+}
+
+// Cold-start-aware polling: generation now runs on a scale-to-zero RunPod
+// Serverless endpoint instead of an always-on Pod, so a request can take
+// anywhere from a few seconds (warm) to ~60s+ (cold start) - see STATUS.md
+// "Serverless migration" for why this can't just be one longer blocking
+// fetch (Vercel's function timeout on our plan tops out well under a worst-
+// case cold start). Shared by both generation sections below so the polling
+// behavior/messaging can't drift between them.
+const POLL_INTERVAL_MS = 2000;
+const POLL_TIMEOUT_MS = 180_000; // generous - well past worst observed cold start + generation
+
+function loadingMessageFor(elapsedMs: number): string {
+  if (elapsedMs < 15_000) return "Waking up the voice engine…";
+  if (elapsedMs < 40_000) return "Generating your audio…";
+  return "Almost there, thanks for your patience…";
+}
+
+function useAudioGeneration(endpoint: string) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [audioBase64, setAudioBase64] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState("");
+
+  async function generate(form: FormData) {
+    setLoading(true);
+    setError(null);
+    setAudioBase64(null);
+    const startedAt = Date.now();
+    setStatusMessage(loadingMessageFor(0));
+    try {
+      const res = await fetch(endpoint, { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
+      const jobId = data.jobId as string;
+
+      for (;;) {
+        const elapsed = Date.now() - startedAt;
+        if (elapsed > POLL_TIMEOUT_MS) {
+          throw new Error("Generation is taking much longer than usual — please try again.");
+        }
+        setStatusMessage(loadingMessageFor(elapsed));
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        const statusRes = await fetch(`/api/job-status?jobId=${encodeURIComponent(jobId)}`);
+        const statusData = await statusRes.json();
+        if (statusData.status === "COMPLETED") {
+          setAudioBase64(statusData.audioBase64);
+          return;
+        }
+        if (statusData.status === "FAILED") {
+          throw new Error(statusData.error ?? "Generation failed");
+        }
+        // IN_QUEUE / IN_PROGRESS - keep polling
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return { generate, loading, error, audioBase64, statusMessage };
+}
+
+function GenerateButton({
+  loading,
+  disabled,
+  onClick,
+  colorClassName,
+}: {
+  loading: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  colorClassName: string;
+}) {
+  return (
+    <button
+      className={`shadow-soft flex items-center justify-center gap-2 rounded-full ${colorClassName} py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none`}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {loading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+      {loading ? "Generating…" : "Generate"}
+    </button>
   );
 }
 
@@ -83,29 +203,16 @@ function PresetVoiceSection() {
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { generate, loading, error, audioBase64, statusMessage } = useAudioGeneration("/api/generate-preset");
 
   async function handleGenerate() {
-    setLoading(true);
-    setError(null);
-    try {
-      const form = new FormData();
-      form.append("text", text);
-      form.append("voice_id", voiceId);
-      form.append("exaggeration", String(delivery.expressiveness));
-      form.append("speed", String(delivery.speed));
-      if (token) form.append("access_token", token);
-      const res = await fetch("/api/generate-preset", { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      setAudioUrl(data.audio_url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+    const form = new FormData();
+    form.append("text", text);
+    form.append("voice_id", voiceId);
+    form.append("exaggeration", String(delivery.expressiveness));
+    form.append("speed", String(delivery.speed));
+    if (token) form.append("access_token", token);
+    await generate(form);
   }
 
   return (
@@ -125,15 +232,16 @@ function PresetVoiceSection() {
       />
       <VoicePicker value={voiceId} onChange={setVoiceId} />
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-pink" />
-      <button
-        className="shadow-soft rounded-full bg-pink py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
-        disabled={!text || loading}
-        onClick={handleGenerate}
-      >
-        {loading ? "Generating…" : "Generate"}
-      </button>
+      <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
+      <GenerateButton loading={loading} disabled={!text || loading} onClick={handleGenerate} colorClassName="bg-pink" />
+      {loading && (
+        <>
+          <p className="text-sm text-muted">{statusMessage}</p>
+          <WaitingGame />
+        </>
+      )}
       {error && <p className="text-sm text-coral-dark">{error}</p>}
-      <ResultPlayer url={audioUrl} kind="audio" />
+      <AudioResultPlayer audioBase64={audioBase64} />
     </Card>
   );
 }
@@ -143,30 +251,17 @@ function CloneVoiceSection() {
   const [text, setText] = useState("");
   const [file, setFile] = useState<Blob | File | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { generate, loading, error, audioBase64, statusMessage } = useAudioGeneration("/api/clone-voice");
 
   async function handleGenerate() {
     if (!file) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const form = new FormData();
-      form.append("text", text);
-      form.append("reference_audio", file, "reference.webm");
-      form.append("exaggeration", String(delivery.expressiveness));
-      form.append("speed", String(delivery.speed));
-      if (token) form.append("access_token", token);
-      const res = await fetch("/api/clone-voice", { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      setAudioUrl(data.audio_url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+    const form = new FormData();
+    form.append("text", text);
+    form.append("reference_audio", file, "reference.webm");
+    form.append("exaggeration", String(delivery.expressiveness));
+    form.append("speed", String(delivery.speed));
+    if (token) form.append("access_token", token);
+    await generate(form);
   }
 
   return (
@@ -175,7 +270,7 @@ function CloneVoiceSection() {
       iconColor="text-blue"
       icon="🎙"
       title="Clone any voice"
-      subtitle="Record or upload ~10-20 seconds of a voice, then type what it should say. Custom audio generation has some latency — it may take a couple minutes to load."
+      subtitle="Record or upload ~10-20 seconds of a voice, then type what it should say."
     >
       <RecordOrUpload kind="audio" onChange={setFile} />
       <textarea
@@ -186,15 +281,16 @@ function CloneVoiceSection() {
         onChange={(e) => setText(e.target.value)}
       />
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-blue" />
-      <button
-        className="shadow-soft rounded-full bg-blue py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
-        disabled={!text || !file || loading}
-        onClick={handleGenerate}
-      >
-        {loading ? "Generating…" : "Generate"}
-      </button>
+      <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
+      <GenerateButton loading={loading} disabled={!text || !file || loading} onClick={handleGenerate} colorClassName="bg-blue" />
+      {loading && (
+        <>
+          <p className="text-sm text-muted">{statusMessage}</p>
+          <WaitingGame />
+        </>
+      )}
       {error && <p className="text-sm text-coral-dark">{error}</p>}
-      <ResultPlayer url={audioUrl} kind="audio" />
+      <AudioResultPlayer audioBase64={audioBase64} />
     </Card>
   );
 }

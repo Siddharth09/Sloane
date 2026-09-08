@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSubscriberByToken, checkQuota, incrementUsage } from "@/lib/db";
 import { PLANS } from "@/lib/plans";
+import { submitJob } from "@/lib/runpod";
 
-const INFERENCE_SERVER_URL = process.env.INFERENCE_SERVER_URL!;
-
-// Proxies to the GPU inference server, but only after checking the caller's
-// plan/usage first - the browser never talks to the inference server
-// directly, so there's no way to bypass this by just calling that URL
-// (its address is a server-only env var, never sent to the client).
+// Submits a RunPod Serverless job and returns immediately with a jobId,
+// after checking the caller's plan/usage first - the browser never talks to
+// RunPod directly, so there's no way to bypass this (RUNPOD_API_KEY/
+// RUNPOD_ENDPOINT_ID are server-only env vars, never sent to the client).
+//
+// This used to be a single blocking fetch straight to an always-on GPU Pod.
+// Now that generation runs on a scale-to-zero Serverless endpoint, a cold
+// start plus generation can take well past Vercel's function timeout, so
+// the client submits here then polls /api/job-status until the job
+// completes - see web/src/app/page.tsx's handleGenerate for the poll loop,
+// and STATUS.md "Serverless migration" for why.
+//
+// Usage is credited on submission, not completion - a job failing after
+// this point (rare) is a cost we eat rather than a billing/quota
+// discrepancy we'd need to reconcile after the fact.
 export async function POST(req: NextRequest) {
   const form = await req.formData();
   const text = String(form.get("text") ?? "");
@@ -34,31 +44,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const upstreamForm = new FormData();
-  upstreamForm.append("text", text);
-  upstreamForm.append("voice_id", String(form.get("voice_id") ?? ""));
   const exaggeration = form.get("exaggeration");
-  if (exaggeration) upstreamForm.append("exaggeration", String(exaggeration));
   const speed = form.get("speed");
-  if (speed) upstreamForm.append("speed", String(speed));
 
-  const upstream = await fetch(`${INFERENCE_SERVER_URL}/api/generate-preset`, {
-    method: "POST",
-    body: upstreamForm,
-  });
-  const data = await upstream.json();
+  let jobId: string;
+  try {
+    ({ jobId } = await submitJob({
+      action: "generate-preset",
+      text,
+      voice_id: String(form.get("voice_id") ?? ""),
+      ...(exaggeration ? { exaggeration: Number(exaggeration) } : {}),
+      ...(speed ? { speed: Number(speed) } : {}),
+    }));
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not start generation" },
+      { status: 502 },
+    );
+  }
 
-  if (upstream.ok && accessToken) {
+  if (accessToken) {
     await incrementUsage(accessToken, text.length, 0);
   }
 
-  // audio_url comes back as a path relative to the inference server (e.g.
-  // "/audio/xyz.wav") - route it through our own /api/audio proxy instead
-  // of handing the client the raw GPU pod URL (not a clean link to share,
-  // and not something we want to expose directly).
-  if (data.audio_url) {
-    data.audio_url = `/api/audio/${data.audio_url.split("/").pop()}`;
-  }
-
-  return NextResponse.json(data, { status: upstream.status });
+  return NextResponse.json({ jobId });
 }
