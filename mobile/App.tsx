@@ -4,6 +4,7 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -15,6 +16,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { LogoMark } from "./LogoMark";
 import { AccountWidget } from "./AccountWidget";
 import { useAccessToken } from "./useAccessToken";
+import { DeliverySliders, DEFAULT_DELIVERY, type Delivery } from "./DeliverySliders";
 
 // Goes through the same Next.js proxy routes the web app uses (not the GPU
 // inference server directly) so mobile requests get the same billing/quota
@@ -82,9 +84,17 @@ function AudioResult({ url }: { url: string | null }) {
   const player = useAudioPlayer(url);
   if (!url) return null;
   return (
-    <Pressable style={styles.playButton} onPress={() => player.play()}>
-      <Text style={styles.playButtonText}>▶ Play result</Text>
-    </Pressable>
+    <View style={{ gap: 8 }}>
+      <Pressable style={styles.playButton} onPress={() => player.play()}>
+        <Text style={styles.playButtonText}>▶ Play result</Text>
+      </Pressable>
+      <Pressable
+        style={styles.shareButton}
+        onPress={() => Share.share({ message: "Listen to what I made with Lucy! " + url, url })}
+      >
+        <Text style={styles.shareButtonText}>Share</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -117,6 +127,7 @@ function PresetVoiceSection() {
   const { token } = useAccessToken();
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
+  const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +139,8 @@ function PresetVoiceSection() {
       const form = new FormData();
       form.append("text", text);
       form.append("voice_id", voiceId);
+      form.append("exaggeration", String(delivery.expressiveness));
+      form.append("speed", String(delivery.speed));
       if (token) form.append("access_token", token);
       const res = await fetch(`${WEB_BASE}/api/generate-preset`, { method: "POST", body: form });
       const data = await res.json();
@@ -164,6 +177,7 @@ function PresetVoiceSection() {
                   selected && styles.voiceCircleSelected,
                 ]}
               >
+                {selected && <View style={styles.voiceCircleScrim} />}
                 <Text style={styles.voiceCircleText}>{v.initial}</Text>
               </View>
               <Text style={[styles.voiceLabel, selected && styles.voiceLabelSelected]}>
@@ -173,6 +187,8 @@ function PresetVoiceSection() {
           );
         })}
       </View>
+
+      <DeliverySliders value={delivery} onChange={setDelivery} accentColor={COLORS.pink} />
 
       <GradientButton
         onPress={handleGenerate}
@@ -191,6 +207,7 @@ function CloneVoiceSection() {
   const { token } = useAccessToken();
   const [text, setText] = useState("");
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
+  const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,6 +233,8 @@ function CloneVoiceSection() {
         name: file.name,
         type: file.mimeType ?? "audio/wav",
       } as unknown as Blob);
+      form.append("exaggeration", String(delivery.expressiveness));
+      form.append("speed", String(delivery.speed));
       if (token) form.append("access_token", token);
       const res = await fetch(`${WEB_BASE}/api/clone-voice`, { method: "POST", body: form });
       const data = await res.json();
@@ -247,6 +266,8 @@ function CloneVoiceSection() {
         value={text}
         onChangeText={setText}
       />
+
+      <DeliverySliders value={delivery} onChange={setDelivery} accentColor={COLORS.blue} />
 
       <GradientButton
         onPress={handleGenerate}
@@ -323,7 +344,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     color: COLORS.foreground,
   },
-  voiceRow: { flexDirection: "row", gap: 20 },
+  // 10 preset voices don't fit in one unwrapped row on a phone width -
+  // wrap, and cut the gap down so more fit per line.
+  voiceRow: { flexDirection: "row", flexWrap: "wrap", gap: 12, rowGap: 16, justifyContent: "center" },
   voiceOption: { alignItems: "center", gap: 4 },
   voiceCircle: {
     width: 56,
@@ -337,6 +360,24 @@ const styles = StyleSheet.create({
     opacity: 1,
     borderWidth: 3,
     borderColor: COLORS.coral,
+    transform: [{ scale: 1.22 }],
+    // React Native has no CSS-filter equivalent (brightness/saturate), so
+    // "darker when selected" is a translucent black scrim on top of the
+    // circle's own color instead - see the nested View in the voice list.
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  voiceCircleScrim: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 28,
+    backgroundColor: "rgba(0,0,0,0.18)",
   },
   voiceCircleText: { color: "#fff", fontSize: 18, fontWeight: "700" },
   voiceLabel: { fontSize: 12, color: COLORS.muted },
@@ -366,4 +407,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   playButtonText: { fontSize: 14, color: COLORS.foreground, fontWeight: "600" },
+  shareButton: {
+    borderRadius: 999,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: COLORS.butter,
+  },
+  shareButtonText: { fontSize: 13, color: "#fff", fontWeight: "700" },
 });

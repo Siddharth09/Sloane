@@ -4,6 +4,7 @@
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/slider": "5.2.0",
     "expo": "~57.0.20",
     "expo-audio": "~57.0.4",
     "expo-document-picker": "~57.0.1",
