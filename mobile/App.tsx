@@ -22,6 +22,10 @@ import { Footer } from "./Footer";
 import { useAudioGeneration } from "./useAudioGeneration";
 import { WaitingGame } from "./WaitingGame";
 
+// Mirrors web/src/app/page.tsx's IS_POD_MODE - keep in sync with the
+// server-side INFERENCE_BACKEND toggle (web/src/lib/inferenceBackend.ts).
+const IS_POD_MODE = process.env.EXPO_PUBLIC_INFERENCE_BACKEND === "pod";
+
 const COLORS = {
   background: "#fdf6f0",
   surface: "#fffbf7",
@@ -130,7 +134,7 @@ function PresetVoiceSection() {
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
-  const { generate, loading, error, audioUri, statusMessage } = useAudioGeneration("/api/generate-preset");
+  const { generate, loading, error, audioUri, statusMessage, showWaitingUi } = useAudioGeneration("/api/generate-preset");
 
   async function handleGenerate() {
     const form = new FormData();
@@ -179,9 +183,11 @@ function PresetVoiceSection() {
 
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor={COLORS.pink} />
 
-      <Text style={styles.helperText}>
-        Generation can take 20-60 seconds, sometimes a little longer after a quiet period.
-      </Text>
+      {!IS_POD_MODE && (
+        <Text style={styles.helperText}>
+          Generation can take 20-60 seconds, sometimes a little longer after a quiet period.
+        </Text>
+      )}
       <GradientButton
         onPress={handleGenerate}
         disabled={!text || loading}
@@ -189,7 +195,7 @@ function PresetVoiceSection() {
         label="Generate"
       />
 
-      {loading && (
+      {showWaitingUi && (
         <>
           <Text style={styles.helperText}>{statusMessage}</Text>
           <WaitingGame />

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Nunito } from "next/font/google";
+import { VisitTracker } from "@/components/VisitTracker";
 import "./globals.css";
 
 const nunito = Nunito({
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${nunito.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
+        <VisitTracker />
         <div className="art-backdrop" aria-hidden="true">
           <div style={{ backgroundImage: "url(/backgrounds/mosaic-courtyard.png)" }} />
         </div>

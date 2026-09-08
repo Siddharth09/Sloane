@@ -37,6 +37,50 @@ export async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS page_visits (
+      id BIGSERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS page_visits_created_at_idx ON page_visits (created_at)`;
+}
+
+// "Real time" here means a heartbeat, not a persistent connection - the
+// client pings this every ~20s while the tab is open/visible (see
+// VisitTracker.tsx), so "active in the last 60s" is a reasonable proxy for
+// concurrent visitors without needing websockets/SSE infrastructure.
+const ACTIVE_WINDOW_SECONDS = 60;
+
+export async function recordVisit(sessionId: string, path: string) {
+  await sql`INSERT INTO page_visits (session_id, path) VALUES (${sessionId}, ${path})`;
+}
+
+export async function getVisitStats() {
+  // Multiplying a bound parameter by a fixed interval literal (rather than
+  // interpolating the number inside `interval '... seconds'`) - the latter
+  // puts the query parameter placeholder inside a string literal, which
+  // postgres does not substitute into, and errors.
+  const [{ active_now }] = await sql`
+    SELECT COUNT(DISTINCT session_id) AS active_now FROM page_visits
+    WHERE created_at > now() - (${ACTIVE_WINDOW_SECONDS} * interval '1 second')
+  `;
+  const [{ visits_today }] = await sql`
+    SELECT COUNT(DISTINCT session_id) AS visits_today FROM page_visits
+    WHERE created_at > date_trunc('day', now())
+  `;
+  const recentPaths = await sql`
+    SELECT path, COUNT(DISTINCT session_id) AS visitors FROM page_visits
+    WHERE created_at > now() - (${ACTIVE_WINDOW_SECONDS} * interval '1 second')
+    GROUP BY path ORDER BY visitors DESC
+  `;
+  return {
+    activeNow: Number(active_now),
+    visitsToday: Number(visits_today),
+    activePaths: recentPaths.map((r) => ({ path: r.path as string, visitors: Number(r.visitors) })),
+  };
 }
 
 function generateAccessToken(): string {

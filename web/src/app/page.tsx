@@ -17,6 +17,11 @@ import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
 // server's public URL directly for now.
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+// Mirrors the server-side INFERENCE_BACKEND toggle (@/lib/inferenceBackend)
+// so this one piece of UI copy can be accurate before a request is even
+// made - keep both env vars in sync, nothing enforces that automatically.
+const IS_POD_MODE = process.env.NEXT_PUBLIC_INFERENCE_BACKEND === "pod";
+
 function base64ToBlob(base64: string, mimeType: string): Blob {
   const byteChars = atob(base64);
   const byteNumbers = new Array(byteChars.length);
@@ -78,15 +83,21 @@ function AudioResultPlayer({ audioBase64 }: { audioBase64: string | null }) {
   );
 }
 
-// Cold-start-aware polling: generation now runs on a scale-to-zero RunPod
-// Serverless endpoint instead of an always-on Pod, so a request can take
-// anywhere from a few seconds (warm) to ~60s+ (cold start) - see STATUS.md
-// "Serverless migration" for why this can't just be one longer blocking
-// fetch (Vercel's function timeout on our plan tops out well under a worst-
-// case cold start). Shared by both generation sections below so the polling
-// behavior/messaging can't drift between them.
+// Dual backend: generation runs against either an always-on GPU Pod (fast,
+// no cold start - the initial POST already returns {status:"COMPLETED",
+// audioBase64}) or RunPod Serverless (cheap, but a cold start can take
+// ~60s+, well past Vercel's function timeout - the initial POST returns
+// {jobId} and needs polling instead). See @/lib/inferenceBackend for the
+// server-side toggle. This hook handles both response shapes so neither
+// generation section needs to know which backend is active.
+//
+// The elapsed-time status message/WaitingGame only appear after
+// SHOW_WAITING_UI_AFTER_MS - a fast Pod-mode response (or a warm Serverless
+// worker) finishes well before that and never shows them, so switching
+// backends doesn't require also touching this UI logic.
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 180_000; // generous - well past worst observed cold start + generation
+const SHOW_WAITING_UI_AFTER_MS = 6000;
 
 function loadingMessageFor(elapsedMs: number): string {
   if (elapsedMs < 15_000) return "Waking up the voice engine…";
@@ -99,25 +110,37 @@ function useAudioGeneration(endpoint: string) {
   const [error, setError] = useState<string | null>(null);
   const [audioBase64, setAudioBase64] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [showWaitingUi, setShowWaitingUi] = useState(false);
 
   async function generate(form: FormData) {
     setLoading(true);
     setError(null);
     setAudioBase64(null);
+    setShowWaitingUi(false);
     const startedAt = Date.now();
-    setStatusMessage(loadingMessageFor(0));
+    const tick = () => {
+      const elapsed = Date.now() - startedAt;
+      setStatusMessage(loadingMessageFor(elapsed));
+      setShowWaitingUi(elapsed >= SHOW_WAITING_UI_AFTER_MS);
+    };
+    tick();
+    const ticker = setInterval(tick, 1000);
     try {
       const res = await fetch(endpoint, { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      const jobId = data.jobId as string;
 
+      if (data.status === "COMPLETED") {
+        // Pod mode - already finished, nothing to poll.
+        setAudioBase64(data.audioBase64);
+        return;
+      }
+
+      const jobId = data.jobId as string;
       for (;;) {
-        const elapsed = Date.now() - startedAt;
-        if (elapsed > POLL_TIMEOUT_MS) {
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
           throw new Error("Generation is taking much longer than usual — please try again.");
         }
-        setStatusMessage(loadingMessageFor(elapsed));
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         const statusRes = await fetch(`/api/job-status?jobId=${encodeURIComponent(jobId)}`);
         const statusData = await statusRes.json();
@@ -133,11 +156,12 @@ function useAudioGeneration(endpoint: string) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
+      clearInterval(ticker);
       setLoading(false);
     }
   }
 
-  return { generate, loading, error, audioBase64, statusMessage };
+  return { generate, loading, error, audioBase64, statusMessage, showWaitingUi };
 }
 
 function GenerateButton({
@@ -203,7 +227,7 @@ function PresetVoiceSection() {
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
-  const { generate, loading, error, audioBase64, statusMessage } = useAudioGeneration("/api/generate-preset");
+  const { generate, loading, error, audioBase64, statusMessage, showWaitingUi } = useAudioGeneration("/api/generate-preset");
 
   async function handleGenerate() {
     const form = new FormData();
@@ -232,9 +256,11 @@ function PresetVoiceSection() {
       />
       <VoicePicker value={voiceId} onChange={setVoiceId} />
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-pink" />
-      <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
+      {!IS_POD_MODE && (
+        <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
+      )}
       <GenerateButton loading={loading} disabled={!text || loading} onClick={handleGenerate} colorClassName="bg-pink" />
-      {loading && (
+      {showWaitingUi && (
         <>
           <p className="text-sm text-muted">{statusMessage}</p>
           <WaitingGame />
@@ -251,7 +277,7 @@ function CloneVoiceSection() {
   const [text, setText] = useState("");
   const [file, setFile] = useState<Blob | File | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
-  const { generate, loading, error, audioBase64, statusMessage } = useAudioGeneration("/api/clone-voice");
+  const { generate, loading, error, audioBase64, statusMessage, showWaitingUi } = useAudioGeneration("/api/clone-voice");
 
   async function handleGenerate() {
     if (!file) return;
@@ -281,9 +307,11 @@ function CloneVoiceSection() {
         onChange={(e) => setText(e.target.value)}
       />
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-blue" />
-      <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
+      {!IS_POD_MODE && (
+        <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
+      )}
       <GenerateButton loading={loading} disabled={!text || !file || loading} onClick={handleGenerate} colorClassName="bg-blue" />
-      {loading && (
+      {showWaitingUi && (
         <>
           <p className="text-sm text-muted">{statusMessage}</p>
           <WaitingGame />

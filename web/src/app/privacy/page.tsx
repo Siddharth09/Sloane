@@ -36,10 +36,12 @@ export default function PrivacyPage() {
           <Section title="Audio — narration and voice cloning">
             <p>
               Text you type for narration, any voice recording you upload to clone, and the audio we
-              generate are processed entirely on our own servers (a dedicated GPU server we operate).
-              We do not send this data to any third-party AI vendor. Generated audio clips are stored
-              on our server so you can play them back and download them; uploaded voice samples are
-              used to generate your requested audio and are not used to train models for other users.
+              generate are processed entirely on our own infrastructure (a GPU server we control,
+              rented from RunPod). We do not send this data to any third-party AI vendor. Generated
+              audio is not stored on our servers — it&apos;s returned directly to your device for
+              playback and download, so save anything you want to keep. Uploaded voice samples are
+              used only to generate your requested audio and are not retained afterward or used to
+              train models for other users.
             </p>
           </Section>
 
@@ -61,6 +63,16 @@ export default function PrivacyPage() {
               store your card details ourselves. We store your email, subscription status, and usage
               (characters/video credits used this billing period) to enforce plan limits and manage
               your subscription.
+            </p>
+          </Section>
+
+          <Section title="Basic visit counts">
+            <p>
+              We keep a lightweight, anonymous record of page visits (a randomly generated id stored
+              in your browser, the page path, and a timestamp) so we can see roughly how much traffic
+              the site is getting. We don&apos;t collect your IP address, device fingerprint, or any
+              identifying information as part of this, and it isn&apos;t linked to your account or
+              billing data.
             </p>
           </Section>
 

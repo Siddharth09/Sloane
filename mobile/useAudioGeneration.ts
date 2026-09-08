@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { File, Paths } from "expo-file-system";
 
-// Mirrors web/src/app/page.tsx's useAudioGeneration - generation now runs on
-// a scale-to-zero RunPod Serverless endpoint instead of an always-on Pod, so
-// a request submits a job and this polls for its result rather than
-// blocking on one fetch (see STATUS.md "Serverless migration"). Kept as a
-// plain hook (not shared code with web - no shared package between the two
-// apps yet) but the shape and timing constants match exactly so behavior is
-// consistent across platforms.
+// Mirrors web/src/app/page.tsx's useAudioGeneration - dual backend, same
+// reasoning: generation runs against either an always-on GPU Pod (fast, the
+// initial POST already returns {status:"COMPLETED", audioBase64}) or RunPod
+// Serverless (cheap, cold starts - the initial POST returns {jobId} and
+// needs polling instead). See web/src/lib/inferenceBackend.ts for the
+// server-side toggle. Kept as a plain hook (not shared code with web - no
+// shared package between the two apps yet) but the shape and timing
+// constants match exactly so behavior is consistent across platforms.
 const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 180_000;
+const SHOW_WAITING_UI_AFTER_MS = 6000;
 
 export function loadingMessageFor(elapsedMs: number): string {
   if (elapsedMs < 15_000) return "Waking up the voice engine…";
@@ -33,25 +35,37 @@ export function useAudioGeneration(endpoint: string) {
   const [error, setError] = useState<string | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [showWaitingUi, setShowWaitingUi] = useState(false);
 
   async function generate(form: FormData) {
     setLoading(true);
     setError(null);
     setAudioUri(null);
+    setShowWaitingUi(false);
     const startedAt = Date.now();
-    setStatusMessage(loadingMessageFor(0));
+    const tick = () => {
+      const elapsed = Date.now() - startedAt;
+      setStatusMessage(loadingMessageFor(elapsed));
+      setShowWaitingUi(elapsed >= SHOW_WAITING_UI_AFTER_MS);
+    };
+    tick();
+    const ticker = setInterval(tick, 1000);
     try {
       const res = await fetch(`${WEB_BASE}${endpoint}`, { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      const jobId = data.jobId as string;
 
+      if (data.status === "COMPLETED") {
+        // Pod mode - already finished, nothing to poll.
+        setAudioUri(await base64WavToLocalUri(data.audioBase64));
+        return;
+      }
+
+      const jobId = data.jobId as string;
       for (;;) {
-        const elapsed = Date.now() - startedAt;
-        if (elapsed > POLL_TIMEOUT_MS) {
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
           throw new Error("Generation is taking much longer than usual — please try again.");
         }
-        setStatusMessage(loadingMessageFor(elapsed));
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         const statusRes = await fetch(`${WEB_BASE}/api/job-status?jobId=${encodeURIComponent(jobId)}`);
         const statusData = await statusRes.json();
@@ -66,9 +80,10 @@ export function useAudioGeneration(endpoint: string) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
+      clearInterval(ticker);
       setLoading(false);
     }
   }
 
-  return { generate, loading, error, audioUri, statusMessage };
+  return { generate, loading, error, audioUri, statusMessage, showWaitingUi };
 }
