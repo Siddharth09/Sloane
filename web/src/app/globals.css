@@ -64,13 +64,20 @@ body {
   flex: 1;
   background-size: cover;
   background-position: center;
+  /* source image is modest-resolution and gets stretched to fill the
+     viewport via cover - a slight blur hides the resulting upscale/
+     compression blockiness instead of letting it show as pixelation */
+  filter: blur(1.5px) saturate(1.15);
 }
 
 .art-backdrop::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: rgba(253, 246, 240, 0.5);
+  /* lighter, purple-tinted wash (was a heavier cream wash) so the
+     backdrop's purple reads through instead of getting flattened toward
+     neutral cream */
+  background: rgba(233, 227, 250, 0.32);
 }
 
 .shadow-soft {
