@@ -233,23 +233,30 @@ def apply_speed(audio: np.ndarray, rate: float) -> np.ndarray:
     return librosa.effects.time_stretch(audio, rate=rate)
 
 
-TERMINAL_FALL_SEMITONES = 3.5  # total forced pitch drop across the tail's voiced span
-TERMINAL_FALL_TAIL_MS = 350.0
+TERMINAL_FALL_SEMITONES = 5.0  # forced pitch drop from the tail's own peak down to its last voiced frame
+TERMINAL_FALL_TAIL_MS = 450.0
+SPLICE_CROSSFADE_MS = 15.0  # just enough to avoid an audible click at the head/tail seam
 
 
 def apply_terminal_fall(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray:
-    """A flat pitch-shift-down (the first version of this) only lowers the
-    whole tail's register - it doesn't change whether the *contour* is
-    rising or falling, so a naturally-rising ending still sounded like it
-    was rising, just transposed lower (reported live: "it still appears
-    upward in his last words"). This instead uses the WORLD vocoder
-    (pyworld) to decompose the tail into F0 + spectral envelope +
-    aperiodicity, forces F0 to actually slope downward across the tail's
-    voiced span - overriding whatever shape it originally had, not just
-    shifting it - and resynthesizes with the original envelope/aperiodicity
-    untouched, so timbre is preserved. Skipped for questions, which should
-    keep their natural rise. Applies to every voice, not a per-character
-    tweak.
+    """Two bugs in the first two versions of this, both found by ear on the
+    live site:
+    1. A flat pitch-shift-down only lowers the whole tail's register - it
+       doesn't change whether the *contour* rises or falls, so a naturally
+       rising ending still sounded like it was rising, just transposed
+       lower.
+    2. Forcing a fall via pyworld but then amplitude-crossfading it back in
+       with the original over the whole tail doesn't work either: blending
+       two differently-pitched signals in the amplitude domain layers two
+       simultaneous pitches rather than producing one falling one, and the
+       ear kept tracking the untouched original ("it again is ascending").
+    Fix: commit fully to the corrected pitch for the whole tail (only a
+    ~15ms crossfade at the splice point, to avoid a click - not a pitch
+    blend), and anchor the forced fall to the tail's actual F0 *peak*
+    rather than its first frame, since a rise can keep climbing past where
+    the tail window starts - falling from frame 0 while the peak is still
+    ahead doesn't read as a descending ending. Skipped for questions, which
+    should keep their natural rise. Applies to every voice.
     """
     stripped = sentence.rstrip()
     if not stripped or stripped[-1] == "?":
@@ -271,15 +278,19 @@ def apply_terminal_fall(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray
     if len(voiced_idx) < 2:
         return audio  # nothing pitched to reshape (e.g. a trailing consonant/breath)
 
-    first, last = voiced_idx[0], voiced_idx[-1]
-    start_semitone = 69.0 + 12.0 * np.log2(f0[first] / 440.0)
+    peak_idx = voiced_idx[np.argmax(f0[voiced_idx])]
+    last_idx = voiced_idx[-1]
+    if last_idx <= peak_idx:
+        return audio  # already falls (or flat) after its own peak - nothing to fix
+
+    peak_semitone = 69.0 + 12.0 * np.log2(f0[peak_idx] / 440.0)
     target_f0 = f0.copy()
-    span = max(1, last - first)
-    for i in range(first, last + 1):
+    span = last_idx - peak_idx
+    for i in range(peak_idx, last_idx + 1):
         if f0[i] <= 0:
             continue
-        frac = (i - first) / span
-        target_semitone = start_semitone - TERMINAL_FALL_SEMITONES * frac
+        frac = (i - peak_idx) / span
+        target_semitone = peak_semitone - TERMINAL_FALL_SEMITONES * frac
         target_f0[i] = 440.0 * (2.0 ** ((target_semitone - 69.0) / 12.0))
 
     reshaped = pw.synthesize(target_f0, sp, ap, sr).astype(np.float32)
@@ -288,9 +299,11 @@ def apply_terminal_fall(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray
     elif len(reshaped) > len(tail):
         reshaped = reshaped[: len(tail)]
 
-    ramp = np.linspace(0.0, 1.0, len(tail), dtype=np.float32) ** 1.5
-    blended = tail.astype(np.float32) * (1 - ramp) + reshaped * ramp
-    return np.concatenate([head, blended])
+    fade_len = min(int(sr * SPLICE_CROSSFADE_MS / 1000), len(tail) // 4)
+    if fade_len > 0:
+        fade = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
+        reshaped[:fade_len] = tail[:fade_len].astype(np.float32) * (1 - fade) + reshaped[:fade_len] * fade
+    return np.concatenate([head, reshaped])
 
 
 MAX_GENERATION_ATTEMPTS = 4  # see generate_sentence_with_retry - the underlying bugs this works around
