@@ -1,6 +1,6 @@
 # Lucy Labs — Status Summary
 
-_Last updated: 2026-09-08 (evening)_
+_Last updated: 2026-09-08 (late evening — fal video research reviewed and merged)_
 
 **What this is:** a plain-language overview of what we're building, what's done, and what's left. For full technical decision history, see [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md).
 
@@ -16,7 +16,7 @@ A voice-cloning platform, live in production, with video cloning intentionally p
 
 - **Preset voices:** type text, hear it narrated in one of **10 named, fine-tuned voices** — Vicky, Patrick, Alice, Megan, Katie, Brad, Izzy, Robbo, Michelle, Mark (customer-facing names; internal folder/git identifiers stay neutral, e.g. `art_instructor`, `voice_business` — see `web/src/components/VoicePicker.tsx` for the id→name mapping). Fully working, live.
 - **Clone any voice:** upload ~10-20 seconds of anyone's voice, type any text, get it narrated back in that voice (zero-shot cloning). Working, live.
-- **Video cloning:** **not sold as a feature right now.** The home page shows an honest static demo (embedded EchoMimicV3 test clip) with a message that we're not ready yet, and points users to Kling and Utopai Studios' PAI (what the "Chloe vs History" AI creator runs on) as the current best options. The Pro plan still lists a 30-second/month video allotment, with an explicit on-page disclaimer that it's reserved for when it ships, not a working feature today.
+- **Video cloning:** **not sold as a feature right now** (home page still honest). Direction after 2026-09-08 fal.ai research: **talking head** = Kling Avatar + Lucy voice; **cinematic** = Veo + Veo's own voice — a *proposed* direction, not built, see `docs/fal-video-research/README.md`. Pro still lists a reserved 30s/mo allotment with disclaimer until credits + `/api/generate-video` actually ship. Points users to Kling / Utopai's PAI as external options meanwhile.
 
 It runs as:
 - A **web app** (Next.js, live at **lucylabs.app**, deployed on Vercel)
@@ -59,6 +59,7 @@ It runs as:
 - Real side-by-side: EchoMimicV3 vs. Hallo2, same reference photo/audio, both zero-shot. **User's verdict: EchoMimicV3 better.** Hallo2 remains the only one with real fine-tuning code.
 - Real cost data captured: EchoMimicV3 "flash" variant generates a ~3.24s clip in ~14s of actual GPU sampling; ~9.5min one-time cold start per pod boot; **~$0.005/generation once warm**. This means a "user uploads a photo, gets a fun demo video" feature would be cheap per-use — the real cost is keeping a pod warm 24/7 (~$533/mo), not the generation itself. Worth revisiting if video becomes a priority.
 - Hallo2's own training code is full-scale (30,000 steps, reference config uses 8×A100s, no lightweight per-persona adapter path exists) — plausibly hundreds of GPU-hours on our single RTX 4090, not a quick job.
+- **Fal.ai research, 2026-09-08 (separate session, reviewed and merged by this one)**: a parallel session smoke-tested real hosted video APIs (fal.ai, proxying Kling Avatar, Veo 3.1, Grok Imagine, MiniMax, Seedance) against Vicky's (`art_instructor`) actual photo/likeness. Findings, exact fal COGS, and a proposed credit-based pricing layer on top of the existing Stripe tiers are in [`docs/fal-video-research/README.md`](./docs/fal-video-research/README.md) — worth reading in full before acting on it. **Only the README made it into the repo** — the actual demo videos/stills/audio and the prompts file referenced throughout it did **not** transfer (a ~63MB tarball on the other session's machine never landed here), so treat the "preferred demo" / asset-index links in that README as pending, not present. **Not yet reviewed for one real concern**: this sent a real person's likeness/voice to several third-party vendors for processing — a materially different exposure than this project's self-hosted consent posture (`PROJECT_CONTEXT.md` Sec 3), and worth a deliberate decision before treating it as product direction, not something to inherit silently. Nothing here was implemented in code or Stripe — it's proposal/research only.
 
 ### RunPod pod management — an important operational lesson from today
 - Only `sloane-retrain` (audio, `q613gzxs6xrs3h`, IP `213.173.99.21`) should stay `RUNNING` — it serves live production traffic. All 8 other pods, including `sloane-video` (`25cqq216cqtfkn`), are `EXITED` as of this update.
@@ -83,6 +84,7 @@ It runs as:
 
 **Video**
 - Not an active build target — home page and Pro plan both say so honestly. Real per-generation cost is cheap if revisited (~$0.005/gen warm); Hallo2 fine-tuning remains a major GPU-hour commitment if ever pursued.
+- A fal.ai-based paid direction (Kling Avatar for talking-head + Veo for cinematic, with a proposed credit system) was researched separately — see `docs/fal-video-research/README.md` and the note above. **Decision not made**: needs (1) the actual demo assets transferred so the quality claims can be checked, (2) a real answer on sending real people's likeness/voice to third-party vendors, (3) a call on the proposed price increases (Plus $3→$5, Pro $9→$12) before any Stripe/code work starts.
 
 **Copyright / rights**
 - The unused abstract-painting background image (still in `design/background-versions/`) was AI-generated and doesn't match a specific real Rothko composition, but the generating tool's commercial-use terms were never checked. Low priority since it's not in use.
