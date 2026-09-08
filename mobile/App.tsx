@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -16,6 +17,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { LogoMark } from "./LogoMark";
 import { AccountWidget } from "./AccountWidget";
 import { useAccessToken } from "./useAccessToken";
+import { useFreeTierId } from "./useFreeTierId";
 import { DeliverySliders, DEFAULT_DELIVERY, type Delivery } from "./DeliverySliders";
 import { VideoPreviewSection } from "./VideoPreviewSection";
 import { Footer } from "./Footer";
@@ -25,6 +27,10 @@ import { WaitingGame } from "./WaitingGame";
 // Mirrors web/src/app/page.tsx's IS_POD_MODE - keep in sync with the
 // server-side INFERENCE_BACKEND toggle (web/src/lib/inferenceBackend.ts).
 const IS_POD_MODE = process.env.EXPO_PUBLIC_INFERENCE_BACKEND === "pod";
+
+// Same backend host the rest of the app calls (billing/free-tier status
+// live on the Next.js web app, not the GPU inference server).
+const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
 
 const COLORS = {
   background: "#fdf6f0",
@@ -108,11 +114,13 @@ function Card({
   icon,
   title,
   subtitle,
+  headerRight,
   children,
 }: {
   icon: string;
   title: string;
   subtitle: string;
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -123,18 +131,59 @@ function Card({
           <Text style={styles.cardTitle}>{title}</Text>
           <Text style={styles.cardSubtitle}>{subtitle}</Text>
         </View>
+        {headerRight}
       </View>
       <View style={{ gap: 12 }}>{children}</View>
     </View>
   );
 }
 
+type FreeTierUsage = { charactersUsed: number; charactersLimit: number; periodEnd: string };
+
+function useFreeTierUsage(freeTierId: string | null) {
+  const [usage, setUsage] = useState<FreeTierUsage | null>(null);
+
+  async function refresh() {
+    if (!freeTierId) return;
+    try {
+      const res = await fetch(`${WEB_BASE}/api/free-tier-status?id=${encodeURIComponent(freeTierId)}`);
+      const data = await res.json();
+      if (res.ok) setUsage(data);
+    } catch {
+      // Informational only - not worth surfacing an error for this.
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freeTierId]);
+
+  return { usage, refresh };
+}
+
+function FreeTierBadge({ usage }: { usage: FreeTierUsage | null }) {
+  if (!usage) return null;
+  const remaining = Math.max(0, usage.charactersLimit - usage.charactersUsed);
+  const resetDate = new Date(usage.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+  return (
+    <View style={{ alignItems: "flex-end" }}>
+      <Text style={styles.freeTierCount}>{remaining.toLocaleString()} left</Text>
+      <Text style={styles.freeTierReset}>resets {resetDate}</Text>
+    </View>
+  );
+}
+
 function PresetVoiceSection() {
   const { token } = useAccessToken();
+  const freeTierId = useFreeTierId();
+  const { usage: freeUsage, refresh: refreshFreeUsage } = useFreeTierUsage(token ? null : freeTierId);
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const { generate, loading, error, audioUri, statusMessage, showWaitingUi } = useAudioGeneration("/api/generate-preset");
+
+  const freeTierExhausted = !token && !!freeUsage && freeUsage.charactersUsed >= freeUsage.charactersLimit;
 
   async function handleGenerate() {
     const form = new FormData();
@@ -143,11 +192,18 @@ function PresetVoiceSection() {
     form.append("exaggeration", String(delivery.expressiveness));
     form.append("speed", String(delivery.speed));
     if (token) form.append("access_token", token);
+    else if (freeTierId) form.append("free_tier_id", freeTierId);
     await generate(form);
+    if (!token) refreshFreeUsage();
   }
 
   return (
-    <Card icon="✎" title="Text to speech" subtitle="Type anything, pick a voice, hear it narrated.">
+    <Card
+      icon="✎"
+      title="Text to speech"
+      subtitle="Type anything, pick a voice, hear it narrated."
+      headerRight={!token ? <FreeTierBadge usage={freeUsage} /> : undefined}
+    >
       <TextInput
         style={styles.textArea}
         multiline
@@ -188,12 +244,24 @@ function PresetVoiceSection() {
           Generation can take 20-60 seconds, sometimes a little longer after a quiet period.
         </Text>
       )}
-      <GradientButton
-        onPress={handleGenerate}
-        disabled={!text || loading}
-        loading={loading}
-        label="Generate"
-      />
+      {freeTierExhausted ? (
+        <View style={styles.exhaustedBox}>
+          <Text style={styles.exhaustedText}>
+            You&apos;ve used your free {freeUsage!.charactersLimit.toLocaleString()} characters this month.
+            Resets {new Date(freeUsage!.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.
+          </Text>
+          <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`)}>
+            <Text style={styles.exhaustedLink}>See plans →</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <GradientButton
+          onPress={handleGenerate}
+          disabled={!text || loading}
+          loading={loading}
+          label="Generate"
+        />
+      )}
 
       {showWaitingUi && (
         <>
@@ -209,6 +277,7 @@ function PresetVoiceSection() {
 
 function CloneVoiceSection() {
   const { token } = useAccessToken();
+  const freeTierId = useFreeTierId();
   const [text, setText] = useState("");
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
@@ -235,6 +304,7 @@ function CloneVoiceSection() {
     form.append("exaggeration", String(delivery.expressiveness));
     form.append("speed", String(delivery.speed));
     if (token) form.append("access_token", token);
+    else if (freeTierId) form.append("free_tier_id", freeTierId);
     await generate(form);
   }
 
@@ -290,7 +360,7 @@ export default function App() {
           <LogoMark size={64} />
           <Text style={styles.title}>Lucy Labs</Text>
           <Text style={styles.subtitle}>
-            Narrate, clone, and share, in a voice that sounds like someone real.
+            The AI Voice Clone, narrate any text or upload your voice and try it out!
           </Text>
         </View>
         <AccountWidget />
@@ -407,6 +477,16 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontSize: 14, fontWeight: "700" },
   errorText: { color: "#c0503a", fontSize: 13 },
   helperText: { fontSize: 12, color: COLORS.muted },
+  freeTierCount: { fontSize: 12, fontWeight: "700", color: COLORS.foreground },
+  freeTierReset: { fontSize: 10, color: COLORS.muted, marginTop: 1 },
+  exhaustedBox: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 12,
+    gap: 6,
+  },
+  exhaustedText: { fontSize: 13, color: COLORS.coralDark, lineHeight: 18 },
+  exhaustedLink: { fontSize: 13, fontWeight: "700", color: COLORS.coralDark, textDecorationLine: "underline" },
   playButton: {
     borderWidth: 1,
     borderColor: COLORS.border,
