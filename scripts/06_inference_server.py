@@ -441,6 +441,42 @@ MAX_CHUNK_WORDS_BY_VOICE: dict[str, int] = {
 }
 
 
+def split_long_sentence(sentence: str, max_words: int) -> list[str]:
+    """A single sentence longer than max_words used to get emitted as one
+    chunk regardless of the cap (see chunk_sentences) - harmless for voices
+    whose cap comfortably exceeds a normal sentence length, but for voices
+    with a low cap (Michelle/Robbo, 14 words - shorter than plenty of
+    ordinary sentences) it silently defeated the cap entirely. Reproduced
+    live 2026-09-09: a 24-word sentence for voice_meditation was generated
+    as one chunk despite her 14-word cap, and failed retries almost every
+    time. Splits at clause boundaries (commas/semicolons) first, greedily
+    grouping clauses up to max_words - falls back to a hard word-count
+    split only if a single clause alone still exceeds max_words.
+    """
+    clauses = re.split(r"(?<=[,;])\s+", sentence.strip())
+    pieces: list[str] = []
+    current: list[str] = []
+    current_words = 0
+    for clause in clauses:
+        clause_words = len(clause.split())
+        if clause_words > max_words:
+            if current:
+                pieces.append(" ".join(current))
+                current, current_words = [], 0
+            words = clause.split()
+            for i in range(0, len(words), max_words):
+                pieces.append(" ".join(words[i : i + max_words]))
+            continue
+        if current and current_words + clause_words > max_words:
+            pieces.append(" ".join(current))
+            current, current_words = [], 0
+        current.append(clause)
+        current_words += clause_words
+    if current:
+        pieces.append(" ".join(current))
+    return pieces
+
+
 def chunk_sentences(sentences: list[str], max_words: int = MAX_CHUNK_WORDS) -> list[tuple[str, str]]:
     """Group sentences into generation chunks.
 
@@ -453,9 +489,12 @@ def chunk_sentences(sentences: list[str], max_words: int = MAX_CHUNK_WORDS) -> l
     current_words = 0
     for sentence in sentences:
         word_count = len(sentence.split())
-        # Over-length single sentence: emit as its own chunk (do not discard).
-        if word_count > max_words and not current:
-            chunks.append((sentence, sentence))
+        if word_count > max_words:
+            if current:
+                chunks.append((" ".join(current), current[-1]))
+                current, current_words = [], 0
+            for piece in split_long_sentence(sentence, max_words):
+                chunks.append((piece, piece))
             continue
         if current and current_words + word_count > max_words:
             chunks.append((" ".join(current), current[-1]))
