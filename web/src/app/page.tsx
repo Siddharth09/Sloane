@@ -17,15 +17,25 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 function ResultPlayer({ url, kind }: { url: string | null; kind: "audio" | "video" }) {
   if (!url) return null;
-  // generate-preset/clone-voice already return an absolute URL (proxied
-  // server-side); clone-video still returns a path relative to API_BASE.
-  const fullUrl = url.startsWith("http") ? url : `${API_BASE}${url}`;
+  // generate-preset/clone-voice now return a path on our own domain
+  // (/api/audio/<file>.wav); clone-video still returns a path relative to
+  // API_BASE (not yet wired through a proxy - still hits the GPU pod directly).
+  const fullUrl = url.startsWith("http") ? url : `${url.startsWith("/api/") ? "" : API_BASE}${url}`;
+  const filename = url.split("/").pop();
   return (
     <div className="mt-4">
       {kind === "video" ? (
         <video className="w-full rounded-xl" src={fullUrl} controls />
       ) : (
         <audio className="w-full" src={fullUrl} controls />
+      )}
+      {kind === "audio" && filename && (
+        <a
+          href={`/api/download-mp3?file=${encodeURIComponent(filename)}&name=lucy-${Date.now()}`}
+          className="mt-3 inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
+        >
+          Download MP3
+        </a>
       )}
       <ShareButtons url={fullUrl} text="Listen to what I made with Lucy!" />
     </div>

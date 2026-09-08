@@ -53,10 +53,11 @@ export async function POST(req: NextRequest) {
   }
 
   // audio_url comes back as a path relative to the inference server (e.g.
-  // "/audio/xyz.wav") - make it absolute here since the client never has
-  // INFERENCE_SERVER_URL itself (that env var isn't NEXT_PUBLIC_-prefixed).
+  // "/audio/xyz.wav") - route it through our own /api/audio proxy instead
+  // of handing the client the raw GPU pod URL (not a clean link to share,
+  // and not something we want to expose directly).
   if (data.audio_url) {
-    data.audio_url = `${INFERENCE_SERVER_URL}${data.audio_url}`;
+    data.audio_url = `/api/audio/${data.audio_url.split("/").pop()}`;
   }
 
   return NextResponse.json(data, { status: upstream.status });

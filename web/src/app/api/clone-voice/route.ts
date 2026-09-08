@@ -44,8 +44,10 @@ export async function POST(req: NextRequest) {
     await incrementUsage(accessToken, text.length, 0);
   }
 
+  // Route through our own /api/audio proxy rather than exposing the raw
+  // GPU pod URL (see generate-preset/route.ts).
   if (data.audio_url) {
-    data.audio_url = `${INFERENCE_SERVER_URL}${data.audio_url}`;
+    data.audio_url = `/api/audio/${data.audio_url.split("/").pop()}`;
   }
 
   return NextResponse.json(data, { status: upstream.status });
