@@ -199,56 +199,47 @@ function CloneVoiceSection() {
 }
 
 function VideoCloneSection() {
-  const [text, setText] = useState("");
-  const [file, setFile] = useState<Blob | File | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleGenerate() {
-    if (!file) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const form = new FormData();
-      form.append("text", text);
-      form.append("reference_video", file, "reference.webm");
-      const res = await fetch(`${API_BASE}/api/clone-video`, { method: "POST", body: form });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
-      const data = await res.json();
-      setVideoUrl(data.video_url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Coming soon — video cloning is still being built.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <Card
       wash="bg-purple-wash/90"
       iconColor="text-purple"
       icon="🎬"
-      title="Clone a video"
-      subtitle="Record with your camera or upload a clip, then type what it should say. (In progress.)"
+      title="Video, coming later"
+      subtitle="Not a real feature yet — just a peek at where we're headed."
     >
-      <RecordOrUpload kind="video" onChange={setFile} />
-      <textarea
-        className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
-        rows={4}
-        placeholder="Type what you want the video to say..."
-        value={text}
-        onChange={(e) => setText(e.target.value)}
+      <video
+        className="w-full rounded-xl"
+        src="/echomimic-demo.mp4"
+        controls
+        loop
+        muted
+        playsInline
       />
-      <button
-        className="shadow-soft rounded-full bg-purple py-3 text-sm font-bold text-white transition hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:shadow-none"
-        disabled={!text || !file || loading}
-        onClick={handleGenerate}
-      >
-        {loading ? "Generating…" : "Generate"}
-      </button>
-      {error && <p className="text-sm text-coral-dark">{error}</p>}
-      <ResultPlayer url={videoUrl} kind="video" />
+      <p className="text-sm leading-relaxed text-muted">
+        We at Lucy Labs aren&apos;t ready for video yet, but we&apos;re working on it. The clip above is
+        one of our own early tests — a still photo animated to match audio. It&apos;s clearly not
+        perfect, and we&apos;d rather be upfront about that than oversell it. If you need
+        production-quality AI video today, the current best options are{" "}
+        <a
+          href="https://kling.ai"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold text-purple underline"
+        >
+          Kling
+        </a>{" "}
+        and{" "}
+        <a
+          href="https://www.utopaistudios.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold text-purple underline"
+        >
+          Utopai Studios&apos; PAI
+        </a>{" "}
+        (the engine behind the &quot;Chloe vs History&quot; AI creator). We&apos;ll bring real video
+        cloning here once it&apos;s actually good.
+      </p>
     </Card>
   );
 }

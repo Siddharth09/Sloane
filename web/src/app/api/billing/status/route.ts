@@ -17,8 +17,6 @@ export async function GET(req: NextRequest) {
     status: sub.status,
     charactersUsed: sub.characters_used,
     charactersLimit: plan.charactersPerMonth,
-    videoSecondsUsed: sub.video_seconds_used,
-    videoSecondsLimit: plan.videoSecondsPerMonth,
     periodEnd: sub.period_end,
   });
 }
