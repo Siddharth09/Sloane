@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { upsertSubscriberForCheckout, setSubscriberStatus, initSchema } from "@/lib/db";
 import { planFromStripePriceId } from "@/lib/plans";
+import { sendAccessCodeEmail, sendPaymentFailedEmail } from "@/lib/email";
 import type Stripe from "stripe";
 
 // Stripe needs the raw request body (unparsed) to verify the signature.
@@ -34,14 +35,19 @@ export async function POST(req: NextRequest) {
         break;
       }
       const item = subscription.items.data[0];
-      await upsertSubscriberForCheckout({
-        email: session.customer_details?.email ?? "",
+      const email = session.customer_details?.email ?? "";
+      const accessToken = await upsertSubscriberForCheckout({
+        email,
         stripeCustomerId: session.customer as string,
         stripeSubscriptionId: subscription.id,
         plan,
         periodStart: new Date(item.current_period_start * 1000),
         periodEnd: new Date(item.current_period_end * 1000),
       });
+      // Only on first checkout, not every renewal (invoice.paid fires
+      // monthly too) - a "welcome, here's your code" email every renewal
+      // would be spammy and confusing.
+      await sendAccessCodeEmail(email, accessToken, plan);
       break;
     }
 
@@ -76,6 +82,9 @@ export async function POST(req: NextRequest) {
       const subscription = event.data.object as Stripe.Subscription;
       if (subscription.status === "past_due" || subscription.status === "unpaid") {
         await setSubscriberStatus(subscription.customer as string, "past_due");
+        const customer = await stripe.customers.retrieve(subscription.customer as string);
+        const customerEmail = !customer.deleted ? customer.email : null;
+        if (customerEmail) await sendPaymentFailedEmail(customerEmail);
       } else if (subscription.status === "active") {
         await setSubscriberStatus(subscription.customer as string, "active");
       }
