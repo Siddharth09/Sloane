@@ -278,6 +278,13 @@ function VideoCloneSection() {
         footnote="Faces can distort or drift from the original photo during generation — a real limitation of current AI video technology, ours included."
       />
 
+      <VideoModeCard
+        badge="Also tested"
+        title="Kling's own voice (not shipping this way)"
+        videoSrc="/trailers/kirsty-moon-kling-with-audio.mp4"
+        description="We also tried letting Kling generate its own voice instead of dubbing with Lucy. Lip sync was noticeably worse this way — it's why Talking head mode dubs with your Lucy voice instead of a vendor's own generated speech."
+      />
+
       <p className="rounded-2xl bg-white/70 p-3 text-xs leading-relaxed text-muted">
         <strong className="text-foreground">Video credits are shared across both modes</strong> — one
         monthly balance, spend it on talking-head, cinematic, or a mix of both. 1 credit ≈{" "}
