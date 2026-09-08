@@ -25,7 +25,6 @@ export async function POST(req: NextRequest) {
       // haven't made a tax-classification decision for the product yet, so
       // disable it for now rather than guess a tax code. Revisit once that's
       // deliberately decided.
-      // @ts-expect-error - managed_payments isn't in this SDK version's types yet
       managed_payments: { enabled: false },
     });
     return NextResponse.json({ url: session.url });
