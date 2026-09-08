@@ -248,16 +248,14 @@ export default function Home() {
   return (
     <div className="min-h-screen px-6 py-20">
       <main className="mx-auto flex max-w-2xl flex-col gap-10">
-        <div className="flex flex-col items-center gap-4">
-          <a href="/" className="drop-shadow-lg">
-            <LogoMark size={72} />
+        <div className="mx-auto rounded-[32px] border border-white/60 bg-surface/90 px-8 py-8 text-center shadow-soft-lg backdrop-blur-xl">
+          <a href="/" className="inline-flex">
+            <LogoMark size={64} />
           </a>
-          <div className="mx-auto rounded-[32px] border border-white/60 bg-surface/90 px-8 py-8 text-center shadow-soft-lg backdrop-blur-xl">
-            <h1 className="text-4xl font-extrabold tracking-tight text-foreground">Lucy Labs</h1>
-            <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
-              Narrate, clone, and share, in a voice that sounds like someone real.
-            </p>
-          </div>
+          <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-foreground">Lucy Labs</h1>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
+            Narrate, clone, and share, in a voice that sounds like someone real.
+          </p>
         </div>
         <AccountWidget />
         <PresetVoiceSection />
