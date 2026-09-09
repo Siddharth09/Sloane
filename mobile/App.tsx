@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  ImageBackground,
   Linking,
   Pressable,
   SafeAreaView,
@@ -12,7 +13,13 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useAudioPlayer } from "expo-audio";
+import {
+  useAudioPlayer,
+  useAudioRecorder,
+  useAudioRecorderState,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+} from "expo-audio";
 import * as DocumentPicker from "expo-document-picker";
 import { LogoMark } from "./LogoMark";
 import { AccountWidget } from "./AccountWidget";
@@ -117,7 +124,16 @@ function AudioResult({ uri }: { uri: string | null }) {
   if (!uri) return null;
   return (
     <View style={{ gap: 8 }}>
-      <Pressable style={styles.playButton} onPress={() => player.play()}>
+      <Pressable
+        style={styles.playButton}
+        onPress={async () => {
+          // player.play() resumes from currentTime, which sits at the end
+          // once playback finishes - without this seek, pressing Play again
+          // after a full playthrough silently does nothing.
+          await player.seekTo(0);
+          player.play();
+        }}
+      >
         <Text style={styles.playButtonText}>▶ Play result</Text>
       </Pressable>
       <Pressable
@@ -327,9 +343,11 @@ function CloneVoiceSection() {
   const isPodMode = useIsPodMode();
   const { usage, refresh: refreshUsage } = useUsage(token, freeTierId);
   const [text, setText] = useState("");
-  const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
+  const [file, setFile] = useState<{ uri: string; name: string; mimeType?: string } | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const { generate, loading, error, audioUri, statusMessage, showWaitingUi } = useAudioGeneration("/api/clone-voice");
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder);
 
   const quotaExhausted = !!usage && usage.charactersUsed >= usage.charactersLimit;
 
@@ -342,6 +360,20 @@ function CloneVoiceSection() {
     } catch {
       // User cancelled or the picker failed - nothing to recover, just leave the prior selection.
     }
+  }
+
+  async function handleToggleRecord() {
+    if (recorderState.isRecording) {
+      await recorder.stop();
+      if (recorder.uri) {
+        setFile({ uri: recorder.uri, name: "recording.m4a", mimeType: "audio/m4a" });
+      }
+      return;
+    }
+    const { granted } = await requestRecordingPermissionsAsync();
+    if (!granted) return;
+    await recorder.prepareToRecordAsync();
+    recorder.record();
   }
 
   async function handleGenerate() {
@@ -367,12 +399,31 @@ function CloneVoiceSection() {
     <Card
       icon="🎙"
       title="Clone any voice"
-      subtitle="Upload ~10-20 seconds of a voice, type any text."
+      subtitle="Record or upload ~10-20 seconds of a voice, type any text."
       headerRight={<UsageBadge usage={usage} />}
     >
-      <Pressable style={styles.filePickButton} onPress={handlePickFile}>
-        <Text style={styles.filePickButtonText}>{file ? file.name : "Choose an audio file"}</Text>
-      </Pressable>
+      {file ? (
+        <View style={styles.filePickButton}>
+          <Text style={styles.filePickButtonText}>{file.name}</Text>
+          <Pressable onPress={() => setFile(null)}>
+            <Text style={styles.clearFileText}>Clear and try again</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <Pressable
+            style={[styles.recordButton, recorderState.isRecording && styles.recordButtonActive]}
+            onPress={handleToggleRecord}
+          >
+            <Text style={styles.recordButtonText}>
+              {recorderState.isRecording ? "⏹ Stop" : "🎙 Record audio"}
+            </Text>
+          </Pressable>
+          <Pressable style={[styles.filePickButton, { flex: 1 }]} onPress={handlePickFile}>
+            <Text style={styles.filePickButtonText}>Upload</Text>
+          </Pressable>
+        </View>
+      )}
 
       <TextInput
         style={styles.textArea}
@@ -425,33 +476,53 @@ function CloneVoiceSection() {
 
 export default function App() {
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.hero}>
-          <LogoMark size={64} />
-          <Text style={styles.title}>Lucy Labs</Text>
-          <Text style={styles.subtitle}>
-            The AI Voice Clone, narrate any text or upload your voice and try it out!
-          </Text>
-        </View>
-        <AccountWidget />
-        <PresetVoiceSection />
-        <CloneVoiceSection />
-        <VideoPreviewSection />
-        <Footer />
-      </ScrollView>
-    </SafeAreaView>
+    // Mirrors web/src/app/layout.tsx's .art-backdrop - same mosaic-courtyard
+    // painting behind the whole app, with the same cream wash on top for text
+    // contrast. Streamed from the web app's own hosting rather than bundled
+    // into the app binary, same reasoning as VideoPreviewSection's trailers.
+    <ImageBackground
+      source={{ uri: `${WEB_BASE}/backgrounds/mosaic-courtyard.png` }}
+      style={styles.backdrop}
+      resizeMode="cover"
+    >
+      <View style={styles.backdropWash} />
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.hero}>
+            <LogoMark size={64} />
+            <Text style={styles.title}>Lucy Labs</Text>
+            <Text style={styles.subtitle}>
+              The AI Voice Clone, narrate any text or upload your voice and try it out!
+            </Text>
+          </View>
+          <AccountWidget />
+          <PresetVoiceSection />
+          <CloneVoiceSection />
+          <VideoPreviewSection />
+          <Footer />
+        </ScrollView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.background },
+  backdrop: { flex: 1 },
+  backdropWash: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(253, 246, 240, 0.5)",
+  },
+  safeArea: { flex: 1 },
   // ScrollView's content container only takes up as much height as its
   // content by default - on a screen taller than the content, that left a
-  // gap at the bottom showing the window's default background instead of
-  // COLORS.background. flex:1 on the ScrollView itself + flexGrow:1 on the
+  // gap at the bottom showing the backdrop cut off instead of continuing to
+  // scroll with it. flex:1 on the ScrollView itself + flexGrow:1 on the
   // content container makes it fill the screen even when content is short.
-  scrollView: { flex: 1, backgroundColor: COLORS.background },
+  scrollView: { flex: 1 },
   scrollContent: { flexGrow: 1, padding: 20, gap: 20 },
   hero: { alignItems: "center", marginBottom: 4, gap: 4 },
   title: { fontSize: 30, fontWeight: "800", color: COLORS.foreground, marginTop: 8 },
@@ -537,9 +608,22 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 14,
     alignItems: "center",
+    justifyContent: "center",
     backgroundColor: "#fff",
+    gap: 6,
   },
   filePickButtonText: { fontSize: 14, color: COLORS.foreground },
+  clearFileText: { fontSize: 12, color: COLORS.muted, textDecorationLine: "underline" },
+  recordButton: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.rose,
+  },
+  recordButtonActive: { backgroundColor: COLORS.coralDark },
+  recordButtonText: { fontSize: 14, color: "#fff", fontWeight: "700" },
   button: {
     borderRadius: 999,
     paddingVertical: 14,

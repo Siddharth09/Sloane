@@ -11,7 +11,7 @@ type Stats = {
   activePaths: { path: string; visitors: number }[];
 };
 
-type BackendMode = "pod" | "serverless";
+type BackendMode = "pod" | "serverless" | "modal";
 
 export default function AdminDashboard() {
   const [password, setPassword] = useState<string | null>(null);
@@ -65,7 +65,7 @@ export default function AdminDashboard() {
     fetch("/api/admin/backend-mode", { headers: { "x-admin-password": password } })
       .then((r) => r.json())
       .then((data) => {
-        if (data.mode === "pod" || data.mode === "serverless") setBackendMode(data.mode);
+        if (data.mode === "pod" || data.mode === "serverless" || data.mode === "modal") setBackendMode(data.mode);
       })
       .catch(() => {});
   }, [password]);
@@ -136,12 +136,24 @@ export default function AdminDashboard() {
         <div className="rounded-[28px] border border-white/60 bg-surface/90 p-7 shadow-soft-lg backdrop-blur-xl">
           <h2 className="text-sm font-bold text-foreground">Audio generation backend</h2>
           <p className="mt-1 text-sm text-muted">
-            Switches instantly, no redeploy needed. Default is Serverless (billed only for actual usage,
-            but cold starts can take up to ~3 minutes - measured, not estimated). Switch to Pod only when
-            you explicitly want fast, no-cold-start responses during a high-traffic window - it&apos;s billed
-            hourly whether used or not, so switch back to Serverless once traffic quiets down.
+            Switches instantly, no redeploy needed. Default is Modal (usage-based billing, cold starts in
+            the seconds not minutes). RunPod Serverless is kept around only to burn down its remaining
+            prepaid credit or as a same-day rollback - its real-world cold starts measured ~2-3 minutes,
+            not the ~20-60s originally designed for. Pod is fast and no-cold-start but billed hourly whether
+            used or not - only for an explicit high-traffic window.
           </p>
           <div className="mt-4 flex gap-2">
+            <button
+              onClick={() => switchBackendMode("modal")}
+              disabled={switchingMode || backendMode === "modal"}
+              className={`flex-1 rounded-full py-2.5 text-sm font-bold transition disabled:cursor-default ${
+                backendMode === "modal"
+                  ? "bg-coral text-white"
+                  : "border border-border bg-white text-foreground hover:bg-white/70"
+              }`}
+            >
+              Modal (cheap, fast)
+            </button>
             <button
               onClick={() => switchBackendMode("pod")}
               disabled={switchingMode || backendMode === "pod"}
@@ -162,7 +174,7 @@ export default function AdminDashboard() {
                   : "border border-border bg-white text-foreground hover:bg-white/70"
               }`}
             >
-              Serverless (cheap, cold starts)
+              RunPod Serverless (legacy)
             </button>
           </div>
           <p className="mt-2 text-xs text-muted">

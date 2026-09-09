@@ -10,6 +10,7 @@ Pure extraction - no behavior changes. Every function/constant here is
 unchanged from 06_inference_server.py as of the 2026-09-09 long-sentence
 chunking fix.
 """
+import os
 import re
 import string
 import sys
@@ -26,15 +27,22 @@ from faster_whisper import WhisperModel
 from scipy.signal import butter, sosfilt
 from peft import PeftModel
 
+# Everything below was hardcoded to /workspace/sloane/... - the path RunPod's
+# network volume mounts at. Modal mounts its own Volume at a different path
+# (/models), so this root is now an env var (defaulting to the RunPod path,
+# so RunPod's Dockerfile/CMD needs no changes) rather than a literal - the
+# only change needed to run this exact engine on either platform.
+MODEL_ROOT = os.environ.get("LUCY_MODEL_ROOT", "/workspace/sloane")
+
 # The fine-tuning toolkit's own package layout (src.*) - reuse it directly
 # rather than reimplementing model loading.
-sys.path.insert(0, "/workspace/sloane/chatterbox-ft-art")
+sys.path.insert(0, f"{MODEL_ROOT}/chatterbox-ft-art")
 from src.model import resize_and_load_t3_weights  # noqa: E402
 from src.utils import trim_silence_with_vad  # noqa: E402
 from src.chatterbox_.tts import ChatterboxTTS  # noqa: E402
 from src.chatterbox_.models.t3.t3 import T3  # noqa: E402
 
-BASE_MODEL_DIR = "/workspace/sloane/chatterbox-finetuning/pretrained_models"
+BASE_MODEL_DIR = f"{MODEL_ROOT}/chatterbox-finetuning/pretrained_models"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 NEW_VOCAB_SIZE = 2454  # matches TrainConfig.new_vocab_size for is_turbo=False
 
@@ -42,44 +50,54 @@ PRESET_VOICES = {
     # Kirsty and Matt reuse the very first two fine-tuned voices (Phase 6) -
     # renamed for the customer-facing preset picker, no retraining needed.
     "art_instructor": {
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-art/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/art_instructor/clips/00266.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-art/chatterbox_output/new_lang_adapter",
+        # Was 00266.wav - reproduced live 2026-09-09 as a near-silent-output
+        # bug (0.14-0.26s clips instead of several seconds), independent of
+        # chunk length/word count (unlike Michelle's issue). Root-caused to
+        # the reference clip, not text length: tested 6 candidate clips from
+        # her own training data with identical text/settings, only 2 of 6
+        # avoided an almost-immediate forced-EOS (Chatterbox's alignment-
+        # stream safety net firing on "token_repetition" within the first
+        # ~5-100 sampling steps, all 4 retries, every time) - no correlation
+        # with clip duration (2.98-6.29s spanned in both groups). 00010.wav
+        # confirmed reliable across 3 separate test sentences post-swap.
+        "reference": f"{MODEL_ROOT}/training_data/art_instructor/clips/00010.wav",
     },
     "music_instructor": {
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-music/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/music_instructor/clips/00042.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-music/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/music_instructor/clips/00042.wav",
     },
     "voice_business": {  # Alice
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_business/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/voice_business/clips/00040.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_business/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_business/clips/00040.wav",
     },
     "voice_finance": {  # Megan
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_finance/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/voice_finance/clips/00001.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_finance/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_finance/clips/00001.wav",
     },
     "voice_broadcast": {  # Katie
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_broadcast/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/voice_broadcast/clips/00018.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_broadcast/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_broadcast/clips/00018.wav",
     },
     "voice_tech": {  # Brad
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_tech/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/voice_tech/clips/00001.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_tech/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_tech/clips/00001.wav",
     },
     "voice_mark": {  # Mark
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_mark/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/voice_mark/clips/00001.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_mark/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_mark/clips/00001.wav",
     },
     "voice_sales": {  # Robbo
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_sales/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/voice_sales/clips/00008.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_sales/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_sales/clips/00008.wav",
     },
     "voice_comedy": {  # Izzy
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_comedy/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/voice_comedy/clips/00001.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_comedy/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_comedy/clips/00001.wav",
     },
     "voice_meditation": {  # Michelle
-        "adapter_dir": "/workspace/sloane/chatterbox-ft-voice_meditation/chatterbox_output/new_lang_adapter",
-        "reference": "/workspace/sloane/training_data/voice_meditation/clips/00001.wav",
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_meditation/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_meditation/clips/00001.wav",
     },
 }
 

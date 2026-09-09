@@ -1,23 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getJobStatus } from "@/lib/runpod";
+import { getJobStatus, type RunpodStatusResponse } from "@/lib/runpod";
+import { getModalJobStatus, type ModalStatusResponse } from "@/lib/modal";
 import { consumePendingGeneration } from "@/lib/db";
 import { saveGenerationAudio } from "@/lib/generationHistory";
 
 // Polled by the client after generate-preset/clone-voice hand back a jobId
 // (see web/src/app/page.tsx's handleGenerate). On COMPLETED, the audio comes
-// back as base64 straight from RunPod's job output - nothing is written to
-// disk here, deliberately: Vercel functions have an ephemeral, per-invocation
-// filesystem, so a file written in one request wouldn't exist for a later
-// one anyway. The client builds a data: URL from the base64 directly.
+// back as base64 straight from the backend's job output - nothing is written
+// to disk here, deliberately: Vercel functions have an ephemeral,
+// per-invocation filesystem, so a file written in one request wouldn't exist
+// for a later one anyway. The client builds a data: URL from the base64
+// directly.
+//
+// jobId's shape tells us which backend produced it - see
+// @/lib/modal.ts's submitModalJob - RunPod's own ids never contain a colon,
+// so this can't misroute an existing RunPod job.
 export async function GET(req: NextRequest) {
   const jobId = req.nextUrl.searchParams.get("jobId");
   if (!jobId) {
     return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
   }
 
-  let result;
+  let result: RunpodStatusResponse | ModalStatusResponse;
   try {
-    result = await getJobStatus(jobId);
+    if (jobId.startsWith("modal:")) {
+      result = await getModalJobStatus(jobId.slice("modal:".length));
+    } else {
+      result = await getJobStatus(jobId);
+    }
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Could not check job status" },

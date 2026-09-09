@@ -1216,22 +1216,37 @@ actual spec to build against.
 3. **Video, talking head (Kling)** - user uploads a photo *or* a short
    video of a person, plus audio - either typed text narrated in a Lucy
    preset/cloned voice, or a separately uploaded audio file. Kling Avatar
-   lip-syncs the face to that audio. **Voice is ours (Lucy)** - this is the
-   "our dub over their face" product.
+   lip-syncs the face to that audio.
+   - **Voice choice, updated 2026-09-09**: default is still **Lucy voice**
+     dubbed over the face (already tested and preferred - see the "Also
+     tested: Kling's own voice" comparison below, cut from the home page
+     as a *marketing* card but the finding stands as a real product
+     input). Per direct instruction, **also offer Kling's own native
+     voice as a selectable option** rather than only ever dubbing Lucy -
+     some users may prefer it or want faster turnaround. Disclose plainly
+     that Lucy-dubbed lip sync is the better-tested, recommended default.
    - **Explicitly unresolved (user's own words: "we'll have to work that
-     out so it's seamless")**: the exact UX for the photo-vs-video input
-     and the typed-text-vs-uploaded-audio input - four input combinations
-     exist and none of the flows for them are designed yet. This is real
-     design work, not a small detail.
+     out so it's seamless")**: the exact UX for the photo-vs-video input,
+     the typed-text-vs-uploaded-audio input, and now also the vendor-
+     voice-vs-Lucy-voice choice - none of these flows are designed yet.
+     This is real design work, not a small detail.
 4. **Video, cinematic (Veo)** - user gives a text prompt (e.g. "an exotic
    beach at sunset") plus a photo, and Veo generates a cinematic scene.
-   **Voice is Veo's own generated dialogue, not Lucy's** - deliberate,
-   because dubbing a separately-generated voice over a fully-animated
-   cinematic scene doesn't lip-sync convincingly (confirmed in the fal
-   research, Sec 12: "native Kling/Veo speech will not reliably match
-   Vicky's accent" was about the reverse case, but the same lip-sync
-   mismatch problem applies here in full force since there's much more
-   camera/face motion to sync against than a static talking-head shot).
+   - **Voice choice, updated 2026-09-09**: default is still **Veo's own
+     generated dialogue**, not Lucy's - deliberate, because dubbing a
+     separately-generated voice over a fully-animated cinematic scene
+     doesn't lip-sync convincingly (confirmed in the fal research, Sec
+     12: "native Kling/Veo speech will not reliably match Vicky's accent"
+     was about the reverse case, but the same lip-sync mismatch problem
+     applies here in full force since there's much more camera/face
+     motion to sync against than a static talking-head shot). Per direct
+     instruction, **also offer Lucy-voice dubbing as a selectable option**
+     for users who want brand-voice consistency over lip-sync accuracy -
+     disclose plainly that this combination is the least lip-sync-
+     accurate option available, don't bury that tradeoff.
+   - Net effect: **both video modes should offer a voice-source choice**
+     (vendor-native vs. Lucy-dubbed) once built, each with its own honest
+     quality caveat, rather than a single hardcoded voice per mode.
 
 ### Honesty requirement - explicit, non-negotiable per the user
 
@@ -1345,3 +1360,57 @@ Raised proactively, not yet discussed with the user:
 
 Remaining open items above (1-5) are not decided - listed so they don't
 get lost, not to block the spec above.
+
+## 14. Audio inference platform migration + Vicky voice fix, 2026-09-09
+
+**Decision: moved production audio inference from RunPod Serverless to
+Modal.** RunPod Serverless's real-world cold starts (2-3 minutes on a plain
+uncontended request, confirmed live) were a genuinely bad user experience -
+direct feedback: "it took a long time, this won't work well." Researched
+alternatives (Modal, Baseten, Replicate, Beam Cloud, RunPod's own
+FlashBoot/active-workers) before committing; verdict was that Modal and Beam
+Cloud were the only two with a real architectural answer to cold starts
+(snapshot-based fast-restore, the same class of tech RunPod's FlashBoot was
+supposed to be), both still pure usage-based billing, both worth a real test
+before switching stacks. Modal was built and tested end-to-end; it works.
+
+**What it actually delivers**: cold start ~141s measured (not dramatically
+better than RunPod's worst case - don't oversell this to the user again),
+but a *warm* container (any request within 5 minutes of the last one)
+answers in ~10-17s. The real win is typical-case latency during any burst of
+real usage, not a fix for the very first request after a quiet period.
+Modal's experimental memory-snapshotting feature could close that remaining
+gap further but wasn't tested - flagged as a future stretch goal, not
+promised.
+
+**Full technical detail (exact gotchas, exact commands, env vars, the
+RunPod-kept-as-fallback rationale) lives in `STATUS.md`'s "Inference
+backend" section**, not duplicated here - that file is the one to update
+again if this changes further. The one thing worth recording here as a
+*decision*, not an operational detail: RunPod Serverless is being kept
+running and selectable from `/admin` on purpose, specifically to burn down
+existing prepaid RunPod credit before it's ever fully retired - not an
+oversight, not tech debt.
+
+**Separately, in the course of auditing all 10 voices before/after this
+migration**: found and fixed a real, fully reproducible bug in Vicky
+(`art_instructor`) - near-silent output (0.14-0.26s) on every attempt,
+independent of text. Root-caused to her specific reference audio clip
+(swapped for a different, verified-reliable clip from her own training
+data) rather than a training-data-quantity or chunk-length problem like
+Michelle's known issue - see `STATUS.md` "Audio generation quality" for the
+full diagnostic story. This settles one more entry in the long-running
+"`PRESET_VOICES` reference clips were never re-picked post-retrain" open
+item (Sec 12), though for an unrelated reason (a genuine bug, not a
+retrain-driven clip renumbering) - Robbo and Michelle's clips remain
+un-re-picked.
+
+**Also fixed this session, smaller items surfaced by real usage rather than
+code review**: the Expressiveness/Speed delivery sliders' default values
+weren't actually centered on their own tracks (expressiveness's true
+midpoint is 0.65, not the 0.6 default) - visible in a screenshot, fixed on
+both platforms. Mobile-specific bugs found via the first real-device Expo Go
+test (see `STATUS.md` "Mobile / iOS App Store"): Play button not working a
+second time, no mic-recording option on Clone Voice, the whole-app
+decorative background never having been added to mobile at all, and video
+trailer clips never actually starting playback.

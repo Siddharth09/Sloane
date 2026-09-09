@@ -10,7 +10,10 @@
  */
 export type Delivery = { expressiveness: number; speed: number };
 
-export const DEFAULT_DELIVERY: Delivery = { expressiveness: 0.6, speed: 1.0 };
+// expressiveness 0.65 is the true midpoint of [0.3, 1.0] - 0.6 used to sit
+// visibly left of center on the slider (speed's 1.0 already IS the exact
+// midpoint of [0.7, 1.3], so it didn't need a change).
+export const DEFAULT_DELIVERY: Delivery = { expressiveness: 0.65, speed: 1.0 };
 
 export function DeliverySliders({
   value,

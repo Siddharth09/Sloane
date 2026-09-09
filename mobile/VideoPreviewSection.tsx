@@ -33,6 +33,7 @@ function TrailerClip({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
     p.muted = true;
+    p.play();
   });
   return <VideoView style={styles.video} player={player} nativeControls contentFit="cover" />;
 }

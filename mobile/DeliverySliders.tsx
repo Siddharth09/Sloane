@@ -2,7 +2,10 @@ import { StyleSheet, Text, View } from "react-native";
 import Slider from "@react-native-community/slider";
 
 export type Delivery = { expressiveness: number; speed: number };
-export const DEFAULT_DELIVERY: Delivery = { expressiveness: 0.6, speed: 1.0 };
+// expressiveness 0.65 is the true midpoint of [0.3, 1.0] - 0.6 used to sit
+// visibly left of center on the slider (speed's 1.0 already IS the exact
+// midpoint of [0.7, 1.3], so it didn't need a change).
+export const DEFAULT_DELIVERY: Delivery = { expressiveness: 0.65, speed: 1.0 };
 
 // Mirrors web/src/components/DeliverySliders.tsx - same two honestly-labeled
 // controls (real generation params, not a fake "happy/sad" knob), same

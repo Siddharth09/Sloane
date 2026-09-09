@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSubscriberByToken, checkQuota, incrementUsage, checkFreeQuota, recordFreeUsage, createPendingGeneration, initSchema } from "@/lib/db";
-import { submitJob } from "@/lib/runpod";
-import { isPodMode, generateViaPod } from "@/lib/inferenceBackend";
+import { isPodMode, generateViaPod, submitGenerationJob } from "@/lib/inferenceBackend";
 import { getSessionUser } from "@/lib/auth";
 import { saveGenerationAudio } from "@/lib/generationHistory";
 
@@ -66,7 +65,7 @@ export async function POST(req: NextRequest) {
         await saveGenerationAudio({ userId: sessionUser.id, kind: "preset", voiceLabel: voiceId, text, audioBase64 });
       }
     } else {
-      const { jobId } = await submitJob({
+      const { jobId } = await submitGenerationJob({
         action: "generate-preset",
         text,
         voice_id: voiceId,

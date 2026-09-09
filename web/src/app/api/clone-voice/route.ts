@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSubscriberByToken, checkQuota, incrementUsage, checkFreeQuota, recordFreeUsage, createPendingGeneration, initSchema } from "@/lib/db";
-import { isPodMode, generateViaPod } from "@/lib/inferenceBackend";
-import { submitJob } from "@/lib/runpod";
+import { isPodMode, generateViaPod, submitGenerationJob } from "@/lib/inferenceBackend";
 import { getSessionUser } from "@/lib/auth";
 import { saveGenerationAudio } from "@/lib/generationHistory";
 
@@ -69,7 +68,7 @@ export async function POST(req: NextRequest) {
       }
     } else {
       const referenceAudioBase64 = Buffer.from(await referenceAudio.arrayBuffer()).toString("base64");
-      const { jobId } = await submitJob({
+      const { jobId } = await submitGenerationJob({
         action: "clone-voice",
         text,
         reference_audio_base64: referenceAudioBase64,
