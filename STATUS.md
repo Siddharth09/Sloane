@@ -8,6 +8,8 @@ _Last updated: 2026-09-09 (audio inference migrated from RunPod to Modal after r
 
 **Handoff note:** this doc is kept current specifically so a fresh Claude Code session (no memory of prior conversations) can pick up correctly. Read this whole file before doing anything. Git working tree is clean as of this update — everything described below is committed and pushed to `main`.
 
+**2026-09-10 re-verification**: after an overnight idle period (Modal's containers had scaled fully to zero, as designed), a real production request to `www.lucylabs.app` was re-tested cold - completed in ~85s with a healthy 5.1s output. Confirms the Modal migration holds up across a real idle gap, not just immediately after being set up.
+
 ---
 
 ## What we're building
