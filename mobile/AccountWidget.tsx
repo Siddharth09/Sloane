@@ -4,7 +4,7 @@ import { useAccessToken } from "./useAccessToken";
 
 // Same backend host the rest of the app calls (billing status/checkout live
 // on the Next.js web app, not the GPU inference server).
-const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
+const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://www.lucylabs.app";
 
 type Status = {
   plan: string;

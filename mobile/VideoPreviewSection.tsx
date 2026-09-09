@@ -6,7 +6,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 // web app's own hosting rather than bundling multi-MB clips into the app
 // binary - this is preview/marketing content, not something that needs to
 // work offline.
-const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
+const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://www.lucylabs.app";
 
 const COLORS = {
   surface: "#fffbf7",
@@ -82,21 +82,22 @@ export function VideoPreviewSection() {
       <View style={styles.cardHeader}>
         <Text style={styles.cardIcon}>🎬</Text>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>Video, coming later</Text>
-          <Text style={styles.cardSubtitle}>Not live yet — here&apos;s exactly what&apos;s planned.</Text>
+          <Text style={styles.cardTitle}>Video</Text>
+          <Text style={styles.cardSubtitle}>Two modes we&apos;re building toward, shown honestly.</Text>
         </View>
       </View>
 
       <Text style={styles.body}>
-        We at Lucy Labs aren&apos;t ready for video yet, but we&apos;re building toward two distinct modes.
-        Both clips below are real early tests, not polished demos — we&apos;d rather be upfront about
-        where things stand than oversell it.
+        Lucy Labs is building two video modes: Kling for a talking-head video in your own Lucy voice, and
+        Veo for a fully AI-generated cinematic scene. Both clips below are real early tests, not polished
+        demos, and there&apos;s still a lot of work to go before either is good enough to charge for — we&apos;d
+        rather show you exactly where things stand, drawbacks included, than oversell it.
       </Text>
 
       <VideoModeCard
         badge="Talking head"
         title="Kling + your Lucy voice"
-        videoUri={`${WEB_BASE}/trailers/kirsty-moon-kling-dub.mp4`}
+        videoUri={`${WEB_BASE}/trailers/kirsty-kling-dub.mp4`}
         description="Upload a photo or short video of a face, plus audio — either type text narrated in your Lucy voice, or upload your own audio. We lip-sync it to that face. The voice is yours."
       />
 
@@ -104,16 +105,9 @@ export function VideoPreviewSection() {
         badge="Cinematic"
         title="Veo, any scene you describe"
         videoUri={`${WEB_BASE}/trailers/kirsty-moon-veo-audio.mp4`}
-        description="Upload a photo and describe a scene in a prompt — Veo generates the video around it. The voice you hear is AI-generated dialogue, not your Lucy voice: dubbing a separate voice over this much camera motion doesn't sync convincingly, so we don't pretend it does."
+        description="Upload a photo and describe a scene in a prompt — Veo generates the video around it, including its own AI-generated voice and dialogue, not your Lucy voice: dubbing a separate voice over this much camera motion doesn't sync convincingly, so we don't pretend it does."
         promptExamples={CINEMATIC_PROMPT_EXAMPLES}
-        footnote="Faces can distort or drift from the original photo during generation — a real limitation of current AI video technology, ours included."
-      />
-
-      <VideoModeCard
-        badge="Also tested"
-        title="Kling's own voice (not shipping this way)"
-        videoUri={`${WEB_BASE}/trailers/kirsty-moon-kling-with-audio.mp4`}
-        description="We also tried letting Kling generate its own voice instead of dubbing with Lucy. Lip sync was noticeably worse this way — it's why Talking head mode dubs with your Lucy voice instead of a vendor's own generated speech."
+        footnote="The more the character moves within a scene, the more their face can drift or distort from the original reference photo — a real limitation of current AI video technology broadly, ours included, not something we can fully fix on our end. Cinematic mode isn't reliable yet for a shot that needs the face to stay consistent throughout a lot of motion."
       />
 
       <View style={styles.noteBox}>

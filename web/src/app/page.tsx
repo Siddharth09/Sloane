@@ -465,19 +465,20 @@ function VideoCloneSection() {
       wash="bg-purple-wash/90"
       iconColor="text-purple"
       icon="🎬"
-      title="Video, coming later"
-      subtitle="Not live yet — here's exactly what's planned, shown with real early test clips."
+      title="Video"
+      subtitle="Two modes we're building toward, shown honestly — drawbacks included."
     >
       <p className="text-sm leading-relaxed text-muted">
-        We at Lucy Labs aren&apos;t ready for video yet, but we&apos;re building toward two distinct modes.
-        Both clips below are real early tests, not polished demos — we&apos;d rather be upfront about
-        where things stand than oversell it.
+        Lucy Labs is building two video modes: Kling for a talking-head video in your own Lucy voice, and
+        Veo for a fully AI-generated cinematic scene. Both clips below are real early tests, not polished
+        demos, and there&apos;s still a lot of work to go before either is good enough to charge for — we&apos;d
+        rather show you exactly where things stand, drawbacks included, than oversell it.
       </p>
 
       <VideoModeCard
         badge="Talking head"
         title="Kling + your Lucy voice"
-        videoSrc="/trailers/kirsty-moon-kling-dub.mp4"
+        videoSrc="/trailers/kirsty-kling-dub.mp4"
         description="Upload a photo or short video of a face, plus audio — either type text narrated in your Lucy voice, or upload your own audio. We lip-sync it to that face. The voice is yours."
       />
 
@@ -485,16 +486,9 @@ function VideoCloneSection() {
         badge="Cinematic"
         title="Veo, any scene you describe"
         videoSrc="/trailers/kirsty-moon-veo-audio.mp4"
-        description="Upload a photo and describe a scene in a prompt — Veo generates the video around it. The voice you hear is AI-generated dialogue, not your Lucy voice: dubbing a separate voice over this much camera motion doesn't sync convincingly, so we don't pretend it does."
+        description="Upload a photo and describe a scene in a prompt — Veo generates the video around it, including its own AI-generated voice and dialogue, not your Lucy voice: dubbing a separate voice over this much camera motion doesn't sync convincingly, so we don't pretend it does."
         promptExamples={CINEMATIC_PROMPT_EXAMPLES}
-        footnote="Faces can distort or drift from the original photo during generation — a real limitation of current AI video technology, ours included."
-      />
-
-      <VideoModeCard
-        badge="Also tested"
-        title="Kling's own voice (not shipping this way)"
-        videoSrc="/trailers/kirsty-moon-kling-with-audio.mp4"
-        description="We also tried letting Kling generate its own voice instead of dubbing with Lucy. Lip sync was noticeably worse this way — it's why Talking head mode dubs with your Lucy voice instead of a vendor's own generated speech."
+        footnote="The more the character moves within a scene, the more their face can drift or distort from the original reference photo — a real limitation of current AI video technology broadly, ours included, not something we can fully fix on our end. Cinematic mode isn't reliable yet for a shot that needs the face to stay consistent throughout a lot of motion."
       />
 
       <p className="rounded-2xl bg-white/70 p-3 text-xs leading-relaxed text-muted">

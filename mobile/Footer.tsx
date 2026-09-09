@@ -4,7 +4,7 @@ import { Linking, StyleSheet, Text, View } from "react-native";
 // contact, and privacy link, just native-styled. The privacy policy itself
 // only exists as a web page (web/src/app/privacy/page.tsx), so this opens it
 // in the device browser rather than duplicating the content natively.
-const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
+const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://www.lucylabs.app";
 
 const COLORS = {
   surface: "#fffbf7",

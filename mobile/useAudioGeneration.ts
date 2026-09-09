@@ -9,7 +9,7 @@ import { File, Paths } from "expo-file-system";
 // server-side toggle. Kept as a plain hook (not shared code with web - no
 // shared package between the two apps yet) but the shape and timing
 // constants match exactly so behavior is consistent across platforms.
-const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
+const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://www.lucylabs.app";
 const POLL_INTERVAL_MS = 2000;
 // See web/src/app/page.tsx's POLL_TIMEOUT_MS comment - measured a real
 // cold start at ~177s against the live endpoint, so this needs real margin

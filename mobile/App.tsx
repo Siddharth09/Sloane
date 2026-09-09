@@ -26,7 +26,7 @@ import { WaitingGame } from "./WaitingGame";
 
 // Same backend host the rest of the app calls (billing/free-tier status
 // live on the Next.js web app, not the GPU inference server).
-const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
+const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://www.lucylabs.app";
 
 // Mirrors web/src/app/page.tsx's useIsPodMode - fetched at runtime rather
 // than baked in from an env var at build time, so the cold-start copy stays
