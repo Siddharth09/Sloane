@@ -116,6 +116,13 @@ def _encode_wav(audio, sr) -> str:
     scaledown_window=300,
     timeout=300,
     env={"LUCY_MODEL_ROOT": MODEL_ROOT},
+    # Tried enable_memory_snapshot=True + @modal.enter(snap=True) on
+    # 2026-09-10 - made things WORSE, not better: cold start went from
+    # ~85-141s to 194s, AND the restored container generated at ~3
+    # tokens/sec instead of the normal ~13-14 (visible in `modal app logs`
+    # sampling progress bars) - the GPU/CUDA state clearly didn't restore
+    # cleanly from the snapshot. Reverted same day. Do not re-enable without
+    # a real fix for the post-restore GPU slowdown, not just a retry.
 )
 class LucyTTS:
     @modal.enter()
