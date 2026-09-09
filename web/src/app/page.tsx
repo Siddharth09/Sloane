@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AccountWidget } from "@/components/AccountWidget";
 import { Footer } from "@/components/Footer";
 import { LogoMark } from "@/components/LogoMark";
@@ -12,11 +13,6 @@ import { WaitingGame } from "@/components/WaitingGame";
 import { useAccessToken } from "@/lib/useAccessToken";
 import { useFreeTierId } from "@/lib/useFreeTierId";
 import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
-
-// Video cloning isn't wired to the gated proxy yet (Feature C backend still
-// in progress - see PROJECT_CONTEXT.md), so it still calls the inference
-// server's public URL directly for now.
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 // Backend mode is switchable at runtime from /admin (see
 // @/lib/inferenceBackend) - fetched here rather than read from a build-time
@@ -48,19 +44,6 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
   const byteNumbers = new Array(byteChars.length);
   for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
   return new Blob([new Uint8Array(byteNumbers)], { type: mimeType });
-}
-
-function VideoResultPlayer({ url }: { url: string | null }) {
-  if (!url) return null;
-  // clone-video still returns a path relative to API_BASE (not yet wired
-  // through a proxy - still hits the GPU pod directly).
-  const fullUrl = url.startsWith("http") ? url : `${API_BASE}${url}`;
-  return (
-    <div className="mt-4">
-      <video className="w-full rounded-xl" src={fullUrl} controls />
-      <ShareButtons url={fullUrl} text="Listen to what I made with Lucy!" />
-    </div>
-  );
 }
 
 // Generated audio now comes back as base64 straight from a RunPod
@@ -557,9 +540,9 @@ export default function Home() {
     <div className="min-h-screen px-6 py-20">
       <main className="mx-auto flex max-w-2xl flex-col gap-10">
         <div className="mx-auto rounded-[32px] border border-white/60 bg-surface/90 px-8 py-8 text-center shadow-soft-lg backdrop-blur-xl">
-          <a href="/" className="inline-flex">
+          <Link href="/" className="inline-flex">
             <LogoMark size={64} />
-          </a>
+          </Link>
           <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-foreground">Lucy Labs</h1>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
             The AI Voice Clone, narrate any text or upload your voice and try it out!

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { File, Paths } from "expo-file-system";
 
 // Mirrors web/src/app/page.tsx's useAudioGeneration - dual backend, same
@@ -39,6 +39,11 @@ export function useAudioGeneration(endpoint: string) {
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [showWaitingUi, setShowWaitingUi] = useState(false);
+  // Every generation writes a new cache file (expo-audio needs a real
+  // file:// uri, not a data: uri) - without cleanup, a long-lived app
+  // install accumulates one .wav per generation forever. Delete the
+  // previous one once a new one is about to replace it.
+  const previousUri = useRef<string | null>(null);
 
   async function generate(form: FormData) {
     setLoading(true);
@@ -53,6 +58,21 @@ export function useAudioGeneration(endpoint: string) {
     };
     tick();
     const ticker = setInterval(tick, 1000);
+
+    async function setAudioUriAndCleanup(audioBase64: string) {
+      const staleUri = previousUri.current;
+      const newUri = await base64WavToLocalUri(audioBase64);
+      previousUri.current = newUri;
+      setAudioUri(newUri);
+      if (staleUri) {
+        try {
+          new File(staleUri).delete();
+        } catch {
+          // Best-effort - a failed cleanup isn't worth surfacing to the user.
+        }
+      }
+    }
+
     try {
       const res = await fetch(`${WEB_BASE}${endpoint}`, { method: "POST", body: form });
       const data = await res.json();
@@ -60,7 +80,7 @@ export function useAudioGeneration(endpoint: string) {
 
       if (data.status === "COMPLETED") {
         // Pod mode - already finished, nothing to poll.
-        setAudioUri(await base64WavToLocalUri(data.audioBase64));
+        await setAudioUriAndCleanup(data.audioBase64);
         return;
       }
 
@@ -73,7 +93,7 @@ export function useAudioGeneration(endpoint: string) {
         const statusRes = await fetch(`${WEB_BASE}/api/job-status?jobId=${encodeURIComponent(jobId)}`);
         const statusData = await statusRes.json();
         if (statusData.status === "COMPLETED") {
-          setAudioUri(await base64WavToLocalUri(statusData.audioBase64));
+          await setAudioUriAndCleanup(statusData.audioBase64);
           return;
         }
         if (statusData.status === "FAILED") {

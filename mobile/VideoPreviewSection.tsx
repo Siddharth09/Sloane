@@ -109,6 +109,13 @@ export function VideoPreviewSection() {
         footnote="Faces can distort or drift from the original photo during generation — a real limitation of current AI video technology, ours included."
       />
 
+      <VideoModeCard
+        badge="Also tested"
+        title="Kling's own voice (not shipping this way)"
+        videoUri={`${WEB_BASE}/trailers/kirsty-moon-kling-with-audio.mp4`}
+        description="We also tried letting Kling generate its own voice instead of dubbing with Lucy. Lip sync was noticeably worse this way — it's why Talking head mode dubs with your Lucy voice instead of a vendor's own generated speech."
+      />
+
       <View style={styles.noteBox}>
         <Text style={styles.noteText}>
           <Text style={{ fontWeight: "700", color: COLORS.foreground }}>

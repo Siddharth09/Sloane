@@ -21,7 +21,7 @@ export function DeliverySliders({
       <View>
         <View style={styles.labelRow}>
           <Text style={styles.label}>Expressiveness</Text>
-          <Text style={styles.value}>{value.expressiveness < 0.5 ? "Calm" : value.expressiveness > 0.8 ? "Animated" : "Natural"}</Text>
+          <Text style={styles.value}>{value.expressiveness < 0.55 ? "Flat" : value.expressiveness > 0.75 ? "Animated" : "Natural"}</Text>
         </View>
         <Slider
           minimumValue={0.3}

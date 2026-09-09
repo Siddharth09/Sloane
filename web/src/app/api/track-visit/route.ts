@@ -14,7 +14,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
   }
 
-  await initSchema();
-  await recordVisit(sessionId, path);
-  return NextResponse.json({ ok: true });
+  try {
+    await initSchema();
+    await recordVisit(sessionId, path);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[track-visit] failed to record visit", err);
+    return NextResponse.json({ error: "Could not record visit." }, { status: 502 });
+  }
 }

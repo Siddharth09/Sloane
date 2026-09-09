@@ -64,17 +64,17 @@ function CheckoutSuccess() {
     <div className="mx-auto max-w-md rounded-2xl border border-white/60 bg-surface/90 p-6 text-center text-sm shadow-soft backdrop-blur-xl">
       {revealedToken ? (
         <>
-          <p className="font-semibold text-foreground">You're subscribed! Your access code:</p>
+          <p className="font-semibold text-foreground">You&apos;re subscribed! Your access code:</p>
           <code className="mt-2 block rounded-lg bg-white px-4 py-2 text-xs break-all">{revealedToken}</code>
           <p className="mt-2 text-xs text-muted">
-            Saved to this browser automatically. Keep a copy - you'll need it to sign in elsewhere.
+            Saved to this browser automatically. Keep a copy - you&apos;ll need it to sign in elsewhere.
           </p>
         </>
       ) : checking ? (
         <p className="text-muted">Confirming your subscription…</p>
       ) : (
         <p className="text-coral-dark">
-          Payment succeeded but we couldn't fetch your access code yet - refresh this page in a moment.
+          Payment succeeded but we couldn&apos;t fetch your access code yet - refresh this page in a moment.
         </p>
       )}
     </div>
@@ -96,6 +96,8 @@ export default function BillingPage() {
       });
       const data = await res.json();
       if (data.url) {
+        // Intentional full-page navigation to Stripe's hosted checkout, not a React-managed value.
+        // eslint-disable-next-line react-hooks/immutability
         window.location.href = data.url;
         return; // keep the loading state while the browser navigates away
       }

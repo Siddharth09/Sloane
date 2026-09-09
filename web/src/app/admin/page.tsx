@@ -138,7 +138,7 @@ export default function AdminDashboard() {
           <p className="mt-1 text-sm text-muted">
             Switches instantly, no redeploy needed. Default is Serverless (billed only for actual usage,
             but cold starts can take up to ~3 minutes - measured, not estimated). Switch to Pod only when
-            you explicitly want fast, no-cold-start responses during a high-traffic window - it's billed
+            you explicitly want fast, no-cold-start responses during a high-traffic window - it&apos;s billed
             hourly whether used or not, so switch back to Serverless once traffic quiets down.
           </p>
           <div className="mt-4 flex gap-2">

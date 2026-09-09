@@ -12,7 +12,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await initSchema();
-  const stats = await getVisitStats();
-  return NextResponse.json(stats);
+  try {
+    await initSchema();
+    const stats = await getVisitStats();
+    return NextResponse.json(stats);
+  } catch (err) {
+    console.error("[admin/stats] failed to load visit stats", err);
+    return NextResponse.json({ error: "Could not load stats right now." }, { status: 502 });
+  }
 }

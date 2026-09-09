@@ -20,11 +20,11 @@ export function Footer() {
       <Text style={styles.name}>Lucy Labs</Text>
       <Text style={styles.muted}>Part of the Astryks Group</Text>
       <View style={styles.linkRow}>
-        <Text style={styles.link} onPress={() => Linking.openURL("mailto:support@astryks.com")}>
+        <Text style={styles.link} onPress={() => Linking.openURL("mailto:support@astryks.com").catch(() => {})}>
           support@astryks.com
         </Text>
         <Text style={styles.muted}> · </Text>
-        <Text style={styles.link} onPress={() => Linking.openURL(`${WEB_BASE}/privacy`)}>
+        <Text style={styles.link} onPress={() => Linking.openURL(`${WEB_BASE}/privacy`).catch(() => {})}>
           Privacy Policy
         </Text>
       </View>

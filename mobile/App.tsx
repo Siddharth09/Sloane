@@ -24,13 +24,33 @@ import { Footer } from "./Footer";
 import { useAudioGeneration } from "./useAudioGeneration";
 import { WaitingGame } from "./WaitingGame";
 
-// Mirrors web/src/app/page.tsx's IS_POD_MODE - keep in sync with the
-// server-side INFERENCE_BACKEND toggle (web/src/lib/inferenceBackend.ts).
-const IS_POD_MODE = process.env.EXPO_PUBLIC_INFERENCE_BACKEND === "pod";
-
 // Same backend host the rest of the app calls (billing/free-tier status
 // live on the Next.js web app, not the GPU inference server).
 const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
+
+// Mirrors web/src/app/page.tsx's useIsPodMode - fetched at runtime rather
+// than baked in from an env var at build time, so the cold-start copy stays
+// accurate even when /admin flips the backend without a new app build (a
+// build-time constant here previously went stale exactly that way).
+let cachedPodMode: boolean | null = null;
+
+function useIsPodMode(): boolean {
+  const [isPodMode, setIsPodMode] = useState(cachedPodMode ?? false);
+  useEffect(() => {
+    if (cachedPodMode !== null) return;
+    fetch(`${WEB_BASE}/api/inference-mode`)
+      .then((r) => r.json())
+      .then((data) => {
+        cachedPodMode = data.mode === "pod";
+        setIsPodMode(cachedPodMode);
+      })
+      .catch(() => {
+        // Leave the default (Serverless-style copy) - harmless either way,
+        // it's just informational text, not enforcement.
+      });
+  }, []);
+  return isPodMode;
+}
 
 const COLORS = {
   background: "#fdf6f0",
@@ -58,7 +78,7 @@ const PRESET_VOICES = [
   { id: "voice_tech", label: "Brad", color: COLORS.butter, initial: "B" },
   { id: "voice_comedy", label: "Izzy", color: COLORS.lavender, initial: "I" },
   { id: "voice_sales", label: "Robbo", color: COLORS.coral, initial: "R" },
-  { id: "voice_meditation", label: "Michelle", color: COLORS.coralDark, initial: "F" },
+  { id: "voice_meditation", label: "Michelle", color: COLORS.coralDark, initial: "M" },
   { id: "voice_mark", label: "Mark", color: COLORS.sage, initial: "M" },
 ];
 
@@ -102,7 +122,7 @@ function AudioResult({ uri }: { uri: string | null }) {
       </Pressable>
       <Pressable
         style={styles.shareButton}
-        onPress={() => Share.share({ message: "Listen to what I made with Lucy!", url: uri })}
+        onPress={() => Share.share({ message: "Listen to what I made with Lucy!", url: uri }).catch(() => {})}
       >
         <Text style={styles.shareButtonText}>Share</Text>
       </Pressable>
@@ -177,6 +197,7 @@ function FreeTierBadge({ usage }: { usage: FreeTierUsage | null }) {
 function PresetVoiceSection() {
   const { token } = useAccessToken();
   const freeTierId = useFreeTierId();
+  const isPodMode = useIsPodMode();
   const { usage: freeUsage, refresh: refreshFreeUsage } = useFreeTierUsage(token ? null : freeTierId);
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
@@ -239,7 +260,7 @@ function PresetVoiceSection() {
 
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor={COLORS.pink} />
 
-      {!IS_POD_MODE && (
+      {!isPodMode && (
         <Text style={styles.helperText}>
           Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.
         </Text>
@@ -250,7 +271,7 @@ function PresetVoiceSection() {
             You&apos;ve used your free {freeUsage!.charactersLimit.toLocaleString()} characters this month.
             Resets {new Date(freeUsage!.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.
           </Text>
-          <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`)}>
+          <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`).catch(() => {})}>
             <Text style={styles.exhaustedLink}>See plans →</Text>
           </Pressable>
         </View>
@@ -278,15 +299,20 @@ function PresetVoiceSection() {
 function CloneVoiceSection() {
   const { token } = useAccessToken();
   const freeTierId = useFreeTierId();
+  const isPodMode = useIsPodMode();
   const [text, setText] = useState("");
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
-  const { generate, loading, error, audioUri, statusMessage } = useAudioGeneration("/api/clone-voice");
+  const { generate, loading, error, audioUri, statusMessage, showWaitingUi } = useAudioGeneration("/api/clone-voice");
 
   async function handlePickFile() {
-    const result = await DocumentPicker.getDocumentAsync({ type: "audio/*" });
-    if (!result.canceled) {
-      setFile(result.assets[0]);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: "audio/*" });
+      if (!result.canceled) {
+        setFile(result.assets[0]);
+      }
+    } catch {
+      // User cancelled or the picker failed - nothing to recover, just leave the prior selection.
     }
   }
 
@@ -330,9 +356,11 @@ function CloneVoiceSection() {
 
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor={COLORS.blue} />
 
-      <Text style={styles.helperText}>
-        Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.
-      </Text>
+      {!isPodMode && (
+        <Text style={styles.helperText}>
+          Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.
+        </Text>
+      )}
       <GradientButton
         onPress={handleGenerate}
         disabled={!text || !file || loading}
@@ -340,7 +368,7 @@ function CloneVoiceSection() {
         label="Generate"
       />
 
-      {loading && (
+      {showWaitingUi && (
         <>
           <Text style={styles.helperText}>{statusMessage}</Text>
           <WaitingGame />

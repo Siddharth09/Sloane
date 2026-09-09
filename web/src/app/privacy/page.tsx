@@ -86,9 +86,10 @@ export default function PrivacyPage() {
 
           <Section title="Data retention &amp; deletion">
             <p>
-              Generated audio/video clips and uploaded samples are kept so you can access your history
-              and re-download past generations. If you&apos;d like anything deleted — your account,
-              uploaded samples, or generated clips — email us and we&apos;ll take care of it.
+              As described above, generated audio and uploaded voice samples are not stored on our
+              servers at all — there is currently no history or re-download feature, so there is
+              nothing generated to delete on that front. If you&apos;d like your account, email, or
+              usage records deleted, email us and we&apos;ll take care of it.
             </p>
           </Section>
 

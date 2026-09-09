@@ -49,14 +49,6 @@ export function StopIcon({ className }: { className?: string }) {
   );
 }
 
-export function PlayIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className}>
-      <path d="M7 4.5v15l13-7.5-13-7.5Z" fill="currentColor" />
-    </svg>
-  );
-}
-
 export function CloseIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className}>

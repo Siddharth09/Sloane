@@ -68,7 +68,7 @@ export function AccountWidget() {
             <Text style={styles.saveButtonText}>Save</Text>
           </Pressable>
         </View>
-        <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`)}>
+        <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`).catch(() => {})}>
           <Text style={styles.link}>See plans →</Text>
         </Pressable>
       </View>
@@ -91,7 +91,7 @@ export function AccountWidget() {
             {status.charactersUsed.toLocaleString()} / {status.charactersLimit.toLocaleString()} characters used this period
             {status.videoCreditsLimit > 0 && ` · ${status.videoCreditsUsed}/${status.videoCreditsLimit} video credits`}
           </Text>
-          <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`)}>
+          <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`).catch(() => {})}>
             <Text style={styles.link}>Manage plan →</Text>
           </Pressable>
         </>

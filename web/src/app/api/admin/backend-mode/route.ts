@@ -15,16 +15,26 @@ function checkAuth(req: NextRequest): boolean {
 
 export async function GET(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  return NextResponse.json({ mode: await getInferenceBackend() });
+  try {
+    return NextResponse.json({ mode: await getInferenceBackend() });
+  } catch (err) {
+    console.error("[admin/backend-mode] failed to read mode", err);
+    return NextResponse.json({ error: "Could not read backend mode right now." }, { status: 502 });
+  }
 }
 
 export async function POST(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await req.json().catch(() => null);
-  const mode = body?.mode;
-  if (mode !== "pod" && mode !== "serverless") {
-    return NextResponse.json({ error: "mode must be 'pod' or 'serverless'" }, { status: 400 });
+  try {
+    const body = await req.json().catch(() => null);
+    const mode = body?.mode;
+    if (mode !== "pod" && mode !== "serverless") {
+      return NextResponse.json({ error: "mode must be 'pod' or 'serverless'" }, { status: 400 });
+    }
+    await setInferenceBackend(mode);
+    return NextResponse.json({ mode });
+  } catch (err) {
+    console.error("[admin/backend-mode] failed to set mode", err);
+    return NextResponse.json({ error: "Could not switch backend mode right now." }, { status: 502 });
   }
-  await setInferenceBackend(mode);
-  return NextResponse.json({ mode });
 }
