@@ -18,7 +18,7 @@ function videoCreditsBlurb(credits: number): string | null {
 }
 
 const VIDEO_NOTE =
-  "Honest heads-up: video isn't live yet — our quality is a long way from realistic right now, well behind leading tools like Kling or Veo. Credits above are reserved for the moment it ships. When it does: talking-head and cinematic scenes will be sent to third-party AI vendors for processing (not fully self-hosted like audio is today) — we'll disclose that clearly in the product before you use it.";
+  "Honest heads-up: video isn't live yet — we're integrating real Kling and Veo API access to make this a genuine feature, not a lesser self-hosted substitute. Credits above are reserved for the moment it ships. Talking-head and cinematic scenes will be sent to those third-party AI vendors for processing (not fully self-hosted like audio is today) — we'll disclose that clearly in the product before you use it.";
 
 const PLAN_CARDS: { id: PlanId; blurb: string; wash: string; accent: string }[] = [
   { id: "free", blurb: "Try it out", wash: "bg-surface", accent: "text-muted" },

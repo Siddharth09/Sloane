@@ -158,17 +158,41 @@ function Card({
   );
 }
 
-type FreeTierUsage = { charactersUsed: number; charactersLimit: number; periodEnd: string };
+// Works for BOTH anonymous free-tier visitors and paying subscribers -
+// shown "at all times" per direct request, not just for the free tier.
+// Mirrors web/src/app/page.tsx's useUsage/UsageBadge.
+type UsageInfo = { charactersUsed: number; charactersLimit: number; periodEnd: string; planName: string; isFree: boolean };
 
-function useFreeTierUsage(freeTierId: string | null) {
-  const [usage, setUsage] = useState<FreeTierUsage | null>(null);
+function useUsage(token: string | null, freeTierId: string | null) {
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
 
   async function refresh() {
-    if (!freeTierId) return;
     try {
-      const res = await fetch(`${WEB_BASE}/api/free-tier-status?id=${encodeURIComponent(freeTierId)}`);
-      const data = await res.json();
-      if (res.ok) setUsage(data);
+      if (token) {
+        const res = await fetch(`${WEB_BASE}/api/billing/status?token=${encodeURIComponent(token)}`);
+        const data = await res.json();
+        if (res.ok && !data.error) {
+          setUsage({
+            charactersUsed: data.charactersUsed,
+            charactersLimit: data.charactersLimit,
+            periodEnd: data.periodEnd,
+            planName: data.plan,
+            isFree: false,
+          });
+        }
+      } else if (freeTierId) {
+        const res = await fetch(`${WEB_BASE}/api/free-tier-status?id=${encodeURIComponent(freeTierId)}`);
+        const data = await res.json();
+        if (res.ok) {
+          setUsage({
+            charactersUsed: data.charactersUsed,
+            charactersLimit: data.charactersLimit,
+            periodEnd: data.periodEnd,
+            planName: "Free",
+            isFree: true,
+          });
+        }
+      }
     } catch {
       // Informational only - not worth surfacing an error for this.
     }
@@ -177,19 +201,19 @@ function useFreeTierUsage(freeTierId: string | null) {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [freeTierId]);
+  }, [token, freeTierId]);
 
   return { usage, refresh };
 }
 
-function FreeTierBadge({ usage }: { usage: FreeTierUsage | null }) {
+function UsageBadge({ usage }: { usage: UsageInfo | null }) {
   if (!usage) return null;
   const remaining = Math.max(0, usage.charactersLimit - usage.charactersUsed);
   const resetDate = new Date(usage.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" });
   return (
     <View style={{ alignItems: "flex-end" }}>
       <Text style={styles.freeTierCount}>{remaining.toLocaleString()} left</Text>
-      <Text style={styles.freeTierReset}>resets {resetDate}</Text>
+      <Text style={styles.freeTierReset}>{usage.planName} · resets {resetDate}</Text>
     </View>
   );
 }
@@ -198,13 +222,13 @@ function PresetVoiceSection() {
   const { token } = useAccessToken();
   const freeTierId = useFreeTierId();
   const isPodMode = useIsPodMode();
-  const { usage: freeUsage, refresh: refreshFreeUsage } = useFreeTierUsage(token ? null : freeTierId);
+  const { usage, refresh: refreshUsage } = useUsage(token, freeTierId);
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const { generate, loading, error, audioUri, statusMessage, showWaitingUi } = useAudioGeneration("/api/generate-preset");
 
-  const freeTierExhausted = !token && !!freeUsage && freeUsage.charactersUsed >= freeUsage.charactersLimit;
+  const quotaExhausted = !!usage && usage.charactersUsed >= usage.charactersLimit;
 
   async function handleGenerate() {
     const form = new FormData();
@@ -215,7 +239,7 @@ function PresetVoiceSection() {
     if (token) form.append("access_token", token);
     else if (freeTierId) form.append("free_tier_id", freeTierId);
     await generate(form);
-    if (!token) refreshFreeUsage();
+    refreshUsage();
   }
 
   return (
@@ -223,7 +247,7 @@ function PresetVoiceSection() {
       icon="✎"
       title="Text to speech"
       subtitle="Type anything, pick a voice, hear it narrated."
-      headerRight={!token ? <FreeTierBadge usage={freeUsage} /> : undefined}
+      headerRight={<UsageBadge usage={usage} />}
     >
       <TextInput
         style={styles.textArea}
@@ -265,14 +289,15 @@ function PresetVoiceSection() {
           Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.
         </Text>
       )}
-      {freeTierExhausted ? (
+      {quotaExhausted ? (
         <View style={styles.exhaustedBox}>
           <Text style={styles.exhaustedText}>
-            You&apos;ve used your free {freeUsage!.charactersLimit.toLocaleString()} characters this month.
-            Resets {new Date(freeUsage!.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.
+            You&apos;ve used your {usage!.isFree ? "free" : usage!.planName} {usage!.charactersLimit.toLocaleString()}{" "}
+            characters this month.
+            Resets {new Date(usage!.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.
           </Text>
           <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`).catch(() => {})}>
-            <Text style={styles.exhaustedLink}>See plans →</Text>
+            <Text style={styles.exhaustedLink}>{usage!.isFree ? "See plans" : "Upgrade"} →</Text>
           </Pressable>
         </View>
       ) : (
@@ -300,10 +325,13 @@ function CloneVoiceSection() {
   const { token } = useAccessToken();
   const freeTierId = useFreeTierId();
   const isPodMode = useIsPodMode();
+  const { usage, refresh: refreshUsage } = useUsage(token, freeTierId);
   const [text, setText] = useState("");
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const { generate, loading, error, audioUri, statusMessage, showWaitingUi } = useAudioGeneration("/api/clone-voice");
+
+  const quotaExhausted = !!usage && usage.charactersUsed >= usage.charactersLimit;
 
   async function handlePickFile() {
     try {
@@ -332,6 +360,7 @@ function CloneVoiceSection() {
     if (token) form.append("access_token", token);
     else if (freeTierId) form.append("free_tier_id", freeTierId);
     await generate(form);
+    refreshUsage();
   }
 
   return (
@@ -339,6 +368,7 @@ function CloneVoiceSection() {
       icon="🎙"
       title="Clone any voice"
       subtitle="Upload ~10-20 seconds of a voice, type any text."
+      headerRight={<UsageBadge usage={usage} />}
     >
       <Pressable style={styles.filePickButton} onPress={handlePickFile}>
         <Text style={styles.filePickButtonText}>{file ? file.name : "Choose an audio file"}</Text>
@@ -361,12 +391,25 @@ function CloneVoiceSection() {
           Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.
         </Text>
       )}
-      <GradientButton
-        onPress={handleGenerate}
-        disabled={!text || !file || loading}
-        loading={loading}
-        label="Generate"
-      />
+      {quotaExhausted ? (
+        <View style={styles.exhaustedBox}>
+          <Text style={styles.exhaustedText}>
+            You&apos;ve used your {usage!.isFree ? "free" : usage!.planName} {usage!.charactersLimit.toLocaleString()}{" "}
+            characters this month.
+            Resets {new Date(usage!.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.
+          </Text>
+          <Pressable onPress={() => Linking.openURL(`${WEB_BASE}/billing`).catch(() => {})}>
+            <Text style={styles.exhaustedLink}>{usage!.isFree ? "See plans" : "Upgrade"} →</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <GradientButton
+          onPress={handleGenerate}
+          disabled={!text || !file || loading}
+          loading={loading}
+          label="Generate"
+        />
+      )}
 
       {showWaitingUi && (
         <>

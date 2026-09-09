@@ -235,24 +235,47 @@ function Card({
   );
 }
 
-type FreeTierUsage = { charactersUsed: number; charactersLimit: number; periodEnd: string };
+type UsageInfo = { charactersUsed: number; charactersLimit: number; periodEnd: string; planName: string; isFree: boolean };
 
-// Only meaningful for anonymous (no access token) visitors - paying
-// subscribers have their own usage shown in AccountWidget. Refetches after
-// every generation so the count visibly ticks down as the free tier ask
-// requested, and once exhausted, blocks further generation client-side too
-// (the server enforces this either way - see @/lib/db's checkFreeQuota -
-// this is just to avoid a wasted round-trip and show the reset date/upgrade
-// link inline instead of as a generic error).
-function useFreeTierUsage(freeTierId: string | null) {
-  const [usage, setUsage] = useState<FreeTierUsage | null>(null);
+// Works for BOTH anonymous free-tier visitors and paying subscribers -
+// shown "at all times" per direct request, not just for the free tier.
+// Paying subscribers previously had no usage visible anywhere except a
+// separate /account page; this shows it right where they're generating.
+// Refetches after every generation so the count visibly ticks down, and
+// once exhausted, blocks further generation client-side too (the server
+// enforces this either way - see @/lib/db's checkFreeQuota/checkQuota -
+// this is just to avoid a wasted round-trip and show the reset date/
+// upgrade link inline instead of as a generic error).
+function useUsage(token: string | null, freeTierId: string | null) {
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
 
   async function refresh() {
-    if (!freeTierId) return;
     try {
-      const res = await fetch(`/api/free-tier-status?id=${encodeURIComponent(freeTierId)}`);
-      const data = await res.json();
-      if (res.ok) setUsage(data);
+      if (token) {
+        const res = await fetch(`/api/billing/status?token=${encodeURIComponent(token)}`);
+        const data = await res.json();
+        if (res.ok && !data.error) {
+          setUsage({
+            charactersUsed: data.charactersUsed,
+            charactersLimit: data.charactersLimit,
+            periodEnd: data.periodEnd,
+            planName: data.plan,
+            isFree: false,
+          });
+        }
+      } else if (freeTierId) {
+        const res = await fetch(`/api/free-tier-status?id=${encodeURIComponent(freeTierId)}`);
+        const data = await res.json();
+        if (res.ok) {
+          setUsage({
+            charactersUsed: data.charactersUsed,
+            charactersLimit: data.charactersLimit,
+            periodEnd: data.periodEnd,
+            planName: "Free",
+            isFree: true,
+          });
+        }
+      }
     } catch {
       // Leave stale/no usage shown - not worth surfacing an error for a
       // purely informational counter.
@@ -262,12 +285,12 @@ function useFreeTierUsage(freeTierId: string | null) {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [freeTierId]);
+  }, [token, freeTierId]);
 
   return { usage, refresh };
 }
 
-function FreeTierBadge({ usage }: { usage: FreeTierUsage | null }) {
+function UsageBadge({ usage }: { usage: UsageInfo | null }) {
   if (!usage) return null;
   const remaining = Math.max(0, usage.charactersLimit - usage.charactersUsed);
   const resetDate = new Date(usage.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" });
@@ -278,11 +301,13 @@ function FreeTierBadge({ usage }: { usage: FreeTierUsage | null }) {
         <p className="mt-0.5 text-[11px] text-coral-dark">
           Resets {resetDate} —{" "}
           <a href="/billing" className="underline">
-            see plans
+            {usage.isFree ? "see plans" : "upgrade"}
           </a>
         </p>
       ) : (
-        <p className="mt-0.5 text-[11px] text-muted">free tier · resets {resetDate}</p>
+        <p className="mt-0.5 text-[11px] text-muted">
+          {usage.planName} · resets {resetDate}
+        </p>
       )}
     </div>
   );
@@ -291,14 +316,14 @@ function FreeTierBadge({ usage }: { usage: FreeTierUsage | null }) {
 function PresetVoiceSection() {
   const { token } = useAccessToken();
   const freeTierId = useFreeTierId();
-  const { usage: freeUsage, refresh: refreshFreeUsage } = useFreeTierUsage(token ? null : freeTierId);
+  const { usage, refresh: refreshUsage } = useUsage(token, freeTierId);
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState(PRESET_VOICES[0].id);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const isPodMode = useIsPodMode();
   const { generate, loading, error, audioBase64, statusMessage, showWaitingUi } = useAudioGeneration("/api/generate-preset");
 
-  const freeTierExhausted = !token && !!freeUsage && freeUsage.charactersUsed >= freeUsage.charactersLimit;
+  const quotaExhausted = !!usage && usage.charactersUsed >= usage.charactersLimit;
 
   async function handleGenerate() {
     const form = new FormData();
@@ -309,7 +334,7 @@ function PresetVoiceSection() {
     if (token) form.append("access_token", token);
     else if (freeTierId) form.append("free_tier_id", freeTierId);
     await generate(form);
-    if (!token) refreshFreeUsage();
+    refreshUsage();
   }
 
   return (
@@ -319,7 +344,7 @@ function PresetVoiceSection() {
       icon="✎"
       title="Text to speech"
       subtitle="Type anything, pick a voice, hear it narrated — no per-message length cap, just your plan's monthly character allowance."
-      headerRight={!token ? <FreeTierBadge usage={freeUsage} /> : undefined}
+      headerRight={<UsageBadge usage={usage} />}
     >
       <textarea
         className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-pink"
@@ -333,12 +358,13 @@ function PresetVoiceSection() {
       {!isPodMode && (
         <p className="text-xs text-muted">Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.</p>
       )}
-      {freeTierExhausted ? (
+      {quotaExhausted ? (
         <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">
-          You&apos;ve used your free {freeUsage!.charactersLimit.toLocaleString()} characters this month. Resets{" "}
-          {new Date(freeUsage!.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })} — or{" "}
+          You&apos;ve used your {usage!.isFree ? "free" : usage!.planName} {usage!.charactersLimit.toLocaleString()}{" "}
+          characters this month. Resets{" "}
+          {new Date(usage!.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })} — or{" "}
           <a href="/billing" className="font-semibold underline">
-            see plans
+            {usage!.isFree ? "see plans" : "upgrade"}
           </a>{" "}
           to keep going now.
         </p>
@@ -360,11 +386,14 @@ function PresetVoiceSection() {
 function CloneVoiceSection() {
   const { token } = useAccessToken();
   const freeTierId = useFreeTierId();
+  const { usage, refresh: refreshUsage } = useUsage(token, freeTierId);
   const [text, setText] = useState("");
   const [file, setFile] = useState<Blob | File | null>(null);
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const isPodMode = useIsPodMode();
   const { generate, loading, error, audioBase64, statusMessage, showWaitingUi } = useAudioGeneration("/api/clone-voice");
+
+  const quotaExhausted = !!usage && usage.charactersUsed >= usage.charactersLimit;
 
   async function handleGenerate() {
     if (!file) return;
@@ -376,6 +405,7 @@ function CloneVoiceSection() {
     if (token) form.append("access_token", token);
     else if (freeTierId) form.append("free_tier_id", freeTierId);
     await generate(form);
+    refreshUsage();
   }
 
   return (
@@ -385,6 +415,7 @@ function CloneVoiceSection() {
       icon="🎙"
       title="Clone any voice"
       subtitle="Record or upload ~10-20 seconds of a voice, then type what it should say."
+      headerRight={<UsageBadge usage={usage} />}
     >
       <RecordOrUpload kind="audio" onChange={setFile} />
       <textarea
@@ -398,7 +429,19 @@ function CloneVoiceSection() {
       {!isPodMode && (
         <p className="text-xs text-muted">Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.</p>
       )}
-      <GenerateButton loading={loading} disabled={!text || !file || loading} onClick={handleGenerate} colorClassName="bg-blue" />
+      {quotaExhausted ? (
+        <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">
+          You&apos;ve used your {usage!.isFree ? "free" : usage!.planName} {usage!.charactersLimit.toLocaleString()}{" "}
+          characters this month. Resets{" "}
+          {new Date(usage!.periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })} — or{" "}
+          <a href="/billing" className="font-semibold underline">
+            {usage!.isFree ? "see plans" : "upgrade"}
+          </a>{" "}
+          to keep going now.
+        </p>
+      ) : (
+        <GenerateButton loading={loading} disabled={!text || !file || loading} onClick={handleGenerate} colorClassName="bg-blue" />
+      )}
       {showWaitingUi && (
         <>
           <p className="text-sm text-muted">{statusMessage}</p>
@@ -465,13 +508,13 @@ function VideoCloneSection() {
       iconColor="text-purple"
       icon="🎬"
       title="Video"
-      subtitle="Two modes we're building toward, shown honestly — drawbacks included."
+      subtitle="Coming soon — real Kling and Veo integration, shown honestly."
     >
       <p className="text-sm leading-relaxed text-muted">
-        Lucy Labs is building two video modes: Kling for a talking-head video in your own Lucy voice, and
-        Veo for a fully AI-generated cinematic scene. Both clips below are real early tests, not polished
-        demos, and there&apos;s still a lot of work to go before either is good enough to charge for — we&apos;d
-        rather show you exactly where things stand, drawbacks included, than oversell it.
+        We&apos;re integrating real Kling and Veo API access to bring two video modes to Lucy Labs: Kling
+        for a talking-head video in your own Lucy voice, and Veo for a fully AI-generated cinematic
+        scene. The clips below are real early tests, not polished demos — here&apos;s exactly what to
+        expect once this ships, drawbacks included.
       </p>
 
       <VideoModeCard
