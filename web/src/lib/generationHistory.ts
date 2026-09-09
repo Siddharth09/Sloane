@@ -7,6 +7,12 @@ import { recordGeneration, type Generation } from "./db";
 // ever store bounded to people who created an account, not all traffic.
 // Generations also auto-expire (see getGenerationRetentionDays + the
 // cleanup cron), so storage cost stays bounded either way.
+// Deliberately swallows its own errors (Blob outage, missing token, DB
+// hiccup) rather than letting them propagate - this is a nice-to-have side
+// effect of a generation, not part of its contract. A caller sits inside
+// the same try/catch as the actual audio response, so an unhandled throw
+// here would fail generation entirely for signed-in users over a feature
+// that has nothing to do with whether generation itself succeeded.
 export async function saveGenerationAudio(params: {
   userId: string;
   kind: "preset" | "clone";
@@ -14,19 +20,23 @@ export async function saveGenerationAudio(params: {
   text: string;
   audioBase64: string;
 }) {
-  const buffer = Buffer.from(params.audioBase64, "base64");
-  const blob = await put(`generations/${params.userId}/${randomUUID()}.wav`, buffer, {
-    access: "public",
-    contentType: "audio/wav",
-    addRandomSuffix: false,
-  });
-  await recordGeneration({
-    userId: params.userId,
-    kind: params.kind,
-    voiceLabel: params.voiceLabel,
-    textPreview: params.text.slice(0, 200),
-    audioUrl: blob.url,
-  });
+  try {
+    const buffer = Buffer.from(params.audioBase64, "base64");
+    const blob = await put(`generations/${params.userId}/${randomUUID()}.wav`, buffer, {
+      access: "public",
+      contentType: "audio/wav",
+      addRandomSuffix: false,
+    });
+    await recordGeneration({
+      userId: params.userId,
+      kind: params.kind,
+      voiceLabel: params.voiceLabel,
+      textPreview: params.text.slice(0, 200),
+      audioUrl: blob.url,
+    });
+  } catch (err) {
+    console.error("[generationHistory] failed to save generation, continuing without it", err);
+  }
 }
 
 export async function deleteGenerationBlob(generation: Generation) {

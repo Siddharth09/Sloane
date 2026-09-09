@@ -75,7 +75,11 @@ export async function POST(req: NextRequest) {
       });
       result = { jobId };
       if (sessionUser) {
-        await createPendingGeneration({ jobId, userId: sessionUser.id, kind: "preset", voiceLabel: voiceId, text });
+        // Best-effort like saveGenerationAudio below - a DB hiccup here
+        // should cost the user their history entry, not their generation.
+        await createPendingGeneration({ jobId, userId: sessionUser.id, kind: "preset", voiceLabel: voiceId, text }).catch(
+          (err) => console.error("[generate-preset] failed to record pending generation", err),
+        );
       }
     }
 
