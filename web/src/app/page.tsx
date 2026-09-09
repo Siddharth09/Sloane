@@ -117,7 +117,11 @@ function AudioResultPlayer({ audioBase64 }: { audioBase64: string | null }) {
 // worker) finishes well before that and never shows them, so switching
 // backends doesn't require also touching this UI logic.
 const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 180_000; // generous - well past worst observed cold start + generation
+// Measured a real cold start at ~150s delay + ~28s generation (~177s total)
+// against the live Serverless endpoint on 2026-09-09 - notably worse than
+// the ~30-90s this was originally sized around, so this needs real margin
+// above the worst case actually observed, not the estimate.
+const POLL_TIMEOUT_MS = 240_000;
 const SHOW_WAITING_UI_AFTER_MS = 6000;
 
 function loadingMessageFor(elapsedMs: number): string {
@@ -344,7 +348,7 @@ function PresetVoiceSection() {
       <VoicePicker value={voiceId} onChange={setVoiceId} />
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-pink" />
       {!isPodMode && (
-        <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
+        <p className="text-xs text-muted">Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.</p>
       )}
       {freeTierExhausted ? (
         <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">
@@ -409,7 +413,7 @@ function CloneVoiceSection() {
       />
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor="text-blue" />
       {!isPodMode && (
-        <p className="text-xs text-muted">Generation can take 20-60 seconds, sometimes a little longer after a quiet period.</p>
+        <p className="text-xs text-muted">Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.</p>
       )}
       <GenerateButton loading={loading} disabled={!text || !file || loading} onClick={handleGenerate} colorClassName="bg-blue" />
       {showWaitingUi && (

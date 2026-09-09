@@ -11,7 +11,10 @@ import { File, Paths } from "expo-file-system";
 // constants match exactly so behavior is consistent across platforms.
 const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://lucylabs.app";
 const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 180_000;
+// See web/src/app/page.tsx's POLL_TIMEOUT_MS comment - measured a real
+// cold start at ~177s against the live endpoint, so this needs real margin
+// above that, not the original ~30-90s estimate.
+const POLL_TIMEOUT_MS = 240_000;
 const SHOW_WAITING_UI_AFTER_MS = 6000;
 
 export function loadingMessageFor(elapsedMs: number): string {

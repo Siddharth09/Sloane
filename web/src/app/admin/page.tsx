@@ -136,9 +136,10 @@ export default function AdminDashboard() {
         <div className="rounded-[28px] border border-white/60 bg-surface/90 p-7 shadow-soft-lg backdrop-blur-xl">
           <h2 className="text-sm font-bold text-foreground">Audio generation backend</h2>
           <p className="mt-1 text-sm text-muted">
-            Switches instantly, no redeploy needed. Use Pod during a launch window with real traffic
-            (fast, no cold starts, billed hourly whether used or not). Switch to Serverless once traffic
-            is quiet (billed only for actual usage, but cold starts can take 20-60s+).
+            Switches instantly, no redeploy needed. Default is Serverless (billed only for actual usage,
+            but cold starts can take up to ~3 minutes - measured, not estimated). Switch to Pod only when
+            you explicitly want fast, no-cold-start responses during a high-traffic window - it's billed
+            hourly whether used or not, so switch back to Serverless once traffic quiets down.
           </p>
           <div className="mt-4 flex gap-2">
             <button

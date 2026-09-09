@@ -241,7 +241,7 @@ function PresetVoiceSection() {
 
       {!IS_POD_MODE && (
         <Text style={styles.helperText}>
-          Generation can take 20-60 seconds, sometimes a little longer after a quiet period.
+          Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.
         </Text>
       )}
       {freeTierExhausted ? (
@@ -331,7 +331,7 @@ function CloneVoiceSection() {
       <DeliverySliders value={delivery} onChange={setDelivery} accentColor={COLORS.blue} />
 
       <Text style={styles.helperText}>
-        Generation can take 20-60 seconds, sometimes a little longer after a quiet period.
+        Generation usually takes under a minute, but can take up to a few minutes after a quiet period while the voice engine wakes up.
       </Text>
       <GradientButton
         onPress={handleGenerate}
