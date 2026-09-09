@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { PLANS, type PlanId } from "@/lib/plans";
+import { getSessionUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   const { plan } = (await req.json()) as { plan: PlanId };
@@ -14,12 +15,14 @@ export async function POST(req: NextRequest) {
   }
 
   const origin = req.nextUrl.origin;
+  const sessionUser = await getSessionUser();
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${origin}/billing?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/billing?canceled=1`,
+      ...(sessionUser ? { client_reference_id: sessionUser.id } : {}),
       // Stripe's "Managed Payments" (on by default for this account) requires
       // a tax code on every product before it'll create a session - we
       // haven't made a tax-classification decision for the product yet, so

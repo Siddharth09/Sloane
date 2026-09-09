@@ -36,6 +36,33 @@ export async function sendAccessCodeEmail(email: string, accessToken: string, pl
   }
 }
 
+export async function sendMagicLinkEmail(email: string, link: string) {
+  if (!email) return;
+  if (!resend) {
+    console.warn("[email] RESEND_API_KEY not set - skipping magic-link email to", email);
+    return;
+  }
+  try {
+    await resend.emails.send({
+      from: FROM,
+      to: email,
+      subject: "Sign in to Lucy Labs",
+      html: `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+          <h1 style="font-size: 20px;">Sign in to Lucy Labs</h1>
+          <p>Click the button below to sign in. This link works once and expires in 15 minutes.</p>
+          <p style="text-align: center; margin: 32px 0;">
+            <a href="${link}" style="display: inline-block; background: #1a1a1a; color: #fff; text-decoration: none; padding: 14px 28px; border-radius: 999px; font-weight: 600;">Sign in</a>
+          </p>
+          <p style="color: #9a8b83; font-size: 13px;">If you didn't request this, you can safely ignore this email.</p>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error("[email] Failed to send magic-link email", err);
+  }
+}
+
 export async function sendPaymentFailedEmail(email: string) {
   if (!email || !resend) {
     if (!resend) console.warn("[email] RESEND_API_KEY not set - skipping payment-failed email to", email);

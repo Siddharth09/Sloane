@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSubscriberByToken, checkQuota, incrementUsage, checkFreeQuota, recordFreeUsage, initSchema } from "@/lib/db";
+import { getSubscriberByToken, checkQuota, incrementUsage, checkFreeQuota, recordFreeUsage, createPendingGeneration, initSchema } from "@/lib/db";
 import { isPodMode, generateViaPod } from "@/lib/inferenceBackend";
 import { submitJob } from "@/lib/runpod";
+import { getSessionUser } from "@/lib/auth";
+import { saveGenerationAudio } from "@/lib/generationHistory";
 
 // RunPod's /run input cap is 10MB - a base64-encoded reference clip much
 // past a minute or two of decent-quality audio could exceed that. The UI
@@ -51,6 +53,7 @@ export async function POST(req: NextRequest) {
     }
     const exaggeration = form.get("exaggeration");
     const speed = form.get("speed");
+    const sessionUser = await getSessionUser();
 
     let result: { status: "COMPLETED"; audioBase64: string } | { jobId: string };
     if (await isPodMode()) {
@@ -61,6 +64,9 @@ export async function POST(req: NextRequest) {
       if (speed) upstreamForm.append("speed", String(speed));
       const { audioBase64 } = await generateViaPod("/api/clone-voice", upstreamForm);
       result = { status: "COMPLETED", audioBase64 };
+      if (sessionUser) {
+        await saveGenerationAudio({ userId: sessionUser.id, kind: "clone", voiceLabel: null, text, audioBase64 });
+      }
     } else {
       const referenceAudioBase64 = Buffer.from(await referenceAudio.arrayBuffer()).toString("base64");
       const { jobId } = await submitJob({
@@ -71,6 +77,9 @@ export async function POST(req: NextRequest) {
         ...(speed ? { speed: Number(speed) } : {}),
       });
       result = { jobId };
+      if (sessionUser) {
+        await createPendingGeneration({ jobId, userId: sessionUser.id, kind: "clone", voiceLabel: null, text });
+      }
     }
 
     if (accessToken) {

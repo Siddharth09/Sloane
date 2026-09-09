@@ -179,7 +179,11 @@ export default function BillingPage() {
         </div>
 
         <p className="text-center text-xs text-muted">
-          Cancel anytime from the receipt Stripe emails you, or contact{" "}
+          Already subscribed?{" "}
+          <a href="/account" className="font-semibold text-coral-dark underline">
+            Manage your plan or cancel from your account
+          </a>
+          , or contact{" "}
           <a href="mailto:support@astryks.com" className="underline">
             support@astryks.com
           </a>

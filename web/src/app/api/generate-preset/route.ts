@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSubscriberByToken, checkQuota, incrementUsage, checkFreeQuota, recordFreeUsage, initSchema } from "@/lib/db";
+import { getSubscriberByToken, checkQuota, incrementUsage, checkFreeQuota, recordFreeUsage, createPendingGeneration, initSchema } from "@/lib/db";
 import { submitJob } from "@/lib/runpod";
 import { isPodMode, generateViaPod } from "@/lib/inferenceBackend";
+import { getSessionUser } from "@/lib/auth";
+import { saveGenerationAudio } from "@/lib/generationHistory";
 
 // Checks the caller's plan/usage first, then generates via whichever
 // backend INFERENCE_BACKEND selects - the browser never talks to RunPod or
@@ -49,6 +51,7 @@ export async function POST(req: NextRequest) {
     const voiceId = String(form.get("voice_id") ?? "");
     const exaggeration = form.get("exaggeration");
     const speed = form.get("speed");
+    const sessionUser = await getSessionUser();
 
     let result: { status: "COMPLETED"; audioBase64: string; voiceId: string } | { jobId: string };
     if (await isPodMode()) {
@@ -59,6 +62,9 @@ export async function POST(req: NextRequest) {
       if (speed) upstreamForm.append("speed", String(speed));
       const { audioBase64 } = await generateViaPod("/api/generate-preset", upstreamForm);
       result = { status: "COMPLETED", audioBase64, voiceId };
+      if (sessionUser) {
+        await saveGenerationAudio({ userId: sessionUser.id, kind: "preset", voiceLabel: voiceId, text, audioBase64 });
+      }
     } else {
       const { jobId } = await submitJob({
         action: "generate-preset",
@@ -68,6 +74,9 @@ export async function POST(req: NextRequest) {
         ...(speed ? { speed: Number(speed) } : {}),
       });
       result = { jobId };
+      if (sessionUser) {
+        await createPendingGeneration({ jobId, userId: sessionUser.id, kind: "preset", voiceLabel: voiceId, text });
+      }
     }
 
     if (accessToken) {
