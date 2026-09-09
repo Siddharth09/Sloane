@@ -133,15 +133,18 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
 }
 
 # Per-voice natural pitch micro-jitter (semitones), applied across the whole
-# generation. Robbo (voice_sales) has only ~16 training clips vs. 500+ for
-# the other voices (confirmed 2026-09-08) - nowhere near enough for the
-# LoRA fine-tune to learn natural pitch variation, which is why he sounds
-# flat/robotic. The real fix is more source audio and a retrain; this is a
-# real signal-processing mitigation in the meantime, not a substitute -
-# it adds a slow, smoothed random walk to the F0 contour (mimicking the
-# micro-instability real voices have and robotic-sounding flat pitch
-# lacks), not a fake "sound human" trick.
-PITCH_JITTER_BY_VOICE: dict[str, float] = {"voice_sales": 0.4}
+# generation. Was {"voice_sales": 0.4} - Robbo had only ~16 training clips
+# vs. 500+ for the other voices (confirmed 2026-09-08), nowhere near enough
+# for the LoRA fine-tune to learn natural pitch variation on its own, which
+# is why this signal-processing mitigation existed. Removed 2026-09-09
+# after the retrain expanded Robbo's source data to ~665 clips / ~53min
+# (exceeding the well-trained-voice benchmark) - the actual data problem
+# this was mitigating is resolved, so the mitigation itself should go too
+# rather than stack on top of a voice that no longer needs it. If Robbo's
+# pitch still sounds flat after this, that's new information (not this old
+# data-scarcity issue) and should be diagnosed fresh rather than assumed to
+# need the same fix.
+PITCH_JITTER_BY_VOICE: dict[str, float] = {}
 
 # Chatterbox's real (previously unused) expressiveness controls - see
 # PROJECT_CONTEXT.md Sec "Voice quality improvements" for what these do and
@@ -405,20 +408,20 @@ def resolve_gen_params(
 # instability was observed to get worse.
 MAX_CHUNK_WORDS = 40
 
-# Voices with very little training data (see PITCH_JITTER_BY_VOICE comment
-# for voice_sales; voice_meditation's clips were also capped short during
-# chunking - see PROJECT_CONTEXT.md) can't reliably produce a long
-# continuous generation the way the better-trained voices can. Reproduced
-# live 2026-09-08: grouping voice_meditation into 30-word chunks caused the
-# alignment-stream forced-EOS bug to fire on nearly every attempt, exhausting
-# all 4 retries and shipping a near-silent clip. Smaller per-voice caps here
-# keep those voices close to their original one-sentence-at-a-time
-# generation size while still letting the better-trained voices benefit
-# from multi-sentence chunking.
-MAX_CHUNK_WORDS_BY_VOICE: dict[str, int] = {
-    "voice_meditation": 14,
-    "voice_sales": 14,
-}
+# Was {"voice_meditation": 14, "voice_sales": 14} - both voices had too
+# little training data to reliably sustain a long continuous generation
+# (reproduced live 2026-09-08/09: 24-30 word chunks for voice_meditation hit
+# Chatterbox's alignment-stream forced-EOS bug on nearly every attempt,
+# exhausting all 4 retries and shipping a near-silent clip). The 2026-09-09
+# retrain substantially expanded both voices' source data (voice_meditation
+# ~318 clips/~29.7min, voice_sales ~665 clips/~53min - the latter now
+# exceeds the well-trained-voice benchmark), which is the actual thing the
+# low cap was working around. Raised to match MAX_CHUNK_WORDS (40) for both
+# and verified live post-retrain with real multi-clause 30-40+ word
+# generations for each voice - no forced-EOS/near-silent-clip failures
+# observed. If that regresses, the safe fallback is reintroducing a
+# per-voice cap here, not silently living with occasional silent output.
+MAX_CHUNK_WORDS_BY_VOICE: dict[str, int] = {}
 
 
 def split_long_sentence(sentence: str, max_words: int) -> list[str]:
