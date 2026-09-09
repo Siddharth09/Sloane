@@ -408,20 +408,30 @@ def resolve_gen_params(
 # instability was observed to get worse.
 MAX_CHUNK_WORDS = 40
 
-# Was {"voice_meditation": 14, "voice_sales": 14} - both voices had too
-# little training data to reliably sustain a long continuous generation
+# Was {"voice_meditation": 14, "voice_sales": 14} - both were mitigations
+# for too little training data to sustain a long continuous generation
 # (reproduced live 2026-09-08/09: 24-30 word chunks for voice_meditation hit
 # Chatterbox's alignment-stream forced-EOS bug on nearly every attempt,
-# exhausting all 4 retries and shipping a near-silent clip). The 2026-09-09
-# retrain substantially expanded both voices' source data (voice_meditation
-# ~318 clips/~29.7min, voice_sales ~665 clips/~53min - the latter now
-# exceeds the well-trained-voice benchmark), which is the actual thing the
-# low cap was working around. Raised to match MAX_CHUNK_WORDS (40) for both
-# and verified live post-retrain with real multi-clause 30-40+ word
-# generations for each voice - no forced-EOS/near-silent-clip failures
-# observed. If that regresses, the safe fallback is reintroducing a
-# per-voice cap here, not silently living with occasional silent output.
-MAX_CHUNK_WORDS_BY_VOICE: dict[str, int] = {}
+# exhausting all 4 retries and shipping a near-silent clip).
+#
+# 2026-09-09 retrain expanded voice_sales to ~665 clips/~53min (now exceeds
+# the well-trained-voice benchmark) and voice_meditation to ~318 clips/
+# ~29.7min. Tested raising both to the shared 40-word default post-retrain
+# with real multi-clause 30-50 word generations:
+# - voice_sales: fixed. A ~60-word sentence produced ~10s of audio, in line
+#   with a similar-length pre-fix sample (~12.6s) - no truncation. Removed
+#   from this dict entirely (uses the 40-word default).
+# - voice_meditation: NOT fixed. A ~50-word sentence produced a 0.64s
+#   clip - the exact near-silent-clip failure this cap exists to prevent,
+#   reproduced a third time (after 2026-09-08 and 2026-09-09) despite the
+#   retrain. Her extra data wasn't enough to resolve this specific
+#   instability - kept at the known-safe 14 rather than guessing at an
+#   untested intermediate value. Worth real investigation later (why does
+#   she still hit this at a word count Robbo now handles fine with less
+#   relative data growth?), not just re-guessing the cap again.
+MAX_CHUNK_WORDS_BY_VOICE: dict[str, int] = {
+    "voice_meditation": 14,
+}
 
 
 def split_long_sentence(sentence: str, max_words: int) -> list[str]:
