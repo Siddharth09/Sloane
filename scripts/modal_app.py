@@ -120,6 +120,17 @@ def _encode_wav(audio, sr) -> str:
     # back without paying for a second cold start, while still scaling to
     # $0 well within an idle hour. Tune from real usage once live.
     scaledown_window=300,
+    # Deliberately NOT capping max_containers - tried max_containers=1 on
+    # 2026-09-10 to make the pre-warm trick (web/src/lib/modal.ts's
+    # warmModal()) actually share one container instead of racing a second
+    # one, and it worked for that narrow case, but it means every
+    # concurrent real user queues behind whoever's already generating -
+    # rejected per direct user feedback ("i dont like the modal plan of
+    # users queuing for one gpu it will not be a good result"). Left
+    # uncapped (Modal's normal autoscaling) so real concurrent traffic
+    # scales properly; see STATUS.md "Inference backend" for the full
+    # pre-warm trade-off writeup and why there's no config that gives both
+    # "pre-warm reliably shares a container" and "no queuing under load."
     timeout=300,
     env={"LUCY_MODEL_ROOT": MODEL_ROOT},
     # Tried enable_memory_snapshot=True + @modal.enter(snap=True) on
