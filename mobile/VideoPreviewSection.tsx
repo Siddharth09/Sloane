@@ -20,7 +20,7 @@ const COLORS = {
 // Kept in sync by hand with web/src/lib/plans.ts VIDEO_CREDIT_COSTS and the
 // Plus/Pro allotments - if those change, update here too (no shared package
 // between web/mobile to import a single source of truth from yet).
-const VIDEO_CREDITS = { plus: 15, pro: 60, talkSecondsPerCredit: 1, cineSecondsPerCredit: 0.33 };
+const VIDEO_CREDITS = { video: 40, talkSecondsPerCredit: 1, cineSecondsPerCredit: 0.33 };
 
 const CINEMATIC_PROMPT_EXAMPLES = [
   "A sun-drenched clifftop terrace in Santorini, blue domes and the Aegean Sea behind me",
@@ -117,9 +117,9 @@ export function VideoPreviewSection() {
           </Text>{" "}
           — one monthly balance, spend it on talking-head, cinematic, or a mix of both. 1 credit ≈{" "}
           {VIDEO_CREDITS.talkSecondsPerCredit}s of talking-head, or ≈{VIDEO_CREDITS.cineSecondsPerCredit}s
-          of cinematic (cinematic costs more to produce). Once this ships: Plus gets {VIDEO_CREDITS.plus}{" "}
-          credits/month, Pro gets {VIDEO_CREDITS.pro} credits/month, Free gets none. Whichever mode you
-          use, your photo, video, and any reference audio are sent to third-party AI vendors (Kling, Veo,
+          of cinematic (cinematic costs more to produce). Once this ships: the Video plan gets{" "}
+          {VIDEO_CREDITS.video} credits/month - Free/Starter/Plus don&apos;t include video. Whichever mode
+          you use, your photo, video, and any reference audio are sent to third-party AI vendors (Kling, Veo,
           and the fal.ai platform we use to reach them) for processing — different from our audio
           feature, which runs entirely on our own servers.
         </Text>

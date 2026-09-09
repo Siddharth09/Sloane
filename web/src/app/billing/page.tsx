@@ -22,8 +22,9 @@ const VIDEO_NOTE =
 
 const PLAN_CARDS: { id: PlanId; blurb: string; wash: string; accent: string }[] = [
   { id: "free", blurb: "Try it out", wash: "bg-surface", accent: "text-muted" },
+  { id: "starter", blurb: "For occasional use", wash: "bg-blue-wash/90", accent: "text-blue" },
   { id: "plus", blurb: "For regular use", wash: "bg-pink-wash/90", accent: "text-pink" },
-  { id: "pro", blurb: "For power users", wash: "bg-purple-wash/90", accent: "text-purple" },
+  { id: "video", blurb: "Audio + video credits", wash: "bg-purple-wash/90", accent: "text-purple" },
 ];
 
 function CheckoutSuccess() {
@@ -130,7 +131,7 @@ export default function BillingPage() {
           </p>
         )}
 
-        <div className="grid gap-6 sm:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {PLAN_CARDS.map((p) => {
             const plan = PLANS[p.id];
             const price = plan.priceUsdCents === 0 ? "$0" : `$${(plan.priceUsdCents / 100).toFixed(0)}/mo`;

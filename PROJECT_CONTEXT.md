@@ -1272,16 +1272,23 @@ the substance that must be conveyed):
 
 ### Caps (already real code, not just this spec - see Sec 12/STATUS.md)
 
+**Restructured to 4 tiers 2026-09-09** (see `web/src/lib/plans.ts` for the
+full math) - Free ($0), Starter ($3/mo, audio only), Plus ($6/mo, audio
+only), Video ($12/mo, audio + video credits). Went through an intermediate
+$6/$20 2-tier version first after discovering the original $3/200k and
+$9/1.5M numbers were built on a GPU-cost assumption ~30-45x too low, then
+restructured again per direct user feedback to keep $3 as a real entry
+price (paired with a smaller cap) and split video into its own tier
+instead of bundling it into the top audio tier.
+
+- **Audio**: character-based - Free 10,000/mo, Starter 15,000/mo, Plus
+  30,000/mo, Video 30,000/mo. All three paid tiers hold ~60% gross margin
+  at full worst-case usage against real measured RunPod costs.
 - **Video**: credit-based, `VIDEO_CREDIT_COSTS` in `web/src/lib/plans.ts` -
-  Free 0/mo, Plus 15/mo, Pro 60/mo, at current live prices (no Stripe
-  change). 1 credit = 1s talking-head or 1/3s cinematic, reviewed against
-  worst-case fal COGS at ~56-59% margin.
-- **Audio**: character-based, increasing by tier - Free 10,000/mo
-  (unchanged), Plus 30,000/mo, Pro 100,000/mo. **Re-priced 2026-09-09**
-  (was 200,000/1,500,000 at $3/$9) after real measured RunPod data showed
-  the original numbers were built on a GPU-cost assumption ~30-45x too
-  low - see `web/src/lib/plans.ts` for the full math and STATUS.md for
-  the incident. Plus is now $6/mo, Pro $20/mo.
+  only the Video tier includes credits (40/mo) - Free/Starter/Plus don't.
+  1 credit = 1s talking-head or 1/3s cinematic, reviewed against worst-case
+  fal COGS (talking-head is actually the pricier-per-credit option) at
+  ~61% combined margin with the Video tier's audio allotment.
 - Both are real, live constraints in `lib/plans.ts` and enforced via
   `src/lib/db.ts` for audio today; video enforcement doesn't exist yet
   since `/api/generate-video` doesn't exist yet (see below).

@@ -457,8 +457,7 @@ function VideoModeCard({
 }
 
 function VideoCloneSection() {
-  const plusCredits = PLANS.plus.videoCreditsPerMonth;
-  const proCredits = PLANS.pro.videoCreditsPerMonth;
+  const videoCredits = PLANS.video.videoCreditsPerMonth;
 
   return (
     <Card
@@ -496,8 +495,8 @@ function VideoCloneSection() {
         monthly balance, spend it on talking-head, cinematic, or a mix of both. 1 credit ≈{" "}
         {VIDEO_CREDIT_COSTS.talkingHeadSecondsPerCredit}s of talking-head, or ≈
         {Math.round(VIDEO_CREDIT_COSTS.cinematicSecondsPerCredit * 100) / 100}s of cinematic (cinematic
-        costs more to produce). Once this ships: Plus gets {plusCredits} credits/month, Pro gets{" "}
-        {proCredits} credits/month, Free gets none. Whichever mode you use, your photo, video, and any
+        costs more to produce). Once this ships: the Video plan gets {videoCredits} credits/month -
+        Free/Starter/Plus don&apos;t include video. Whichever mode you use, your photo, video, and any
         reference audio are sent to third-party AI vendors (Kling, Veo, and the fal.ai platform we use
         to reach them) for processing — different from our audio feature, which runs entirely on our
         own servers.
