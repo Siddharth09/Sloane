@@ -5,10 +5,39 @@
  * takes effect everywhere at once.
  *
  * Two separate quota systems, deliberately not the same unit:
- * - Audio: plain CHARACTERS of text-to-speech. Cost basis: Chatterbox
- *   generation costs roughly $0.002/minute of output in GPU time, so even
- *   a Plus user maxing out their monthly cap costs us well under $1
- *   against a $3 subscription.
+ *
+ * - Audio: plain CHARACTERS of text-to-speech.
+ *
+ *   **Re-priced 2026-09-09 - the original $3/200k and $9/1.5M numbers were
+ *   built on a stale "$0.002/minute" cost assumption that was never
+ *   measured against the real pipeline.** Actually measured against live
+ *   RunPod Serverless jobs the same day: a ~300-character generation took
+ *   44-55 SECONDS of billed GPU compute (whisper-verification retries +
+ *   DSP post-processing on top of raw generation, not just raw generation
+ *   time) - a real-time factor of ~3x, i.e. it costs ~3 seconds of GPU
+ *   time per second of output audio. That's roughly $0.06-0.09 per minute
+ *   of output audio depending on which GPU tier gets assigned (endpoint's
+ *   pool: $0.69/$1.10/$1.58 per hour) - 30-45x the old assumption. At the
+ *   old caps, a Plus user maxing 200k chars/mo cost us $6-16 against $3 of
+ *   revenue, and a Pro user maxing 1.5M chars/mo cost us $42-120 against
+ *   $9 - both real, uncapped losses, not edge cases.
+ *
+ *   New COGS assumption, padded for safety: 0.18s of compute per
+ *   character (rounded up from the ~0.14-0.18s/char actually measured) at
+ *   the worst-case GPU rate ($1.58/hr) = **$0.00008/character**
+ *   (~$80/million characters). New caps below are sized so a subscriber
+ *   maxing their ENTIRE monthly quota still holds ~60% gross margin -
+ *   worst case, not average case, same philosophy as the video credits.
+ *   For context, the new Plus/Pro numbers land close to what ElevenLabs
+ *   actually charges for comparable character allotments - a useful
+ *   external sanity check that this isn't an arbitrary number.
+ *
+ *   Do not raise these caps (or add cheaper GPU tiers to the endpoint's
+ *   pool without accounting for the mix shifting) without re-running this
+ *   math against fresh measured data - it was 2 real data points, not a
+ *   large sample, and real per-request overhead may not scale perfectly
+ *   linearly with text length.
+ *
  * - Video: VIDEO CREDITS (see VIDEO_CREDIT_COSTS below) - not seconds
  *   directly, because a talking-head second and a cinematic second cost
  *   very different amounts in real vendor fees (fal.ai, proxying Kling/
@@ -17,7 +46,10 @@
  *   2026-09-08 (see PROJECT_CONTEXT.md Sec 12 / STATUS.md "Pricing/margin
  *   review"): every allotment below is sized to hold >=56% gross margin
  *   even if a subscriber spends their entire credit balance on the single
- *   most expensive option (worst case, not the average case). Do not
+ *   most expensive option (worst case, not the average case) - unaffected
+ *   by the 2026-09-09 audio re-pricing above since it's based on real
+ *   fal.ai vendor list prices, not the same stale assumption. Margin only
+ *   improves now that the plans carrying these credits cost more. Do not
  *   raise these caps without re-running that check.
  *
  * Video credits are reserved/aspirational, not a working feature yet -
@@ -59,18 +91,18 @@ export const PLANS: Record<PlanId, Plan> = {
   plus: {
     id: "plus",
     name: "Plus",
-    priceUsdCents: 300,
+    priceUsdCents: 600, // was 300 - see re-pricing note above
     stripePriceEnvVar: "STRIPE_PRICE_PLUS",
-    charactersPerMonth: 200_000,
-    videoCreditsPerMonth: 15, // worst-case (all talking-head) COGS ~$0.84, ~59% margin at $3
+    charactersPerMonth: 30_000, // was 200_000 - worst-case audio COGS ~$2.40, ~60% margin at $6
+    videoCreditsPerMonth: 15, // worst-case (all talking-head) COGS ~$0.84, now ~86% margin at $6 (was ~59% at $3)
   },
   pro: {
     id: "pro",
     name: "Pro",
-    priceUsdCents: 900,
+    priceUsdCents: 2000, // was 900 - see re-pricing note above
     stripePriceEnvVar: "STRIPE_PRICE_PRO",
-    charactersPerMonth: 1_500_000,
-    videoCreditsPerMonth: 60, // worst-case (all talking-head) COGS ~$3.37, ~56% margin at $9
+    charactersPerMonth: 100_000, // was 1_500_000 - worst-case audio COGS ~$8.00, ~60% margin at $20
+    videoCreditsPerMonth: 60, // worst-case (all talking-head) COGS ~$3.37, now ~83% margin at $20 (was ~56% at $9)
   },
 };
 

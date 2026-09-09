@@ -1276,8 +1276,12 @@ the substance that must be conveyed):
   Free 0/mo, Plus 15/mo, Pro 60/mo, at current live prices (no Stripe
   change). 1 credit = 1s talking-head or 1/3s cinematic, reviewed against
   worst-case fal COGS at ~56-59% margin.
-- **Audio**: unchanged, character-based, increasing by tier - Free 10,000/
-  mo, Plus 200,000/mo, Pro 1,500,000/mo.
+- **Audio**: character-based, increasing by tier - Free 10,000/mo
+  (unchanged), Plus 30,000/mo, Pro 100,000/mo. **Re-priced 2026-09-09**
+  (was 200,000/1,500,000 at $3/$9) after real measured RunPod data showed
+  the original numbers were built on a GPU-cost assumption ~30-45x too
+  low - see `web/src/lib/plans.ts` for the full math and STATUS.md for
+  the incident. Plus is now $6/mo, Pro $20/mo.
 - Both are real, live constraints in `lib/plans.ts` and enforced via
   `src/lib/db.ts` for audio today; video enforcement doesn't exist yet
   since `/api/generate-video` doesn't exist yet (see below).

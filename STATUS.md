@@ -29,7 +29,7 @@ It runs as:
 
 ### Billing (live, real money)
 - Stripe Checkout is **live mode** (real card charges), fully working end-to-end
-- Plans: Free (10,000 chars/mo), Plus ($3/mo, 200,000 chars/mo), Pro ($9/mo, 1,500,000 chars/mo + 30s/mo video allotment, reserved not working — see above)
+- **Plans re-priced 2026-09-09** (see `web/src/lib/plans.ts` for the full math): Free (10,000 chars/mo, unchanged), Plus ($6/mo, was $3 — 30,000 chars/mo, was 200,000), Pro ($20/mo, was $9 — 100,000 chars/mo, was 1,500,000) + 15/60 video credits/mo (unchanged, reserved not working — see above). The old numbers were built on a stale GPU-cost assumption ($0.002/min) that real measured data showed was 30-45x too low — at the old caps, a subscriber maxing their quota cost more than their subscription price. New caps hold ~60% gross margin even at full worst-case usage. New Stripe Prices created and live (`price_1UDeVXItjmPeTn3QA0yeSaks` Plus, `price_1UDeVXItjmPeTn3QYNdEK5py` Pro); the old $3/$9 prices were archived (not deleted - any pre-existing subscriber on the old price keeps it until they change plans).
 - User still needs to personally verify a real subscribe-with-own-card flow — not something Claude should do
 
 ### Sign-in, billing portal, and generation history (merged to `main` 2026-09-09)
