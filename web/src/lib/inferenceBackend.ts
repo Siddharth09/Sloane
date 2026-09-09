@@ -1,6 +1,6 @@
 import { initSchema, getSetting, setSetting } from "./db";
 import { submitJob } from "./runpod";
-import { submitModalJob } from "./modal";
+import { submitModalJob, warmModal } from "./modal";
 
 // Three-way backend toggle: audio generation can run against the always-on
 // GPU Pod (fast, billed hourly - good for a launch window with real
@@ -46,6 +46,16 @@ export async function isPodMode(): Promise<boolean> {
 export async function submitGenerationJob(input: Record<string, unknown>): Promise<{ jobId: string }> {
   const backend = await getInferenceBackend();
   return backend === "modal" ? submitModalJob(input) : submitJob(input);
+}
+
+// Best-effort pre-warm, called when someone opens the generation page (see
+// @/app/api/warm-inference/route.ts) - a no-op on Pod (already always warm)
+// and RunPod Serverless (legacy path, not worth building this for). Never
+// throws.
+export async function warmInferenceBackend(): Promise<void> {
+  if ((await getInferenceBackend()) === "modal") {
+    await warmModal();
+  }
 }
 
 // Pod mode fetches synchronously and returns already-decoded base64 audio,

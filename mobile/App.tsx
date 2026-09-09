@@ -475,6 +475,13 @@ function CloneVoiceSection() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Fire-and-forget: wakes up Modal well before the user finishes typing
+    // and hits Generate for real - see web's api/warm-inference/route.ts,
+    // shared since mobile calls the same Next.js backend.
+    fetch(`${WEB_BASE}/api/warm-inference`, { method: "POST" }).catch(() => {});
+  }, []);
+
   return (
     // Mirrors web/src/app/layout.tsx's .art-backdrop - same mosaic-courtyard
     // painting behind the whole app, with the same cream wash on top for text

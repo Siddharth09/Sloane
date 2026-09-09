@@ -572,6 +572,12 @@ function VideoCloneSection() {
 }
 
 export default function Home() {
+  useEffect(() => {
+    // Fire-and-forget: wakes up Modal well before the visitor finishes
+    // typing and hits Generate for real - see api/warm-inference/route.ts.
+    fetch("/api/warm-inference", { method: "POST" }).catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-screen px-6 py-20">
       <main className="mx-auto flex max-w-2xl flex-col gap-10">

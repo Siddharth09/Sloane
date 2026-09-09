@@ -40,3 +40,22 @@ export async function getModalJobStatus(callId: string): Promise<ModalStatusResp
   }
   return data as ModalStatusResponse;
 }
+
+// Fire-and-forget: called the moment someone opens the generation page,
+// well before they've finished typing and hit Generate for real, so the
+// container is often already warm by the time a real request comes in -
+// see scripts/modal_app.py's warmup() for why this doesn't burn GPU time
+// synthesizing audio nobody asked for. Never throws - a failed warm-up
+// ping should never be visible to the user, worst case they just hit the
+// normal cold-start path.
+export async function warmModal(): Promise<void> {
+  try {
+    await fetch(MODAL_SUBMIT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "warmup" }),
+    });
+  } catch {
+    // Best-effort only.
+  }
+}

@@ -107,7 +107,13 @@ def _encode_wav(audio, sr) -> str:
 
 @app.cls(
     image=image,
-    gpu="L4",
+    # Was "L4" ($0.80/hr) - measured 2026-09-10 at only ~13-15 tokens/sec
+    # sampling throughput, roughly half the ~25-29 tokens/sec seen testing
+    # directly on the RTX 4090 RunPod used previously. L40S ($1.95/hr) is
+    # the same Ada Lovelace generation as that 4090 - closest real match,
+    # not just a guess. Per-request cost doesn't scale 2.4x with the
+    # hourly-rate difference since it finishes proportionally faster.
+    gpu="L40S",
     volumes={MODEL_ROOT: model_volume},
     # Container stays warm 5 minutes after its last request before scaling
     # back to zero - covers someone generating a couple of clips back to
@@ -173,6 +179,18 @@ class LucyTTS:
             return {"error": "no audio generated"}
         return {"audio_base64": _encode_wav(audio, sr), "sample_rate": sr}
 
+    @modal.method()
+    def warmup(self):
+        # Deliberately synthesizes nothing - the point is to pay for the
+        # container boot + shared-engine load (which @modal.enter()/load()
+        # already triggers just by being called, since importing
+        # lucy_tts_engine eagerly loads the base T3/vocoder/voice-encoder
+        # onto the GPU) without also burning GPU time generating audio
+        # nobody asked for. Called from the web app the moment someone
+        # opens the generation page, well before they've finished typing
+        # and hit Generate for real - see web/src/lib/modal.ts's warmModal().
+        return {"status": "warm"}
+
 
 # --- HTTP surface for the Next.js app -----------------------------------
 #
@@ -208,6 +226,8 @@ async def submit(request: fastapi.Request):
             cfg_weight=body.get("cfg_weight"),
             speed=body.get("speed"),
         )
+    elif action == "warmup":
+        call = await lucy.warmup.spawn.aio()
     else:
         return {"error": f"unknown action '{action}'"}
     return {"call_id": call.object_id}
