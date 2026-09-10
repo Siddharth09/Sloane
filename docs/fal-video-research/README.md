@@ -283,4 +283,19 @@ Directly answers "how can we ensure it will be exclusive": exclusivity here mean
 4. Ads-mode credit pricing - genuinely varies by engine (Kling path costs the same per-second as Talking head; Seedance path costs meaningfully more, especially without a video-reference discount) - needs a real decision, not a placeholder ratio like Talking head/Cinematic have.
 5. Mobile parity for actor creation/upload UI once the web version exists.
 
+---
+
+## 2026-09-10 (later same day) - exclusive-character consistency proven end-to-end with a real test, ~$4.65 total spend
+
+Requested: generate a hyper-realistic character from pure text alone across all three engines, then prove the *same* character can appear in a second, different scene - the actual mechanic the "exclusive AI actor you can sell to brands" pitch depends on.
+
+**Real test run, all via fal.ai, no mocks:**
+1. Same detailed text prompt (a blonde woman on Bondi Beach inviting people to a Lucy-Labs-sponsored surf competition, then revealing she's AI and morphing through several identities before running into the surf) submitted as pure text-to-video to all three: `fal-ai/kling-video/v2.1/master/text-to-video` ($1.40/5s), `fal-ai/veo3.1/fast` ($0.60/4s w/ audio), `bytedance/seedance-2.0/fast/text-to-video` (~$0.97/4s). All three produced a hyper-realistic human with no content-policy block this time - worth noting Seedance's filter isn't perfectly consistent (it blocked a hyper-real *still portrait* earlier the same day but allowed this hyper-real *video*).
+2. **Real, load-bearing finding, stated plainly to the user**: pure text-to-video has no persistent identity across separate calls - the same prompt run twice produces a different-looking person each time (different random seed). This isn't a bug, it's how these models work, and it directly contradicts a naive assumption that "just re-run the prompt" would give a reusable character.
+3. **The actual working mechanism, proven not just described**: extracted a still frame from the Kling result via `ffmpeg` (`-ss 1.0 -frames:v 1`), then fed that exact image into `fal-ai/kling-video/v2.1/standard/image-to-video` ($0.28/5s) with a new prompt ("...now stands in Times Square, New York City..."). Result: the same face in a genuinely different scene, because it's the same source image driving both generations - this is the entire mechanism, and it now has real output to point to instead of just a design doc.
+4. Caught and fixed a real wardrobe miss along the way: the first attempt defaulted to a bikini (beach setting + no wardrobe direction in the prompt) - not appropriate for a character meant to be licensed to brands. Re-ran with explicit wardrobe direction ("wearing a fitted black and blue surf wetsuit... modest athletic wetsuit attire throughout, no swimwear/bikini") - worked cleanly on retry, confirming this is a real, controllable prompt-engineering lesson (always specify wardrobe explicitly for a sellable character, don't leave it to the model's default), not a model limitation.
+5. **Total real spend: ~$4.65** across 5 generations - stayed well within "just trying it out" as asked.
+
+**What this settles vs. what's still open**: settles that the core technical mechanism (generate once, store the image, reuse it for every future scene) genuinely works, with real output as proof, not just the theory from earlier in the day. Does **not** settle whether the multi-morph transformation sequence (blonde -> brunette -> man -> surfer) rendered convincingly in any of the three clips - nobody has actually watched them yet as of this update. Still fully open: the `ai_actors` table, private storage, the similarity safeguard, and the real generation endpoint - this was API-level proof, not a shipped feature.
+
 _Last updated: 2026-09-10 (Sydney)._
