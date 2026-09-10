@@ -29,8 +29,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ status: "FAILED", error: job.error });
   }
 
-  // Phase 1 (Lucy-voice only): still waiting on the TTS generation before
-  // Kling Avatar can even be submitted (needs the finished audio as input).
+  // Phase 1: still waiting on the TTS generation before Kling Avatar can
+  // even be submitted (needs the finished audio as input).
   if (job.modal_job_id && !job.fal_request_id) {
     let modalStatus;
     try {
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Phase 2 (both voice paths converge here): poll fal for the actual video.
+  // Phase 2: Kling Avatar submitted, poll fal for the actual video.
   if (!job.fal_request_id) {
     return NextResponse.json({ status: "IN_PROGRESS" });
   }

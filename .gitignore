@@ -21,6 +21,8 @@ zeroshot_test_output/
 # of this section - the blanket *.wav rule above would otherwise silently
 # 404 the whole feature in production despite working locally.
 !web/public/voice-samples/*.wav
+# Same reasoning, for the character click-to-preview clips.
+!web/public/character-samples/*.mp4
 
 # Env/secrets
 .env

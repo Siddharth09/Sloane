@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AccountWidget } from "@/components/AccountWidget";
 import { Footer } from "@/components/Footer";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -12,7 +12,7 @@ import { WaitingGame } from "@/components/WaitingGame";
 import { useAccessToken } from "@/lib/useAccessToken";
 import { useFreeTierId } from "@/lib/useFreeTierId";
 import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
-import { CHARACTERS, LUCY_VOICE_CREDIT_COST, VEO_VOICE_CREDIT_COST } from "@/lib/characters";
+import { CHARACTERS, LUCY_VOICE_CREDIT_COST } from "@/lib/characters";
 
 // Backend mode is switchable at runtime from /admin (see
 // @/lib/inferenceBackend) - fetched here rather than read from a build-time
@@ -575,13 +575,34 @@ const CHARACTER_POLL_TIMEOUT_MS = 300_000;
 function CharacterVideoSection() {
   const { token } = useAccessToken();
   const [characterId, setCharacterId] = useState(CHARACTERS[0].id);
-  const [voiceChoice, setVoiceChoice] = useState<string>("veo");
   const [script, setScript] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const previewRef = useRef<HTMLVideoElement | null>(null);
 
-  const creditsCost = voiceChoice === "veo" ? VEO_VOICE_CREDIT_COST : LUCY_VOICE_CREDIT_COST;
+  const character = CHARACTERS.find((c) => c.id === characterId)!;
+
+  // Click a character to select them AND hear/see their intro preview -
+  // same one-shared-element toggle pattern as VoicePicker.tsx's audio
+  // previews (click again to stop, click again to replay).
+  function handlePickCharacter(id: (typeof CHARACTERS)[number]["id"]) {
+    setCharacterId(id);
+    const el = previewRef.current;
+    if (!el) return;
+    if (playingId === id) {
+      el.pause();
+      el.currentTime = 0;
+      setPlayingId(null);
+      return;
+    }
+    el.pause();
+    el.src = `/character-samples/${id}.mp4`;
+    el.currentTime = 0;
+    el.play().catch(() => {});
+    setPlayingId(id);
+  }
 
   async function handleGenerate() {
     setLoading(true);
@@ -591,7 +612,7 @@ function CharacterVideoSection() {
       const res = await fetch("/api/generate-character-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: token, character_id: characterId, voice_choice: voiceChoice, script }),
+        body: JSON.stringify({ access_token: token, character_id: characterId, voice_choice: character.defaultVoiceId, script }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
@@ -622,7 +643,7 @@ function CharacterVideoSection() {
       iconColor="text-purple"
       icon="🎭"
       title="Pick a character, make an ad"
-      subtitle="5 pre-made AI actors - choose one, pick a voice, type a script."
+      subtitle="Tap a face to hear them, then type what they should say."
     >
       {!token ? (
         <p className="rounded-2xl bg-white/70 p-3 text-sm text-muted">
@@ -634,55 +655,29 @@ function CharacterVideoSection() {
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-5 gap-2">
+          <video ref={previewRef} onEnded={() => setPlayingId(null)} className="hidden" />
+          <div className="flex flex-wrap justify-center gap-4">
             {CHARACTERS.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setCharacterId(c.id)}
-                className="flex flex-col items-center gap-1"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={c.imageUrl}
-                  alt={c.name}
-                  className={`h-16 w-16 rounded-full object-cover shadow-soft transition ${
-                    characterId === c.id ? "ring-4 ring-purple" : "opacity-70 hover:opacity-100"
-                  }`}
-                />
+              <button key={c.id} onClick={() => handlePickCharacter(c.id)} className="flex flex-col items-center gap-1.5">
+                <span className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={c.imageUrl}
+                    alt={c.name}
+                    className={`h-16 w-16 rounded-full object-cover shadow-soft transition ${
+                      characterId === c.id ? "shadow-soft-lg scale-110 ring-4 ring-purple" : "opacity-70 hover:opacity-100"
+                    }`}
+                  />
+                  {playingId === c.id && (
+                    <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] shadow-soft">
+                      🔊
+                    </span>
+                  )}
+                </span>
                 <span className={`text-xs ${characterId === c.id ? "font-bold text-purple" : "text-muted"}`}>{c.name}</span>
               </button>
             ))}
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setVoiceChoice("veo")}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                voiceChoice === "veo" ? "bg-purple text-white shadow-soft" : "bg-white text-muted"
-              }`}
-            >
-              This character&apos;s own voice ({VEO_VOICE_CREDIT_COST} credits)
-            </button>
-            {PRESET_VOICES.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => setVoiceChoice(v.id)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                  voiceChoice === v.id ? "bg-purple text-white shadow-soft" : "bg-white text-muted"
-                }`}
-              >
-                {v.label} ({LUCY_VOICE_CREDIT_COST} credits)
-              </button>
-            ))}
-          </div>
-          {voiceChoice === "veo" && (
-            <p className="text-xs italic leading-relaxed text-coral-dark">
-              Heads up: the character&apos;s own voice re-generates the whole scene, and in testing this has
-              sometimes drifted to a different-looking face than the photo shown above - a real, unresolved
-              limitation. A Lucy voice (Kling Avatar lip-sync onto the actual photo) is more reliable for
-              keeping the exact character.
-            </p>
-          )}
 
           <textarea
             className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
@@ -697,7 +692,7 @@ function CharacterVideoSection() {
             disabled={loading || !script.trim()}
             className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
           >
-            {loading ? "Generating… (usually 30-90s)" : `Generate (${creditsCost} video credits)`}
+            {loading ? "Generating… (usually 30-90s)" : `Generate (${LUCY_VOICE_CREDIT_COST} video credits)`}
           </button>
 
           {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
@@ -705,11 +700,7 @@ function CharacterVideoSection() {
         </>
       )}
 
-      <p className="text-xs italic leading-relaxed text-muted">
-        Video credits come from your Video plan&apos;s existing 40/month allotment - a Lucy-voice video costs{" "}
-        {LUCY_VOICE_CREDIT_COST} credits (real lip-sync via Kling Avatar), the character&apos;s own Veo-generated voice costs{" "}
-        {VEO_VOICE_CREDIT_COST} (Veo generates both the video and the dialogue).
-      </p>
+      <p className="text-xs text-muted">Comes from your Video plan&apos;s 40 credits/month - each video costs {LUCY_VOICE_CREDIT_COST}.</p>
     </Card>
   );
 }
@@ -721,9 +712,9 @@ const PAYGO_ENGINES: { id: "veo" | "kling" | "seedance"; label: string; blurb: s
 ];
 
 const PAYGO_PACKS = [
-  { id: "single", credits: 1, priceLabel: "$6.99" },
-  { id: "pack5", credits: 5, priceLabel: "$32.00" },
-  { id: "pack10", credits: 10, priceLabel: "$59.00" },
+  { id: "single", credits: 1, priceLabel: "$2.99" },
+  { id: "pack5", credits: 5, priceLabel: "$13.50" },
+  { id: "pack10", credits: 10, priceLabel: "$25.00" },
 ];
 
 const PAYGO_POLL_INTERVAL_MS = 3000;

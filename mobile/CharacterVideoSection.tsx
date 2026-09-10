@@ -4,10 +4,9 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { useAccessToken } from "./useAccessToken";
 
 // Mirrors web/src/app/page.tsx's CharacterVideoSection - same 5-character
-// roster, same voice-choice/credits framing, same submit-then-poll pattern
-// as the rest of this app's generation flows. Uses the access_token
-// (not a cookie session) since this is billed against the Video plan's
-// existing subscription quota, same gating as audio generation.
+// roster, click-to-preview, single Lucy-voice generation path. Uses the
+// access_token (not a cookie session) since this is billed against the
+// Video plan's existing subscription quota, same gating as audio generation.
 const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://www.lucylabs.app";
 
 const COLORS = {
@@ -19,32 +18,18 @@ const COLORS = {
 };
 
 // Kept in sync by hand with web/src/lib/characters.ts - no shared package
-// between web/mobile yet (same limitation already noted in VideoPreviewSection).
+// between web/mobile yet. defaultVoiceId picked to match each character's
+// requested accent (2026-09-11): Harper/Jack Australian (Jack "like Brad"),
+// Beth English "like Alice", Vicky/Marcus American.
 const CHARACTERS = [
-  { id: "harper", name: "Harper", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/yOpTgTwUZNYQcFCLsa822_harper.jpg" },
-  { id: "beth", name: "Beth", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/Y2m8E19pk2G12R1ewoEYH_beth.jpg" },
-  { id: "vicky", name: "Vicky", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/GCrI6ghEIlnUFmhtS8X7v_vicky.jpg" },
-  { id: "marcus", name: "Marcus", imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/iPWHKRCO3ZxzoPoXtCewT_marcus.jpg" },
-  { id: "jack", name: "Jack", imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/6_ml_AMMqKfis0tvQBm8G_jack.jpg" },
-];
-
-const LUCY_VOICES = [
-  { id: "art_instructor", label: "Vicky" },
-  { id: "music_instructor", label: "Patrick" },
-  { id: "voice_business", label: "Alice" },
-  { id: "voice_finance", label: "Megan" },
-  { id: "voice_broadcast", label: "Katie" },
-  { id: "voice_tech", label: "Brad" },
-  { id: "voice_comedy", label: "Izzy" },
-  { id: "voice_sales", label: "Robbo" },
-  { id: "voice_mark", label: "Mark" },
-  { id: "voice_adam", label: "Adam" },
-  { id: "voice_rachel", label: "Rachel" },
-  { id: "voice_emily", label: "Emily" },
+  { id: "harper", name: "Harper", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/yOpTgTwUZNYQcFCLsa822_harper.jpg", defaultVoiceId: "voice_mark" },
+  { id: "beth", name: "Beth", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/Y2m8E19pk2G12R1ewoEYH_beth.jpg", defaultVoiceId: "voice_business" },
+  { id: "vicky", name: "Vicky", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/GCrI6ghEIlnUFmhtS8X7v_vicky.jpg", defaultVoiceId: "voice_rachel" },
+  { id: "marcus", name: "Marcus", imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/iPWHKRCO3ZxzoPoXtCewT_marcus.jpg", defaultVoiceId: "voice_adam" },
+  { id: "jack", name: "Jack", imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/6_ml_AMMqKfis0tvQBm8G_jack.jpg", defaultVoiceId: "voice_tech" },
 ];
 
 const LUCY_VOICE_CREDIT_COST = 8;
-const VEO_VOICE_CREDIT_COST = 24;
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 300_000;
 
@@ -59,13 +44,30 @@ function ResultVideo({ uri }: { uri: string }) {
 export function CharacterVideoSection() {
   const { token } = useAccessToken();
   const [characterId, setCharacterId] = useState(CHARACTERS[0].id);
-  const [voiceChoice, setVoiceChoice] = useState("veo");
   const [script, setScript] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
 
-  const creditsCost = voiceChoice === "veo" ? VEO_VOICE_CREDIT_COST : LUCY_VOICE_CREDIT_COST;
+  const character = CHARACTERS.find((c) => c.id === characterId)!;
+  // One shared preview player, source swapped per click (same pattern as
+  // the pay-as-you-go audio previews elsewhere in this app).
+  const previewPlayer = useVideoPlayer(null, (p) => {
+    p.loop = false;
+  });
+
+  function handlePickCharacter(id: string) {
+    setCharacterId(id);
+    if (playingId === id) {
+      previewPlayer.pause();
+      setPlayingId(null);
+      return;
+    }
+    previewPlayer.replace(`${WEB_BASE}/character-samples/${id}.mp4`);
+    previewPlayer.play();
+    setPlayingId(id);
+  }
 
   async function handleGenerate() {
     setLoading(true);
@@ -75,7 +77,7 @@ export function CharacterVideoSection() {
       const res = await fetch(`${WEB_BASE}/api/generate-character-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: token, character_id: characterId, voice_choice: voiceChoice, script }),
+        body: JSON.stringify({ access_token: token, character_id: characterId, voice_choice: character.defaultVoiceId, script }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
@@ -103,7 +105,7 @@ export function CharacterVideoSection() {
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Pick a character, make an ad</Text>
-      <Text style={styles.subtitle}>5 pre-made AI actors - choose one, pick a voice, type a script.</Text>
+      <Text style={styles.subtitle}>Tap a face to hear them, then type what they should say.</Text>
 
       {!token ? (
         <Text style={styles.muted}>This needs the Video plan and an access code - add yours in Account to use it.</Text>
@@ -111,44 +113,22 @@ export function CharacterVideoSection() {
         <>
           <View style={styles.characterRow}>
             {CHARACTERS.map((c) => (
-              <Pressable key={c.id} onPress={() => setCharacterId(c.id)} style={styles.characterItem}>
-                <Image
-                  source={{ uri: c.imageUrl }}
-                  style={[styles.characterImage, characterId === c.id && styles.characterImageSelected]}
-                />
+              <Pressable key={c.id} onPress={() => handlePickCharacter(c.id)} style={styles.characterItem}>
+                <View>
+                  <Image
+                    source={{ uri: c.imageUrl }}
+                    style={[styles.characterImage, characterId === c.id && styles.characterImageSelected]}
+                  />
+                  {playingId === c.id && (
+                    <View style={styles.playingBadge}>
+                      <Text style={styles.playingBadgeText}>🔊</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={[styles.characterName, characterId === c.id && styles.characterNameSelected]}>{c.name}</Text>
               </Pressable>
             ))}
           </View>
-
-          <View style={styles.voiceRow}>
-            <Pressable
-              onPress={() => setVoiceChoice("veo")}
-              style={[styles.voicePill, voiceChoice === "veo" && styles.voicePillSelected]}
-            >
-              <Text style={[styles.voicePillText, voiceChoice === "veo" && styles.voicePillTextSelected]}>
-                Own voice ({VEO_VOICE_CREDIT_COST}cr)
-              </Text>
-            </Pressable>
-            {LUCY_VOICES.map((v) => (
-              <Pressable
-                key={v.id}
-                onPress={() => setVoiceChoice(v.id)}
-                style={[styles.voicePill, voiceChoice === v.id && styles.voicePillSelected]}
-              >
-                <Text style={[styles.voicePillText, voiceChoice === v.id && styles.voicePillTextSelected]}>
-                  {v.label} ({LUCY_VOICE_CREDIT_COST}cr)
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          {voiceChoice === "veo" && (
-            <Text style={styles.warningText}>
-              Heads up: the character&apos;s own voice re-generates the whole scene, and in testing this has
-              sometimes drifted to a different-looking face than the photo above - a real, unresolved
-              limitation. A Lucy voice is more reliable for keeping the exact character.
-            </Text>
-          )}
 
           <TextInput
             style={styles.textArea}
@@ -166,7 +146,7 @@ export function CharacterVideoSection() {
             style={[styles.generateButton, (loading || !script.trim()) && { opacity: 0.5 }]}
           >
             <Text style={styles.generateButtonText}>
-              {loading ? "Generating… (usually 30-90s)" : `Generate (${creditsCost} video credits)`}
+              {loading ? "Generating… (usually 30-90s)" : `Generate (${LUCY_VOICE_CREDIT_COST} video credits)`}
             </Text>
           </Pressable>
 
@@ -175,10 +155,7 @@ export function CharacterVideoSection() {
         </>
       )}
 
-      <Text style={styles.noteText}>
-        Video credits come from your Video plan&apos;s existing 40/month allotment - a Lucy-voice video costs{" "}
-        {LUCY_VOICE_CREDIT_COST} credits, the character&apos;s own Veo-generated voice costs {VEO_VOICE_CREDIT_COST}.
-      </Text>
+      <Text style={styles.noteText}>Comes from your Video plan&apos;s 40 credits/month - each video costs {LUCY_VOICE_CREDIT_COST}.</Text>
     </View>
   );
 }
@@ -201,11 +178,18 @@ const styles = StyleSheet.create({
   characterImageSelected: { opacity: 1, borderWidth: 3, borderColor: COLORS.purple },
   characterName: { fontSize: 11, color: COLORS.muted },
   characterNameSelected: { fontWeight: "700", color: COLORS.purple },
-  voiceRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  voicePill: { backgroundColor: "#fff", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  voicePillSelected: { backgroundColor: COLORS.purple },
-  voicePillText: { fontSize: 11, fontWeight: "600", color: COLORS.muted },
-  voicePillTextSelected: { color: "#fff" },
+  playingBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playingBadgeText: { fontSize: 9 },
   textArea: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -220,7 +204,6 @@ const styles = StyleSheet.create({
   generateButton: { backgroundColor: COLORS.purple, borderRadius: 999, paddingVertical: 12, alignItems: "center" },
   generateButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   errorText: { fontSize: 12, color: "#b0463c" },
-  warningText: { fontSize: 11, lineHeight: 16, fontStyle: "italic", color: "#b0463c" },
   resultVideo: { width: "100%", aspectRatio: 9 / 16, borderRadius: 16, backgroundColor: "#000" },
   noteText: { fontSize: 11, lineHeight: 17, color: COLORS.muted },
 });
