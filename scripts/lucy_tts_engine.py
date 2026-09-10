@@ -634,7 +634,22 @@ def apply_terminal_fall(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray
             continue
         frac = (i - peak_idx) / span
         target_semitone = peak_semitone - TERMINAL_FALL_SEMITONES * frac
-        target_f0[i] = 440.0 * (2.0 ** ((target_semitone - 69.0) / 12.0))
+        # min(), not a flat overwrite - reproduced live 2026-09-10 ("it went
+        # up in this demo") on a take whose natural fall from the peak
+        # already dropped ~24 semitones (356Hz -> a genuine low creaky-voice
+        # ~77Hz at the very end, real vocal fry, not a pyworld tracking
+        # glitch - checked by re-running pw.harvest on the full utterance,
+        # not just the isolated tail, same result). The old code
+        # unconditionally overwrote every frame with the forced curve, which
+        # only ever falls TERMINAL_FALL_SEMITONES (5) below the peak - on a
+        # tail that had already fallen much further than that naturally,
+        # this *raised* the ending back up to the shallower forced target,
+        # clobbering an already-good deep fall with a shallower, relatively
+        # higher-sounding one. Taking whichever is lower means this only
+        # ever pulls a flat/rising ending down (the actual bug it exists to
+        # fix) and leaves an already-adequate natural fall alone.
+        natural_semitone = 69.0 + 12.0 * np.log2(f0[i] / 440.0)
+        target_f0[i] = 440.0 * (2.0 ** ((min(natural_semitone, target_semitone) - 69.0) / 12.0))
 
     reshaped = pw.synthesize(target_f0, sp, ap, sr).astype(np.float32)
     if len(reshaped) < len(tail):
