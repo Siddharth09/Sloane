@@ -131,7 +131,15 @@ def _encode_wav(audio, sr) -> str:
     # scales properly; see STATUS.md "Inference backend" for the full
     # pre-warm trade-off writeup and why there's no config that gives both
     # "pre-warm reliably shares a container" and "no queuing under load."
-    timeout=300,
+    # Was 300 (5min) - a real, confirmed hard-failure bug for long-form text
+    # (e.g. a multi-hundred-word meditation/story script): with ~40-word
+    # chunks each taking roughly 10-20s including retries, anything past
+    # ~15-20 chunks (~600-800 words) could exceed 300s mid-generation and
+    # get hard-killed by Modal with zero partial output - reproduced as
+    # "none of them are able to read it" 2026-09-10 for a long story text.
+    # Raised to a real ceiling for long-form narration rather than the
+    # short-clip-only budget this originally assumed.
+    timeout=1800,
     env={"LUCY_MODEL_ROOT": MODEL_ROOT},
     # Tried enable_memory_snapshot=True + @modal.enter(snap=True) on
     # 2026-09-10 - made things WORSE, not better: cold start went from

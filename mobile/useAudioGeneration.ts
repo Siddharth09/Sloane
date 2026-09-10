@@ -11,16 +11,19 @@ import { File, Paths } from "expo-file-system";
 // constants match exactly so behavior is consistent across platforms.
 const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://www.lucylabs.app";
 const POLL_INTERVAL_MS = 2000;
-// See web/src/app/page.tsx's POLL_TIMEOUT_MS comment - measured a real
-// cold start at ~177s against the live endpoint, so this needs real margin
-// above that, not the original ~30-90s estimate.
-const POLL_TIMEOUT_MS = 240_000;
+// See web/src/app/page.tsx's POLL_TIMEOUT_MS comment - raised 2026-09-10
+// from 240_000 alongside the same fix there: long-form text (a long story/
+// meditation script chunked into dozens of generations) can legitimately
+// take several minutes, and the old timeout gave up on a job that was still
+// working fine server-side.
+const POLL_TIMEOUT_MS = 1_500_000;
 const SHOW_WAITING_UI_AFTER_MS = 6000;
 
 export function loadingMessageFor(elapsedMs: number): string {
   if (elapsedMs < 15_000) return "Waking up the voice engine…";
   if (elapsedMs < 40_000) return "Generating your audio…";
-  return "Almost there, thanks for your patience…";
+  if (elapsedMs < 120_000) return "Almost there, thanks for your patience…";
+  return "Still narrating - longer pieces of text take a few minutes…";
 }
 
 // expo-audio's player expects a real file:// or https:// URI, not a data:

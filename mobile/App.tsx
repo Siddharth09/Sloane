@@ -15,6 +15,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import {
   useAudioPlayer,
+  useAudioPlayerStatus,
   useAudioRecorder,
   useAudioRecorderState,
   RecordingPresets,
@@ -249,6 +250,32 @@ function PresetVoiceSection() {
   const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const { generate, loading, error, audioUri, statusMessage, showWaitingUi } = useAudioGeneration("/api/generate-preset");
 
+  // Click-to-preview: static pre-generated intro clips served from the web
+  // app's public/voice-samples/ dir (same files VoicePicker.tsx plays on
+  // web) - instant, no pod/Modal round trip. One player instance reused via
+  // replace() rather than one useAudioPlayer per voice bubble, matching the
+  // existing AudioResult pattern above of a single player + seekTo(0).
+  const previewPlayer = useAudioPlayer();
+  const previewStatus = useAudioPlayerStatus(previewPlayer);
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (previewingId && previewStatus.didJustFinish) setPreviewingId(null);
+  }, [previewStatus.didJustFinish, previewingId]);
+
+  function handleVoicePress(id: string) {
+    setVoiceId(id);
+    if (previewingId === id) {
+      previewPlayer.pause();
+      setPreviewingId(null);
+      return;
+    }
+    previewPlayer.pause();
+    previewPlayer.replace({ uri: `${WEB_BASE}/voice-samples/${id}.wav` });
+    previewPlayer.play();
+    setPreviewingId(id);
+  }
+
   const quotaExhausted = !!usage && usage.charactersUsed >= usage.charactersLimit;
 
   async function handleGenerate() {
@@ -283,8 +310,9 @@ function PresetVoiceSection() {
       <View style={styles.voiceRow}>
         {PRESET_VOICES.map((v) => {
           const selected = voiceId === v.id;
+          const previewing = previewingId === v.id;
           return (
-            <Pressable key={v.id} style={styles.voiceOption} onPress={() => setVoiceId(v.id)}>
+            <Pressable key={v.id} style={styles.voiceOption} onPress={() => handleVoicePress(v.id)}>
               <View
                 style={[
                   styles.voiceCircle,
@@ -294,6 +322,11 @@ function PresetVoiceSection() {
               >
                 {selected && <View style={styles.voiceCircleScrim} />}
                 <Text style={styles.voiceCircleText}>{v.initial}</Text>
+                {previewing && (
+                  <View style={styles.voicePreviewBadge}>
+                    <Text style={styles.voicePreviewBadgeText}>🔊</Text>
+                  </View>
+                )}
               </View>
               <Text style={[styles.voiceLabel, selected && styles.voiceLabelSelected]}>
                 {v.label}
@@ -612,6 +645,23 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.18)",
   },
   voiceCircleText: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  voicePreviewBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  voicePreviewBadgeText: { fontSize: 9 },
   voiceLabel: { fontSize: 12, color: COLORS.muted },
   voiceLabelSelected: { color: COLORS.foreground, fontWeight: "600" },
   filePickButton: {

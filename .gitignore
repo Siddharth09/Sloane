@@ -16,6 +16,11 @@ zeroshot_test_output/
 *.wav
 *.mp4
 *.mov
+# Exception: these are production static assets Vercel must actually deploy
+# (click-to-preview voice samples), not source training data like the rest
+# of this section - the blanket *.wav rule above would otherwise silently
+# 404 the whole feature in production despite working locally.
+!web/public/voice-samples/*.wav
 
 # Env/secrets
 .env

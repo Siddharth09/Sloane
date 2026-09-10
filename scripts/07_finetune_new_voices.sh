@@ -19,7 +19,7 @@ set -euo pipefail
 
 BASE_TOOLKIT=/workspace/sloane/chatterbox-finetuning
 PROJECT_ROOT=/workspace/sloane
-VOICES=(voice_emily)
+VOICES=(voice_comedy)
 # 2026-09-10: third new voice from user-supplied podcast source (~27.6min,
 # no start timestamp given). k=2 speaker-clustered and filtered to the
 # confirmed target cluster (155/254 clips), same pattern as voice_adam

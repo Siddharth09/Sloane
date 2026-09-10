@@ -99,17 +99,26 @@ function AudioResultPlayer({ audioBase64 }: { audioBase64: string | null }) {
 // worker) finishes well before that and never shows them, so switching
 // backends doesn't require also touching this UI logic.
 const POLL_INTERVAL_MS = 2000;
-// Measured a real cold start at ~150s delay + ~28s generation (~177s total)
-// against the live Serverless endpoint on 2026-09-09 - notably worse than
-// the ~30-90s this was originally sized around, so this needs real margin
-// above the worst case actually observed, not the estimate.
-const POLL_TIMEOUT_MS = 240_000;
+// Was 240_000 (4min), sized around a single short clip's cold start + a
+// couple retries. Real bug found 2026-09-10: a long-form text (a multi-
+// hundred-word story/meditation script, chunked into dozens of ~40-word
+// generations) can legitimately take many minutes end-to-end, and the
+// client was giving up with "taking much longer than usual" while Modal
+// was still working fine - see modal_app.py's timeout for the matching
+// server-side raise. 25 minutes gives real margin above Modal's own 30min
+// ceiling's realistic worst case without polling forever on a truly stuck
+// job.
+const POLL_TIMEOUT_MS = 1_500_000;
 const SHOW_WAITING_UI_AFTER_MS = 6000;
 
 function loadingMessageFor(elapsedMs: number): string {
   if (elapsedMs < 15_000) return "Waking up the voice engine…";
   if (elapsedMs < 40_000) return "Generating your audio…";
-  return "Almost there, thanks for your patience…";
+  if (elapsedMs < 120_000) return "Almost there, thanks for your patience…";
+  // Past 2 minutes this is very likely a long piece of text being narrated
+  // chunk by chunk, not a stuck/slow single clip - say so instead of
+  // repeating "almost there" for several more minutes.
+  return "Still narrating - longer pieces of text take a few minutes…";
 }
 
 function useAudioGeneration(endpoint: string) {

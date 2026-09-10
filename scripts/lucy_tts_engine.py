@@ -136,8 +136,11 @@ PRESET_VOICES = {
 # only retraining on source audio with the actually-desired quality does
 # that. Used here anyway as the best available knob, per direct request.
 PITCH_SEMITONES_BY_VOICE: dict[str, float] = {
-    "voice_comedy": 1.5,  # Izzy - "a little higher pitch", 2026-09-10
     "voice_rachel": 1.0,  # Rachel - "more feminine" - see the honest caveat above; a real but limited lever, not a genuine timbre change
+    # Izzy's pitch/clarity tuning (1.5, then 2.5 semitones) removed 2026-09-10
+    # per "revert izzy back to original voice" - the real fix for her pitch
+    # and accent is retraining on blended source audio (see the 3m5.mp4
+    # blend below), not stacking more DSP on the same LoRA checkpoint.
 }
 
 # Per-voice high-pass filter cutoff (Hz) - cuts low-frequency room
@@ -166,6 +169,11 @@ NOTCH_HZ_BY_VOICE: dict[str, float] = {
 # explicit request form fields still win last.
 GEN_PARAMS_BY_VOICE: dict[str, dict] = {
     # Punchier comedy timing — a bit more expressive intensity, looser cfg.
+    # Reverted back to these original values 2026-09-10 ("revert izzy back
+    # to original voice") after a same-day tightened variant
+    # (0.65/0.5/0.65, tried to fix a "not clear" report) - the clarity/
+    # accent fix is being done properly via retraining on blended source
+    # audio instead (see the 3m5.mp4 blend below).
     "voice_comedy": {
         "exaggeration": 0.75,
         "cfg_weight": 0.35,
@@ -234,16 +242,15 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
 # (GEN_PARAMS_BY_VOICE - cfg_weight/exaggeration/pause_multiplier) or a
 # genuinely higher-quality time-stretch, not this.
 #
-# Re-added for Izzy only, 2026-09-10 ("slightly slower pace"), at a far
-# gentler value than the 0.82 that caused the distortion above - phase-
-# vocoder artifacts scale with how far the stretch factor is from 1.0, and
-# 0.96 (4% slower) is a much smaller ask than 0.82 (18% slower) was. Real
-# risk either way since it's the same mechanism and the same voice that
-# broke before - needs real ear verification, revert immediately if any
-# artifact shows up again.
-SPEED_BY_VOICE: dict[str, float] = {
-    "voice_comedy": 0.96,
-}
+# Re-added for Izzy only, 2026-09-10 ("slightly slower pace") at a gentler
+# 0.96 than the 0.82 that caused the earlier distortion - but reverted again
+# same day after the user reported Izzy sounding distorted, confirming this
+# is the same phase-vocoder artifact at any stretch factor, not just extreme
+# ones. Do not re-add time-stretching for Izzy (or anyone) as a default -
+# see the block above for why this mechanism keeps failing. "Slightly slower
+# pace" for Izzy is not yet solved; needs a genuinely different approach
+# (e.g. GEN_PARAMS_BY_VOICE pacing/pause tuning) next time it's attempted.
+SPEED_BY_VOICE: dict[str, float] = {}
 
 # Per-voice natural pitch micro-jitter (semitones), applied across the whole
 # generation. Was {"voice_sales": 0.4} - Robbo had only ~16 training clips
@@ -408,22 +415,54 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
-def plan_delivery(text: str, voice_id: str | None = None) -> dict:
-    """Lightweight punctuation/discourse delivery hints for Chatterbox knobs.
+# Lexicon-based happy/sad valence, 2026-09-10 - direct request: "when it is
+# a sentence, it needs to understand if the context is happy or sad."
+# Same honest heuristic tradeoff as EMPHASIS_WORDS: a curated word list, not
+# real sentiment understanding - no negation ("not happy" still scores
+# happy), no sarcasm, no context beyond the current chunk.
+HAPPY_WORDS = {
+    "happy", "happier", "happiest", "joy", "joyful", "joyous", "excited",
+    "exciting", "thrilled", "delighted", "cheerful", "cheery", "wonderful",
+    "amazing", "fantastic", "great", "love", "loved", "loving", "laugh",
+    "laughing", "laughter", "celebrate", "celebrating", "celebration",
+    "fun", "yay", "awesome", "brilliant", "glad", "grateful", "blessed",
+    "smile", "smiling", "sunshine", "playful", "giggle", "giggling",
+}
+SAD_WORDS = {
+    "sad", "sadder", "saddest", "sadness", "sorry", "unfortunately", "miss",
+    "missed", "missing", "lost", "loss", "grief", "grieving", "alone",
+    "lonely", "cry", "crying", "cried", "tears", "hurt", "hurting",
+    "painful", "difficult", "heartbroken", "devastated", "sorrow", "mourn",
+    "mourning", "depressed", "tragic", "tragedy", "gloomy", "somber",
+    "regret", "regretful", "ashamed", "hopeless", "grim",
+}
 
-    Inspects surface cues only (questions, exclamations, ellipses, lists,
-    quotes, soft lexical markers). Returns *offsets* / multipliers — not fake
-    happy/sad emotion classes. Caller merges: DEFAULT -> GEN_PARAMS_BY_VOICE
-    -> these offsets -> explicit request overrides (which still win).
+
+def plan_delivery(text: str, voice_id: str | None = None) -> dict:
+    """Punctuation/discourse/lexical delivery hints for Chatterbox knobs,
+    called PER GENERATION CHUNK (a few sentences at a time - see synthesize),
+    not once for a whole request - so a happy paragraph followed by a sad
+    one actually gets two different deliveries, not one averaged-out blend.
+
+    Inspects surface cues (questions, exclamations, ellipses, lists, quotes,
+    soft/energetic lexical markers) plus a lexicon-based happy/sad valence
+    score (added 2026-09-10, direct request: "understand if the context is
+    happy or sad"). This IS a heuristic word-list, same honest tradeoff as
+    EMPHASIS_WORDS - not real sentiment understanding, no negation handling
+    ("not happy" still scores as happy), no sarcasm detection. Returns
+    *offsets* / multipliers. Caller merges: DEFAULT -> GEN_PARAMS_BY_VOICE ->
+    these offsets -> explicit request overrides (which still win).
     """
     del voice_id  # reserved for future per-voice discourse biases; voice baselines live in GEN_PARAMS_BY_VOICE
     t = (text or "").strip()
     lower = t.lower()
+    tokens = re.findall(r"[a-z']+", lower)  # word-boundary tokens, not substring hits - "hurt" shouldn't match inside a longer word
 
     exaggeration_offset = 0.0
     cfg_weight_offset = 0.0
     temperature_offset = 0.0
     pause_multiplier = 1.0
+    pitch_offset_semitones = 0.0
 
     q_count = t.count("?")
     excl_count = t.count("!")
@@ -482,12 +521,45 @@ def plan_delivery(text: str, voice_id: str | None = None) -> dict:
         pause_multiplier *= 0.9
         cfg_weight_offset += 0.03
 
+    happy_hits = sum(1 for tok in tokens if tok in HAPPY_WORDS)
+    sad_hits = sum(1 for tok in tokens if tok in SAD_WORDS)
+    if happy_hits > sad_hits:
+        # Happy: higher energy (more exaggeration, looser cfg lets it move),
+        # a touch brighter/less monotone (temperature up slightly), a
+        # smaller pitch lift than the "high pitch" per-voice knob elsewhere
+        # (real per-chunk risk from librosa.effects.pitch_shift's phase-
+        # vocoder artifacts scales with magnitude - see PITCH_SEMITONES_BY_
+        # VOICE history - so this stays deliberately modest), and shorter
+        # pauses so the pacing itself feels quicker without touching the
+        # word-rate DSP (apply_speed) that's caused real distortion
+        # complaints twice already this project (see SPEED_BY_VOICE
+        # history) - pause length is a genuinely safe lever for "faster
+        # pace," actual time-stretching is not.
+        intensity = min(1.0, 0.3 * (happy_hits - sad_hits))
+        exaggeration_offset += 0.15 * intensity
+        cfg_weight_offset -= 0.08 * intensity
+        temperature_offset += 0.05 * intensity
+        pitch_offset_semitones = 1.2 * intensity
+        pause_multiplier *= 1.0 - 0.15 * intensity
+    elif sad_hits > happy_hits:
+        # Sad: lower energy, steadier/tighter cfg and lower temperature for
+        # a measured, introspective (not erratic) read, a small downward
+        # pitch nudge, and longer pauses for a slower, weightier feel -
+        # same pause-not-speed reasoning as above.
+        intensity = min(1.0, 0.3 * (sad_hits - happy_hits))
+        exaggeration_offset -= 0.15 * intensity
+        cfg_weight_offset += 0.10 * intensity
+        temperature_offset -= 0.06 * intensity
+        pitch_offset_semitones = -1.0 * intensity
+        pause_multiplier *= 1.0 + 0.25 * intensity
+
     pause_multiplier = _clamp(pause_multiplier, *PAUSE_MULTIPLIER_RANGE)
     return {
         "exaggeration_offset": exaggeration_offset,
         "cfg_weight_offset": cfg_weight_offset,
         "temperature_offset": temperature_offset,
         "pause_multiplier": pause_multiplier,
+        "pitch_offset_semitones": pitch_offset_semitones,
     }
 
 
@@ -497,11 +569,14 @@ def resolve_gen_params(
     exaggeration: float | None = None,
     cfg_weight: float | None = None,
     temperature: float | None = None,
-) -> tuple[dict, float]:
+) -> tuple[dict, float, float]:
     """Merge DEFAULT -> per-voice -> plan_delivery offsets -> request overrides.
 
-    Returns (gen_params, pause_multiplier). Explicit exaggeration/cfg/temperature
-    from the client win when provided; speed is handled separately by callers.
+    Returns (gen_params, pause_multiplier, pitch_offset_semitones). Explicit
+    exaggeration/cfg/temperature from the client win when provided; speed is
+    handled separately by callers. Called per-chunk by synthesize() (not
+    once for a whole request) so happy/sad valence and pacing can genuinely
+    vary within one piece of text.
     """
     plan = plan_delivery(text, voice_id)
     params = {
@@ -526,7 +601,7 @@ def resolve_gen_params(
         params["cfg_weight"] = float(cfg_weight)
     if temperature is not None:
         params["temperature"] = float(temperature)
-    return params, plan["pause_multiplier"]
+    return params, plan["pause_multiplier"], plan["pitch_offset_semitones"]
 
 
 # Generating one isolated sentence per model call (the original design) is
@@ -755,6 +830,79 @@ def apply_terminal_fall(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray
     return np.concatenate([head, reshaped])
 
 
+TERMINAL_RISE_SEMITONES = 4.0  # smaller than the 5.0 fall - a question should lift, not sound cartoonish
+
+
+def apply_terminal_rise(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray:
+    """The mirror of apply_terminal_fall() above, for questions - added
+    2026-09-10 ("questions in a high tone"). apply_terminal_fall() already
+    skipped forcing anything on questions so a natural rise wouldn't get
+    flattened, but "don't suppress a rise" and "actively ensure one" are
+    different guarantees - this makes the rise a real, engineered part of
+    every question's ending instead of hoping the model supplies it.
+    Deliberately reuses apply_terminal_fall's exact anchor/reshape/crossfade
+    approach (trough instead of peak, max() instead of min(), rise instead
+    of fall) rather than a fresh design, since that function's two prior
+    broken attempts (see its docstring) already paid down the real bugs in
+    this class of edit - no reason to risk hitting them again from scratch.
+    """
+    stripped = sentence.rstrip()
+    if not stripped or stripped[-1] != "?":
+        return audio
+    tail_len = int(sr * TERMINAL_FALL_TAIL_MS / 1000)
+    if len(audio) < tail_len * 2:
+        return audio
+
+    head, tail = audio[:-tail_len], audio[-tail_len:]
+    tail64 = np.ascontiguousarray(tail.astype(np.float64))
+    try:
+        f0, t = pw.harvest(tail64, sr)
+        sp = pw.cheaptrick(tail64, f0, t, sr)
+        ap = pw.d4c(tail64, f0, t, sr)
+    except Exception:
+        return audio
+
+    voiced_idx = np.where(f0 > 0)[0]
+    if len(voiced_idx) < 2:
+        return audio
+
+    trough_idx = voiced_idx[np.argmin(f0[voiced_idx])]
+    last_idx = voiced_idx[-1]
+    if last_idx <= trough_idx:
+        # Mirrors apply_terminal_fall's "still moving on the last voiced
+        # frame" case: if the tail is still falling right to the end, the
+        # trough IS the last frame - anchor from the first voiced frame
+        # instead so there's a real span left to force upward.
+        trough_idx = voiced_idx[0]
+        if last_idx <= trough_idx:
+            return audio
+
+    trough_semitone = 69.0 + 12.0 * np.log2(f0[trough_idx] / 440.0)
+    target_f0 = f0.copy()
+    span = last_idx - trough_idx
+    for i in range(trough_idx, last_idx + 1):
+        if f0[i] <= 0:
+            continue
+        frac = (i - trough_idx) / span
+        target_semitone = trough_semitone + TERMINAL_RISE_SEMITONES * frac
+        natural_semitone = 69.0 + 12.0 * np.log2(f0[i] / 440.0)
+        # max(), not min() (the fall's choice) - only ever pulls a flat or
+        # falling ending UP; leaves an already-adequate natural rise alone.
+        target_f0[i] = 440.0 * (2.0 ** ((max(natural_semitone, target_semitone) - 69.0) / 12.0))
+
+    reshaped = pw.synthesize(target_f0, sp, ap, sr).astype(np.float32)
+    if len(reshaped) < len(tail):
+        reshaped = np.pad(reshaped, (0, len(tail) - len(reshaped)), mode="edge")
+    elif len(reshaped) > len(tail):
+        reshaped = reshaped[: len(tail)]
+
+    fade_len = min(int(sr * SPLICE_CROSSFADE_MS / 1000), len(tail) // 4)
+    if fade_len > 0:
+        fade = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
+        reshaped[:fade_len] = tail[:fade_len].astype(np.float32) * (1 - fade) + reshaped[:fade_len] * fade
+    return np.concatenate([head, reshaped])
+
+
 def apply_pitch_jitter(audio: np.ndarray, sr: int, jitter_semitones: float, seed: int | None = None) -> np.ndarray:
     """Adds a slow, smoothed random-walk wobble to the F0 contour across the
     whole utterance - real human pitch is never perfectly steady, and a
@@ -826,6 +974,18 @@ EMPHASIS_GAIN = 1.15  # +15% amplitude on the emphasized word only
 EMPHASIS_CROSSFADE_MS = 15.0
 EMPHASIS_MIN_WORD_SECONDS = 0.05  # skip words too short for a pyworld reshape to be reliable
 
+# Possessive pronouns - "my girls", "my family", "my dog" - carry a sense of
+# ownership/personal stake, requested live 2026-09-10 ("should be a little
+# emphasised"). Deliberately a SEPARATE, much lighter lift than
+# EMPHASIS_WORDS above rather than folding "my"/"our" into that lexicon at
+# the same strength: "my"/"our" appear far more often per sentence than
+# "love" or "amazing" ever would, so the same 1.0-semitone/+15% treatment on
+# every occurrence would read as a tic, not "a little." Half the pitch lift,
+# a third of the gain boost.
+POSSESSIVE_EMPHASIS_WORDS = {"my", "our", "mine", "ours"}
+POSSESSIVE_EMPHASIS_PITCH_SEMITONES = 0.5
+POSSESSIVE_EMPHASIS_GAIN = 1.05
+
 
 def apply_word_emphasis(audio: np.ndarray, sr: int, whisper_words: list) -> np.ndarray:
     """Reshapes just the emphasized word(s)' own time span - pitch +
@@ -843,7 +1003,11 @@ def apply_word_emphasis(audio: np.ndarray, sr: int, whisper_words: list) -> np.n
     for w in whisper_words:
         word_text, start_s, end_s = (w.word, w.start, w.end) if hasattr(w, "word") else w
         cleaned = word_text.lower().strip(string.punctuation + " ")
-        if cleaned not in EMPHASIS_WORDS:
+        if cleaned in EMPHASIS_WORDS:
+            pitch_lift, gain = EMPHASIS_PITCH_SEMITONES, EMPHASIS_GAIN
+        elif cleaned in POSSESSIVE_EMPHASIS_WORDS:
+            pitch_lift, gain = POSSESSIVE_EMPHASIS_PITCH_SEMITONES, POSSESSIVE_EMPHASIS_GAIN
+        else:
             continue
         start_sample = max(0, int(start_s * sr))
         end_sample = min(len(result), int(end_s * sr))
@@ -864,7 +1028,7 @@ def apply_word_emphasis(audio: np.ndarray, sr: int, whisper_words: list) -> np.n
         for i in range(len(f0)):
             if f0[i] <= 0:
                 continue
-            semitone = 69.0 + 12.0 * np.log2(f0[i] / 440.0) + EMPHASIS_PITCH_SEMITONES
+            semitone = 69.0 + 12.0 * np.log2(f0[i] / 440.0) + pitch_lift
             new_f0[i] = 440.0 * (2.0 ** ((semitone - 69.0) / 12.0))
 
         reshaped = pw.synthesize(new_f0, sp, ap, sr).astype(np.float32)
@@ -872,7 +1036,7 @@ def apply_word_emphasis(audio: np.ndarray, sr: int, whisper_words: list) -> np.n
             reshaped = np.pad(reshaped, (0, len(segment) - len(reshaped)), mode="edge")
         elif len(reshaped) > len(segment):
             reshaped = reshaped[: len(segment)]
-        reshaped = reshaped * EMPHASIS_GAIN
+        reshaped = reshaped * gain
 
         fade_len = min(int(sr * EMPHASIS_CROSSFADE_MS / 1000), len(segment) // 4)
         if fade_len > 0:
@@ -1069,6 +1233,10 @@ def synthesize(
     engine: ChatterboxTTS,
     text: str,
     reference_path: str,
+    voice_id: str | None = None,
+    exaggeration: float | None = None,
+    cfg_weight: float | None = None,
+    temperature: float | None = None,
     pitch_semitones: float = 0.0,
     highpass_hz: float = 0.0,
     notch_hz: float = 0.0,
@@ -1076,30 +1244,48 @@ def synthesize(
     pitch_jitter_semitones: float = 0.0,
     speed: float = 1.0,
     max_chunk_words: int = MAX_CHUNK_WORDS,
-    pause_multiplier: float = 1.0,
-    **kwargs,
 ):
+    """voice_id/exaggeration/cfg_weight/temperature are forwarded to
+    resolve_gen_params() PER CHUNK below (added 2026-09-10 for happy/sad
+    delivery - see plan_delivery) rather than resolved once by the caller
+    for the whole request, so a paragraph's own happy/sad words, pacing, and
+    pitch actually change chunk-to-chunk instead of being averaged across
+    the entire input text."""
     all_chunks = []
     sr = 24000
     sentences = split_sentences(text)
     text_chunks = chunk_sentences(sentences, max_words=max_chunk_words)
     rng = np.random.default_rng()
-    pause_mult = _clamp(pause_multiplier, *PAUSE_MULTIPLIER_RANGE)
     # Generate first, then insert pauses only between kept chunks so a failed
     # final attempt cannot leave trailing metronomic silence.
-    generated: list[tuple[np.ndarray, str]] = []
+    generated: list[tuple[np.ndarray, str, float]] = []
     for chunk, last_sentence in text_chunks:
-        trimmed = generate_sentence_with_retry(engine, chunk, reference_path, **kwargs)
+        gen_params, chunk_pause_mult, chunk_pitch_offset = resolve_gen_params(
+            chunk, voice_id, exaggeration=exaggeration, cfg_weight=cfg_weight, temperature=temperature
+        )
+        trimmed = generate_sentence_with_retry(engine, chunk, reference_path, **gen_params)
         if len(trimmed) > 0:
-            # Terminal fall keyed off the *last* sentence ending in this chunk
-            # (questions keep their rise; statements get the forced fall).
-            trimmed = apply_terminal_fall(trimmed, sr, last_sentence)
-            generated.append((trimmed, last_sentence))
             sr = engine.sr
-    for i, (trimmed, last_sentence) in enumerate(generated):
+            if chunk_pitch_offset:
+                # This chunk's own happy/sad pitch nudge - separate from and
+                # applied before the per-voice static pitch_semitones below
+                # (that one still applies once to the whole final audio, as
+                # before, for zero regression on voices with no emotional
+                # content detected - see PITCH_SEMITONES_BY_VOICE history
+                # for why stacking two phase-vocoder shifts is a real risk
+                # this deliberately minimizes rather than eliminates).
+                trimmed = librosa.effects.pitch_shift(trimmed, sr=sr, n_steps=chunk_pitch_offset)
+            # Terminal fall/rise keyed off the *last* sentence ending in this
+            # chunk - statements get the forced fall, questions get a real
+            # forced rise (added 2026-09-10) instead of just an unforced one.
+            trimmed = apply_terminal_fall(trimmed, sr, last_sentence)
+            trimmed = apply_terminal_rise(trimmed, sr, last_sentence)
+            generated.append((trimmed, last_sentence, chunk_pause_mult))
+    for i, (trimmed, last_sentence, chunk_pause_mult) in enumerate(generated):
         all_chunks.append(trimmed)
         if i < len(generated) - 1:
             base_pause = pause_seconds_for(last_sentence)
+            pause_mult = _clamp(chunk_pause_mult, *PAUSE_MULTIPLIER_RANGE)
             # subtle randomization instead of an identical, metronomic gap
             # every time - real pause length between phrases isn't perfectly
             # uniform even from the same speaker
@@ -1181,13 +1367,6 @@ def generate_preset(
 
     base_engine.t3 = get_preset_t3(voice_id)  # swap onto the one shared engine (see load_finetuned_t3 note); loads on first use
     reference = PRESET_VOICES[voice_id]["reference"]
-    # DEFAULT -> per-voice -> plan_delivery offsets -> explicit overrides
-    gen_params, pause_multiplier = resolve_gen_params(
-        text,
-        voice_id=voice_id,
-        exaggeration=exaggeration,
-        cfg_weight=cfg_weight,
-    )
     pitch = pitch_semitones if pitch_semitones is not None else PITCH_SEMITONES_BY_VOICE.get(voice_id, 0.0)
     highpass = HIGHPASS_HZ_BY_VOICE.get(voice_id, 0.0)
     notch_hz = NOTCH_HZ_BY_VOICE.get(voice_id, 0.0)
@@ -1196,18 +1375,23 @@ def generate_preset(
     # Multiplied with the client's speed (default 1.0 = "this voice's own
     # normal pace"), not replaced by it - see SPEED_BY_VOICE comment.
     effective_speed = SPEED_BY_VOICE.get(voice_id, 1.0) * (speed if speed is not None else 1.0)
+    # DEFAULT -> per-voice -> plan_delivery offsets -> explicit overrides is
+    # now resolved PER CHUNK inside synthesize() (see its docstring), not
+    # here once for the whole text - voice_id/exaggeration/cfg_weight are
+    # just forwarded through.
     return synthesize(
         base_engine,
         text,
         reference,
+        voice_id=voice_id,
+        exaggeration=exaggeration,
+        cfg_weight=cfg_weight,
         pitch_semitones=pitch,
         highpass_hz=highpass,
         notch_hz=notch_hz,
         pitch_jitter_semitones=jitter,
         speed=effective_speed,
         max_chunk_words=max_chunk_words,
-        pause_multiplier=pause_multiplier,
-        **gen_params,
     )
 
 
@@ -1231,20 +1415,15 @@ def generate_clone(
         if duration < MIN_UPLOAD_SECONDS:
             raise ReferenceAudioTooShortError(duration)
 
-        gen_params, pause_multiplier = resolve_gen_params(
-            text,
-            voice_id=None,
-            exaggeration=exaggeration,
-            cfg_weight=cfg_weight,
-        )
         base_engine.t3 = base_t3  # zero-shot Feature B always uses the unmodified base T3, not a preset's LoRA
         return synthesize(
             base_engine,
             text,
             str(tmp_path),
+            voice_id=None,
+            exaggeration=exaggeration,
+            cfg_weight=cfg_weight,
             speed=speed if speed is not None else 1.0,
-            pause_multiplier=pause_multiplier,
-            **gen_params,
         )
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
