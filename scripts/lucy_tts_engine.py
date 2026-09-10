@@ -163,24 +163,23 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
     # Broadcast / instructor voices stay near DEFAULT_GEN_PARAMS (no entry).
 }
 
-# Per-voice baseline speed correction, multiplied together with whatever
-# speed the client requests (DeliverySliders defaults to 1.0, i.e. "use the
-# voice's own natural pace") rather than replacing it - so a user who drags
-# the slider still gets faster/slower relative to that voice's corrected
-# baseline instead of the correction being silently overridden the moment
-# they touch the control. Reported live 2026-09-10: Izzy/Alice/Robbo all
-# sound noticeably sped up by default relative to the other voices, with
-# Izzy described as "very fast." Chatterbox has no training-time "speed"
-# knob (see apply_speed's docstring) so this is the same real
-# post-generation time-stretch already used for the user-facing slider,
-# just applied as each voice's own default rather than left at 1.0 for
-# everyone. Starting corrections, not ear-verified - tune from real
-# feedback once heard live rather than treating these as final.
-SPEED_BY_VOICE: dict[str, float] = {
-    "voice_comedy": 0.82,  # Izzy - reported "very fast"
-    "voice_business": 0.88,  # Alice
-    "voice_sales": 0.88,  # Robbo
-}
+# Was {"voice_comedy": 0.82, "voice_business": 0.88, "voice_sales": 0.88} -
+# tried 2026-09-10 to fix Izzy/Alice/Robbo sounding sped up, by
+# time-stretching their default output slower via apply_speed(). Reverted
+# same day: reported live as making exactly those three voices sound
+# "distorted"/"like a robot" - a phase-vocoder time-stretch (librosa's
+# time_stretch, an STFT-based method) is a well-known source of that kind
+# of metallic/robotic artifact, especially stacked on audio that's already
+# been through pitch reshaping (pitch_jitter, apply_terminal_fall). Every
+# other voice only ever gets time-stretched when a *user* explicitly drags
+# the Speed slider (rare, their own choice) - this was the only path that
+# forced it into every single generation of three voices by default, which
+# is almost certainly why the distortion was reported on exactly those
+# three and no others. "Too fast" is still a real unaddressed complaint for
+# these voices, but the fix needs to come from generation-time parameters
+# (GEN_PARAMS_BY_VOICE - cfg_weight/exaggeration/pause_multiplier) or a
+# genuinely higher-quality time-stretch, not this.
+SPEED_BY_VOICE: dict[str, float] = {}
 
 # Per-voice natural pitch micro-jitter (semitones), applied across the whole
 # generation. Was {"voice_sales": 0.4} - Robbo had only ~16 training clips
@@ -624,7 +623,20 @@ def apply_terminal_fall(audio: np.ndarray, sr: int, sentence: str) -> np.ndarray
     peak_idx = voiced_idx[np.argmax(f0[voiced_idx])]
     last_idx = voiced_idx[-1]
     if last_idx <= peak_idx:
-        return audio  # already falls (or flat) after its own peak - nothing to fix
+        # peak_idx == last_idx means the pitch is STILL climbing on the very
+        # last voiced frame - it never actually turns over within the tail
+        # window at all. Reproduced live 2026-09-10 (Katie/voice_broadcast:
+        # a monotonic 177Hz -> 487Hz climb across the whole 450ms tail,
+        # "doesn't inflect downward at the end"). The old bail-out treated
+        # "no room after the peak" as "already resolved," but here there's
+        # no room *because the recording cuts off mid-rise* - the worst
+        # case this function exists to fix, not a case to skip. Anchor from
+        # the first voiced frame instead so there's a real span to force
+        # down; min() below still protects any genuinely-already-falling
+        # tail elsewhere, so this only engages when the whole tail rises.
+        peak_idx = voiced_idx[0]
+        if last_idx <= peak_idx:
+            return audio  # only one voiced frame in range - truly nothing to reshape
 
     peak_semitone = 69.0 + 12.0 * np.log2(f0[peak_idx] / 440.0)
     target_f0 = f0.copy()
@@ -712,7 +724,99 @@ def apply_pitch_jitter(audio: np.ndarray, sr: int, jitter_semitones: float, seed
     return reshaped
 
 
-MAX_GENERATION_ATTEMPTS = 4  # see generate_sentence_with_retry - the underlying bugs this works around
+# Words carrying real emotional/semantic weight - when one of these appears,
+# give it a subtle localized pitch+volume lift instead of leaving every word
+# at identical prosody. Requested live 2026-09-10: "when it's emotions like
+# love, he should stress a little, very subtly on that word as humans do...
+# understanding the meaning of the sentence and highlighting accordingly."
+# Lexicon-based, same honest tradeoff plan_delivery() already makes for
+# whole-utterance offsets ("surface cues only... not fake happy/sad emotion
+# classes") - real semantic understanding would need an actual NLP call,
+# this is a heuristic word list, not true comprehension.
+EMPHASIS_WORDS = {
+    "love", "loves", "loved", "loving", "adore", "adores", "cherish", "cherishes",
+    "passion", "passionate", "amazing", "incredible", "wonderful", "beautiful",
+    "gorgeous", "fantastic", "excited", "exciting", "thrilled", "delighted",
+    "joy", "joyful", "happy", "happiest", "hate", "hates", "afraid", "scared",
+    "terrified", "fear", "worried", "anxious", "sad", "devastated", "heartbroken",
+    "furious", "angry", "frustrated", "best", "worst", "favorite", "favourite",
+    "dream", "dreams", "hope", "hopes", "proud", "grateful", "inspiring", "inspired",
+}
+EMPHASIS_PITCH_SEMITONES = 1.0  # small - a whole-utterance offset like plan_delivery() uses is <=0.15; a single word can carry a bit more without reading as fake
+EMPHASIS_GAIN = 1.15  # +15% amplitude on the emphasized word only
+EMPHASIS_CROSSFADE_MS = 15.0
+EMPHASIS_MIN_WORD_SECONDS = 0.05  # skip words too short for a pyworld reshape to be reliable
+
+
+def apply_word_emphasis(audio: np.ndarray, sr: int, whisper_words: list) -> np.ndarray:
+    """Reshapes just the emphasized word(s)' own time span - pitch +
+    amplitude only, no duration/time-stretch (that's exactly what
+    SPEED_BY_VOICE tried elsewhere and reverted for sounding "like a
+    robot" - a real, hard-learned lesson, not a style choice). Uses the
+    per-word timestamps Whisper already produced for the retry-validation
+    transcription (word_timestamps=True), so this costs no extra inference.
+    whisper_words: list of objects/tuples with .word/.start/.end (or
+    (word, start, end) tuples) in seconds, relative to `audio`.
+    """
+    if not whisper_words:
+        return audio
+    result = audio.copy()
+    for w in whisper_words:
+        word_text, start_s, end_s = (w.word, w.start, w.end) if hasattr(w, "word") else w
+        cleaned = word_text.lower().strip(string.punctuation + " ")
+        if cleaned not in EMPHASIS_WORDS:
+            continue
+        start_sample = max(0, int(start_s * sr))
+        end_sample = min(len(result), int(end_s * sr))
+        if end_sample - start_sample < int(sr * EMPHASIS_MIN_WORD_SECONDS):
+            continue
+        segment = result[start_sample:end_sample]
+        seg64 = np.ascontiguousarray(segment.astype(np.float64))
+        try:
+            f0, t = pw.harvest(seg64, sr)
+            sp = pw.cheaptrick(seg64, f0, t, sr)
+            ap = pw.d4c(seg64, f0, t, sr)
+        except Exception:
+            continue
+        if (f0 > 0).sum() < 2:
+            continue
+
+        new_f0 = f0.copy()
+        for i in range(len(f0)):
+            if f0[i] <= 0:
+                continue
+            semitone = 69.0 + 12.0 * np.log2(f0[i] / 440.0) + EMPHASIS_PITCH_SEMITONES
+            new_f0[i] = 440.0 * (2.0 ** ((semitone - 69.0) / 12.0))
+
+        reshaped = pw.synthesize(new_f0, sp, ap, sr).astype(np.float32)
+        if len(reshaped) < len(segment):
+            reshaped = np.pad(reshaped, (0, len(segment) - len(reshaped)), mode="edge")
+        elif len(reshaped) > len(segment):
+            reshaped = reshaped[: len(segment)]
+        reshaped = reshaped * EMPHASIS_GAIN
+
+        fade_len = min(int(sr * EMPHASIS_CROSSFADE_MS / 1000), len(segment) // 4)
+        if fade_len > 0:
+            fade_in = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
+            fade_out = np.linspace(1.0, 0.0, fade_len, dtype=np.float32)
+            segment_f32 = segment.astype(np.float32)
+            reshaped[:fade_len] = segment_f32[:fade_len] * (1 - fade_in) + reshaped[:fade_len] * fade_in
+            reshaped[-fade_len:] = segment_f32[-fade_len:] * (1 - fade_out) + reshaped[-fade_len:] * fade_out
+        result[start_sample:end_sample] = reshaped
+    return result
+
+
+# Was 4. Raised same day ends_abruptly() was added (2026-09-10) - the retry
+# loop now has 4 independent rejection reasons (duration, cutoff, overlap,
+# filler) instead of 2, which measurably raised how often ALL attempts get
+# exhausted before landing on a clean take: reproduced live twice in one
+# batch of 9 test generations right after adding the cutoff check (Brad,
+# then Patrick), both confirmed to be exhaustion bad luck rather than a
+# deterministic failure - an isolated single re-run of each succeeded on
+# its first attempt. More attempts meaningfully lowers the chance every one
+# of them fails at once (independent Bernoulli trials), at the cost of more
+# GPU seconds on the relatively rare case that needs them.
+MAX_GENERATION_ATTEMPTS = 6
 # Was 0.7. Multi-sentence chunking (grouping several sentences into one
 # generation call for cross-sentence prosody, see chunk_sentences) means a
 # generation can drop one *entire* sentence out of several and still clear
@@ -767,6 +871,42 @@ def has_spurious_leading_filler(input_text: str, transcribed_text: str) -> bool:
     return said_first != wrote_first
 
 
+# Reported live 2026-09-10 as several voices (Megan, Patrick, others) "get
+# cut off in their last words - they don't end sentences cleanly." Neither
+# existing check catches this: duration/overlap both look at the whole
+# clip, and Whisper often still guesses a word correctly from a partially-
+# clipped tail, so a chopped-off final consonant can pass both. Root-caused
+# against a real reported clip (Megan) by looking at the raw RMS envelope:
+# a clean ending decays well before the clip stops (measured on 5 known-good
+# clips: final-100ms RMS was 1-12% of the preceding 200ms) while the bad
+# clip was still at 115% (i.e. not decaying at all, cut off mid-word) - see
+# STATUS.md for the full comparison table across all 9 voices.
+CUTOFF_MIN_ABS_RMS = 0.01  # ignore already-near-silent tails - a tiny/near-zero ratio there is meaningless noise, not a cutoff signal
+# Was 0.55, calibrated against only 2 known-bad + a few known-good clips.
+# Loosened to 0.65 same day after the stricter value, combined with the 3
+# other existing rejection reasons, measurably raised how often every retry
+# attempt failed at once (see MAX_GENERATION_ATTEMPTS comment) - some of
+# that was almost certainly this check false-positiving on legitimately
+# fine (just quieter, not silent) endings. Still comfortably separates the
+# two real confirmed-bad clips (0.80, 1.15) from the confirmed-good ones
+# (0.01-0.13) measured 2026-09-10 - see STATUS.md for the full table.
+CUTOFF_RATIO_THRESHOLD = 0.65
+
+
+def ends_abruptly(audio: np.ndarray, sr: int) -> bool:
+    if len(audio) < int(sr * 0.3):
+        return False  # too short to have a meaningful "preceding 200ms"
+    final = audio[-int(sr * 0.1):]
+    preceding = audio[-int(sr * 0.3): -int(sr * 0.1)]
+    final_rms = float(np.sqrt(np.mean(final.astype(np.float64) ** 2)))
+    if final_rms < CUTOFF_MIN_ABS_RMS:
+        return False  # already quiet/silent by the end - a real, clean ending
+    preceding_rms = float(np.sqrt(np.mean(preceding.astype(np.float64) ** 2)))
+    if preceding_rms <= 0:
+        return False
+    return (final_rms / preceding_rms) >= CUTOFF_RATIO_THRESHOLD
+
+
 def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference_path: str, **kwargs) -> np.ndarray:
     """
     Two distinct, real generation glitches this works around, both hit
@@ -787,7 +927,20 @@ def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference
     """
     word_count = len(sentence.split())
     min_expected_seconds = max(0.3, word_count / 5.0)  # generous - real speech is rarely faster than this
-    last_trimmed = np.array([], dtype=np.float32)
+    # Was "ship whichever attempt happened to run last" when every attempt
+    # fails - harmless when there were only 2-3 rejection reasons, but
+    # adding ends_abruptly() as a 4th one (on top of duration/overlap/
+    # filler) makes exhausting all MAX_GENERATION_ATTEMPTS attempts more
+    # likely for ANY voice, and "last" can easily be the single worst take
+    # (e.g. a near-silent 0.1s clip) rather than the closest-to-passing one.
+    # Reproduced live 2026-09-10 (Brad/voice_tech shipped 0.1s of near-
+    # silence after all 4 attempts failed in a batch run - a re-run in
+    # isolation succeeded fine on the first try, confirming this was
+    # exhaustion bad luck, not a deterministic bug for that text). Now
+    # tracks the best-scoring attempt seen and ships that instead.
+    best_trimmed = np.array([], dtype=np.float32)
+    best_score = -1.0
+    best_words: list = []
 
     for attempt in range(MAX_GENERATION_ATTEMPTS):
         wav_tensor = engine.generate(text=sentence, audio_prompt_path=reference_path, **kwargs)
@@ -795,26 +948,42 @@ def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference
             wav_tensor = wav_tensor[0]
         wav_np = wav_tensor.squeeze().cpu().numpy()
         trimmed = trim_silence_with_vad(wav_np, engine.sr)
-        last_trimmed = trimmed
         duration = len(trimmed) / engine.sr
 
         if duration < min_expected_seconds:
             print(f"[engine] short generation ({duration:.2f}s for {word_count} words), retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+            if duration > 0 and best_score < 0.0:
+                best_trimmed, best_score, best_words = trimmed, 0.0, []
             continue
 
-        segments, _ = verifier_model.transcribe(trimmed, language="en")
+        if ends_abruptly(trimmed, engine.sr):
+            print(f"[engine] audio cuts off abruptly (not decaying by the end), retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+            if best_score < 0.2:
+                best_trimmed, best_score, best_words = trimmed, 0.2, []
+            continue
+
+        # word_timestamps=True costs no extra inference pass - same
+        # transcription already needed for the overlap/filler checks below
+        # also gives per-word timing, reused for apply_word_emphasis().
+        segments, _ = verifier_model.transcribe(trimmed, language="en", word_timestamps=True)
+        segments = list(segments)
         transcribed_text = " ".join(seg.text for seg in segments)
         overlap = word_overlap_ratio(sentence, transcribed_text)
+        whisper_words = [w for seg in segments for w in (seg.words or [])]
         if overlap < MIN_WORD_OVERLAP_RATIO:
             print(f"[engine] word mismatch (overlap {overlap:.0%}) - said \"{transcribed_text[:80]}\" for \"{sentence[:80]}\", retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+            if overlap > best_score:
+                best_trimmed, best_score, best_words = trimmed, overlap, whisper_words
             continue
         if has_spurious_leading_filler(sentence, transcribed_text):
             print(f"[engine] spurious leading filler - said \"{transcribed_text[:40]}\" for \"{sentence[:40]}\", retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+            if overlap - 0.05 > best_score:
+                best_trimmed, best_score, best_words = trimmed, overlap - 0.05, whisper_words
             continue
-        return trimmed
+        return apply_word_emphasis(trimmed, engine.sr, whisper_words)
 
-    print(f"[engine] all {MAX_GENERATION_ATTEMPTS} attempts came back bad - shipping the last one rather than failing outright")
-    return last_trimmed
+    print(f"[engine] all {MAX_GENERATION_ATTEMPTS} attempts came back bad - shipping the closest-to-passing one rather than failing outright")
+    return apply_word_emphasis(best_trimmed, engine.sr, best_words)
 
 
 def synthesize(
