@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { AccountWidget } from "@/components/AccountWidget";
 import { Footer } from "@/components/Footer";
-import { LogoMark } from "@/components/LogoMark";
+import { SiteHeader } from "@/components/SiteHeader";
 import { RecordOrUpload } from "@/components/RecordOrUpload";
 import { ShareButtons } from "@/components/ShareButtons";
 import { VoicePicker, PRESET_VOICES } from "@/components/VoicePicker";
@@ -581,15 +580,12 @@ export default function Home() {
   return (
     <div className="min-h-screen px-6 py-20">
       <main className="mx-auto flex max-w-2xl flex-col gap-10">
-        <div className="mx-auto rounded-[32px] border border-white/60 bg-surface/90 px-8 py-8 text-center shadow-soft-lg backdrop-blur-xl">
-          <Link href="/" className="inline-flex">
-            <LogoMark size={64} />
-          </Link>
-          <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-foreground">Lucy Labs</h1>
-          <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
-            The AI Voice Clone, narrate any text or upload your voice and try it out!
-          </p>
-        </div>
+        <SiteHeader
+          title="Lucy Labs"
+          subtitle="The AI Voice Clone, narrate any text or upload your voice and try it out!"
+          current="home"
+          logoSize={64}
+        />
         <AccountWidget />
         <PresetVoiceSection />
         <CloneVoiceSection />

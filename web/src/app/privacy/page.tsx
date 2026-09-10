@@ -1,4 +1,4 @@
-import { LogoMark } from "@/components/LogoMark";
+import { SiteHeader } from "@/components/SiteHeader";
 import { getGenerationRetentionDays, initSchema } from "@/lib/db";
 
 export const metadata = {
@@ -26,11 +26,7 @@ export default async function PrivacyPage() {
   return (
     <div className="min-h-screen px-6 py-16">
       <main className="mx-auto flex max-w-2xl flex-col gap-8">
-        <div className="mx-auto flex flex-col items-center gap-3 rounded-[32px] border border-white/60 bg-surface/90 px-8 py-8 text-center shadow-soft-lg backdrop-blur-xl">
-          <LogoMark size={48} />
-          <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Privacy Policy</h1>
-          <p className="max-w-sm text-sm text-muted">Last updated 2026-09-09 (part of the Astryks Group)</p>
-        </div>
+        <SiteHeader title="Privacy Policy" subtitle="Last updated 2026-09-09 (part of the Astryks Group)" />
 
         <div className="flex flex-col gap-6 rounded-[28px] border border-white/60 bg-surface/90 p-8 shadow-soft backdrop-blur-xl">
           <Section title="What this covers">

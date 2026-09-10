@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAccessToken } from "@/lib/useAccessToken";
-import { LogoMark } from "@/components/LogoMark";
+import { SiteHeader } from "@/components/SiteHeader";
 import { PLANS, VIDEO_CREDIT_COSTS, type PlanId } from "@/lib/plans";
 
 // Talking-head/cinematic equivalents shown per plan are derived from the
@@ -113,13 +113,11 @@ export default function BillingPage() {
   return (
     <div className="min-h-screen px-6 py-16">
       <main className="mx-auto flex max-w-3xl flex-col gap-8">
-        <div className="mx-auto flex flex-col items-center gap-3 rounded-[32px] border border-white/60 bg-surface/90 px-8 py-8 text-center shadow-soft-lg backdrop-blur-xl">
-          <LogoMark size={48} />
-          <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Plans</h1>
-          <p className="max-w-sm text-sm text-muted">
-            Straightforward character limits, no surprise caps.
-          </p>
-        </div>
+        <SiteHeader
+          title="Plans"
+          subtitle="Straightforward character limits, no surprise caps."
+          current="billing"
+        />
 
         <Suspense>
           <CheckoutSuccess />

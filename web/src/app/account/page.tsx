@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAccessToken } from "@/lib/useAccessToken";
+import { SiteHeader } from "@/components/SiteHeader";
 
 type Generation = {
   id: string;
@@ -99,129 +101,162 @@ function AccountPageInner() {
   }
 
   if (!checkedAuth) {
-    return <main className="mx-auto max-w-md px-6 py-24 text-center text-muted">Loading…</main>;
+    return (
+      <div className="min-h-screen px-6 py-16">
+        <main className="mx-auto max-w-md">
+          <div className="rounded-[28px] border border-white/60 bg-surface/90 px-8 py-10 text-center text-sm text-muted shadow-soft-lg backdrop-blur-xl">
+            Loading…
+          </div>
+        </main>
+      </div>
+    );
   }
 
   if (!data) {
     return (
-      <main className="mx-auto max-w-md px-6 py-16">
-        <h1 className="mb-2 text-2xl font-bold text-foreground">Sign in</h1>
-        <p className="mb-6 text-sm text-muted">
-          No passwords here — we&apos;ll email you a link, or you can continue with Google.
-        </p>
+      <div className="min-h-screen px-6 py-16">
+        <main className="mx-auto flex max-w-md flex-col gap-6">
+          <SiteHeader
+            title="Sign in"
+            subtitle="No passwords here — we'll email you a link, or you can continue with Google."
+            current="account"
+          />
 
-        {error && <p className="mb-4 rounded-xl bg-coral/10 px-4 py-3 text-sm text-coral-dark">{error}</p>}
+          <div className="flex flex-col gap-4 rounded-[28px] border border-white/60 bg-surface/90 p-8 shadow-soft backdrop-blur-xl">
+            {error && <p className="rounded-xl bg-coral/10 px-4 py-3 text-sm text-coral-dark">{error}</p>}
 
-        {linkSent ? (
-          <p className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-foreground">
-            Check your inbox — we sent a sign-in link to <strong>{email}</strong>. It works once and expires
-            in 15 minutes.
-          </p>
-        ) : (
-          <form onSubmit={requestLink} className="flex flex-col gap-3">
-            <input
-              type="email"
-              required
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="rounded-full border border-border bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-coral"
-            />
-            <button
-              type="submit"
-              disabled={busy}
-              className="shadow-soft rounded-full bg-coral px-4 py-2 text-sm font-bold text-white transition hover:brightness-105 disabled:opacity-50"
+            {linkSent ? (
+              <p className="rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground">
+                Check your inbox — we sent a sign-in link to <strong>{email}</strong>. It works once and expires
+                in 15 minutes.
+              </p>
+            ) : (
+              <form onSubmit={requestLink} className="flex flex-col gap-3">
+                <input
+                  type="email"
+                  required
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="rounded-full border border-border bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-coral"
+                />
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="shadow-soft rounded-full bg-coral px-4 py-2 text-sm font-bold text-white transition hover:brightness-105 disabled:opacity-50"
+                >
+                  Email me a sign-in link
+                </button>
+              </form>
+            )}
+
+            <div className="flex items-center gap-3 text-xs text-muted">
+              <div className="h-px flex-1 bg-border" />
+              or
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            <a
+              href="/api/auth/google/start"
+              className="flex w-full items-center justify-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground shadow-soft transition hover:brightness-95"
             >
-              Email me a sign-in link
-            </button>
-          </form>
-        )}
+              Continue with Google
+            </a>
 
-        <div className="my-6 flex items-center gap-3 text-xs text-muted">
-          <div className="h-px flex-1 bg-border" />
-          or
-          <div className="h-px flex-1 bg-border" />
-        </div>
-
-        <a
-          href="/api/auth/google/start"
-          className="flex w-full items-center justify-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground shadow-soft transition hover:brightness-95"
-        >
-          Continue with Google
-        </a>
-
-        <a href="/billing" className="mt-8 block text-center text-xs font-semibold text-coral-dark underline">
-          See plans →
-        </a>
-      </main>
+            <a href="/billing" className="block text-center text-xs font-semibold text-coral-dark underline">
+              See plans →
+            </a>
+          </div>
+        </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto max-w-md px-6 py-16">
-      <h1 className="mb-1 text-2xl font-bold text-foreground">Your account</h1>
-      <p className="mb-6 text-sm text-muted">{data.email}</p>
+    <div className="min-h-screen px-6 py-16">
+      <main className="mx-auto flex max-w-md flex-col gap-6">
+        <SiteHeader title="Your account" subtitle={data.email} current="account" />
 
-      <div className="mb-6 rounded-2xl border border-border bg-surface px-6 py-4 text-sm">
-        {data.subscriber ? (
-          <>
-            <p className="font-semibold text-foreground">{data.subscriber.plan} plan · {data.subscriber.status}</p>
-            <p className="mt-1 text-muted">
-              {data.subscriber.charactersUsed.toLocaleString()} characters used this period
-            </p>
-            <button
-              onClick={openBillingPortal}
-              disabled={busy}
-              className="shadow-soft mt-4 rounded-full bg-coral px-4 py-2 text-xs font-bold text-white transition hover:brightness-105 disabled:opacity-50"
-            >
-              Manage billing / cancel
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-muted">You&apos;re on the free tier — no active plan yet.</p>
-            <a href="/billing" className="mt-2 inline-block text-xs font-semibold text-coral-dark underline">
-              See plans →
-            </a>
-          </>
-        )}
-      </div>
-
-      <h2 className="mb-3 text-sm font-bold text-foreground">Recent generations</h2>
-      {data.generations.length === 0 ? (
-        <p className="text-sm text-muted">
-          Nothing yet — anything you generate while signed in will show up here for a couple of weeks.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-3">
-          {data.generations.map((g) => (
-            <li key={g.id} className="rounded-xl border border-border bg-white px-4 py-3 text-sm">
-              <p className="truncate text-foreground">
-                {g.voiceLabel ? `${g.voiceLabel} — ` : ""}
-                {g.textPreview}
+        <div className="rounded-[28px] border border-white/60 bg-surface/90 p-6 text-sm shadow-soft backdrop-blur-xl">
+          {data.subscriber ? (
+            <>
+              <p className="font-semibold text-foreground">{data.subscriber.plan} plan · {data.subscriber.status}</p>
+              <p className="mt-1 text-muted">
+                {data.subscriber.charactersUsed.toLocaleString()} characters used this period
               </p>
-              <audio controls src={g.audioUrl} className="mt-2 w-full" />
-              <div className="mt-1 flex items-center justify-between text-xs text-muted">
-                <a href={g.audioUrl} download className="font-semibold text-coral-dark underline">
-                  Download
-                </a>
-                <span>expires in {daysLeft(g.expiresAt)}d</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+              <button
+                onClick={openBillingPortal}
+                disabled={busy}
+                className="shadow-soft mt-4 rounded-full bg-coral px-4 py-2 text-xs font-bold text-white transition hover:brightness-105 disabled:opacity-50"
+              >
+                Manage billing / cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-muted">You&apos;re on the free tier — no active plan yet.</p>
+              <a href="/billing" className="mt-2 inline-block text-xs font-semibold text-coral-dark underline">
+                See plans →
+              </a>
+            </>
+          )}
+        </div>
 
-      <button onClick={signOut} disabled={busy} className="mt-8 text-xs text-muted underline">
-        Sign out
-      </button>
-    </main>
+        <div className="rounded-[28px] border border-white/60 bg-surface/90 p-6 shadow-soft backdrop-blur-xl">
+          <h2 className="mb-3 text-sm font-bold text-foreground">Recent generations</h2>
+          {data.generations.length === 0 ? (
+            <p className="text-sm text-muted">
+              Nothing yet — anything you generate while signed in will show up here for a couple of weeks.
+              Head to{" "}
+              <Link href="/" className="font-semibold text-coral-dark underline">
+                the generator
+              </Link>{" "}
+              to make your first one.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {data.generations.map((g) => (
+                <li key={g.id} className="rounded-xl border border-border bg-white px-4 py-3 text-sm">
+                  <p className="truncate text-foreground">
+                    {g.voiceLabel ? `${g.voiceLabel} — ` : ""}
+                    {g.textPreview}
+                  </p>
+                  <audio controls src={g.audioUrl} className="mt-2 w-full" />
+                  <div className="mt-1 flex items-center justify-between text-xs text-muted">
+                    <a href={g.audioUrl} download className="font-semibold text-coral-dark underline">
+                      Download
+                    </a>
+                    <span>expires in {daysLeft(g.expiresAt)}d</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <button
+          onClick={signOut}
+          disabled={busy}
+          className="mx-auto rounded-full border border-border bg-white/80 px-4 py-2 text-xs font-semibold text-foreground shadow-soft transition hover:bg-white disabled:opacity-50"
+        >
+          Sign out
+        </button>
+      </main>
+    </div>
   );
 }
 
 export default function AccountPage() {
   return (
-    <Suspense fallback={<main className="mx-auto max-w-md px-6 py-24 text-center text-muted">Loading…</main>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen px-6 py-16">
+          <main className="mx-auto max-w-md rounded-[28px] border border-white/60 bg-surface/90 px-8 py-10 text-center text-sm text-muted shadow-soft-lg backdrop-blur-xl">
+            Loading…
+          </main>
+        </div>
+      }
+    >
       <AccountPageInner />
     </Suspense>
   );
