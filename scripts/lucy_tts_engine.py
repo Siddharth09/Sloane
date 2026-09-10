@@ -128,14 +128,17 @@ PRESET_VOICES = {
 # Runtime pitch adjustment, applied as post-processing (librosa.effects.
 # pitch_shift) after generation - a real audio-signal change, not a
 # training-time effect, so it's cheap to tune per-voice without retraining.
-# Positive = higher. See PROJECT_CONTEXT.md "Voice tuning requests" for why
-# this exists, and why it's empty now: Katie's +1.5 semitone version was
-# reverted per feedback - naive pitch-shifting doesn't adjust vocal-tract
-# resonance (formants), which is exactly why shifted voices tend to sound
-# artificial. "Raspier"/"more feminine" have no equivalent runtime knob
-# either - those are textures the model would need to actually be trained
-# on, not something a signal-processing tweak can fake convincingly.
-PITCH_SEMITONES_BY_VOICE: dict[str, float] = {}
+# Positive = higher. See PROJECT_CONTEXT.md "Voice tuning requests" for the
+# real limitation here, stated plainly rather than oversold: naive
+# pitch-shifting doesn't adjust vocal-tract resonance (formants), which is
+# why Katie's own +1.5 semitone attempt was reverted (sounded artificial) -
+# a pitch bump is a real but imperfect proxy, not a genuine timbre change;
+# only retraining on source audio with the actually-desired quality does
+# that. Used here anyway as the best available knob, per direct request.
+PITCH_SEMITONES_BY_VOICE: dict[str, float] = {
+    "voice_comedy": 1.5,  # Izzy - "a little higher pitch", 2026-09-10
+    "voice_rachel": 1.0,  # Rachel - "more feminine" - see the honest caveat above; a real but limited lever, not a genuine timbre change
+}
 
 # Per-voice high-pass filter cutoff (Hz) - cuts low-frequency room
 # resonance/boom that reads as "echoey", without touching vocal clarity
@@ -144,6 +147,17 @@ PITCH_SEMITONES_BY_VOICE: dict[str, float] = {}
 # echoey/softer request) but reverted per feedback - keeping the mechanism
 # since it's a real, useful knob for whichever voice actually needs it.
 HIGHPASS_HZ_BY_VOICE: dict[str, float] = {}
+
+# Per-voice bandstop notch (center Hz, defaults to a 400Hz-wide band) -
+# targets the nasal resonance region (~800Hz-1.2kHz is the typical range
+# for a "nasal" quality) directly, unlike pitch-shift (transposes the whole
+# register) or highpass (only removes sub-vocal rumble) - a genuinely
+# different mechanism from Katie's two earlier reverted attempts (see
+# PITCH_SEMITONES_BY_VOICE and HIGHPASS_HZ_BY_VOICE comments above).
+# Starting value, not ear-verified.
+NOTCH_HZ_BY_VOICE: dict[str, float] = {
+    "voice_broadcast": 1000.0,  # Katie - "a little less nasal", 2026-09-10
+}
 
 # Per-voice generation-parameter overrides, layered on DEFAULT_GEN_PARAMS.
 # These are baseline *delivery* biases for Chatterbox's real knobs only
@@ -178,6 +192,28 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
         "cfg_weight": 0.55,
         "temperature": 0.65,
     },
+    # Adam - "softer", 2026-09-10: lower exaggeration (less intense/forceful
+    # delivery) + slightly higher cfg_weight (steadier, less erratic) for a
+    # gentler overall feel. Paired with a small highpass below to trim any
+    # boomy low-end that can read as "heavy."
+    "voice_adam": {
+        "exaggeration": 0.45,
+        "cfg_weight": 0.5,
+        "temperature": 0.75,
+    },
+    # Rachel - "less husky, more feminine, soft yet bold", 2026-09-10.
+    # Honest framing: none of these knobs change vocal-tract resonance
+    # (what actually makes a voice sound husky/feminine - see
+    # PITCH_SEMITONES_BY_VOICE comment), only delivery character. Moderate
+    # exaggeration for "bold" without tipping into "husky"-reading
+    # intensity, tighter cfg_weight for a controlled ("soft," not loose or
+    # breathy-sounding) delivery, slightly lower temperature to reduce
+    # stochastic roughness.
+    "voice_rachel": {
+        "exaggeration": 0.55,
+        "cfg_weight": 0.5,
+        "temperature": 0.7,
+    },
     # Broadcast / instructor voices stay near DEFAULT_GEN_PARAMS (no entry).
 }
 
@@ -197,7 +233,17 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
 # these voices, but the fix needs to come from generation-time parameters
 # (GEN_PARAMS_BY_VOICE - cfg_weight/exaggeration/pause_multiplier) or a
 # genuinely higher-quality time-stretch, not this.
-SPEED_BY_VOICE: dict[str, float] = {}
+#
+# Re-added for Izzy only, 2026-09-10 ("slightly slower pace"), at a far
+# gentler value than the 0.82 that caused the distortion above - phase-
+# vocoder artifacts scale with how far the stretch factor is from 1.0, and
+# 0.96 (4% slower) is a much smaller ask than 0.82 (18% slower) was. Real
+# risk either way since it's the same mechanism and the same voice that
+# broke before - needs real ear verification, revert immediately if any
+# artifact shows up again.
+SPEED_BY_VOICE: dict[str, float] = {
+    "voice_comedy": 0.96,
+}
 
 # Per-voice natural pitch micro-jitter (semitones), applied across the whole
 # generation. Was {"voice_sales": 0.4} - Robbo had only ~16 training clips
@@ -582,6 +628,21 @@ def chunk_sentences(sentences: list[str], max_words: int = MAX_CHUNK_WORDS) -> l
 
 def apply_highpass(audio: np.ndarray, sr: int, cutoff_hz: float) -> np.ndarray:
     sos = butter(4, cutoff_hz, btype="highpass", fs=sr, output="sos")
+    return sosfilt(sos, audio).astype(np.float32)
+
+
+def apply_notch(audio: np.ndarray, sr: int, center_hz: float, bandwidth_hz: float) -> np.ndarray:
+    """A real, different DSP mechanism from pitch-shift/highpass - a mild
+    bandstop around the nasal resonance region (~800Hz-1.2kHz is typical),
+    the standard EQ move for a "nasal" complaint, as opposed to lowering the
+    whole register (pitch-shift) or cutting only sub-vocal rumble
+    (highpass). Requested for Katie 2026-09-10, whose two *other* tuning
+    attempts (a pitch shift, then a highpass - see those constants' history
+    above) were both reverted as not working - this is a genuinely
+    different technique, not a third guess at the same one."""
+    low = max(20.0, center_hz - bandwidth_hz / 2)
+    high = min(sr / 2 - 100, center_hz + bandwidth_hz / 2)
+    sos = butter(2, [low, high], btype="bandstop", fs=sr, output="sos")
     return sosfilt(sos, audio).astype(np.float32)
 
 
@@ -1010,6 +1071,8 @@ def synthesize(
     reference_path: str,
     pitch_semitones: float = 0.0,
     highpass_hz: float = 0.0,
+    notch_hz: float = 0.0,
+    notch_bandwidth_hz: float = 400.0,
     pitch_jitter_semitones: float = 0.0,
     speed: float = 1.0,
     max_chunk_words: int = MAX_CHUNK_WORDS,
@@ -1051,6 +1114,8 @@ def synthesize(
         audio = librosa.effects.pitch_shift(audio, sr=sr, n_steps=pitch_semitones)
     if highpass_hz:
         audio = apply_highpass(audio, sr, highpass_hz)
+    if notch_hz:
+        audio = apply_notch(audio, sr, notch_hz, notch_bandwidth_hz)
     if speed and speed != 1.0:
         audio = apply_speed(audio, speed)
     return audio, sr
@@ -1125,6 +1190,7 @@ def generate_preset(
     )
     pitch = pitch_semitones if pitch_semitones is not None else PITCH_SEMITONES_BY_VOICE.get(voice_id, 0.0)
     highpass = HIGHPASS_HZ_BY_VOICE.get(voice_id, 0.0)
+    notch_hz = NOTCH_HZ_BY_VOICE.get(voice_id, 0.0)
     jitter = PITCH_JITTER_BY_VOICE.get(voice_id, 0.0)
     max_chunk_words = MAX_CHUNK_WORDS_BY_VOICE.get(voice_id, MAX_CHUNK_WORDS)
     # Multiplied with the client's speed (default 1.0 = "this voice's own
@@ -1136,6 +1202,7 @@ def generate_preset(
         reference,
         pitch_semitones=pitch,
         highpass_hz=highpass,
+        notch_hz=notch_hz,
         pitch_jitter_semitones=jitter,
         speed=effective_speed,
         max_chunk_words=max_chunk_words,
