@@ -544,10 +544,10 @@ function VideoCloneSection() {
 
       <VideoModeCard
         badge="Ads"
-        title="Seedance + your own exclusive AI actor"
-        videoSrc="/trailers/ads-seedance-demo.mp4"
+        title="Your own exclusive AI actor"
+        videoSrc="/trailers/ads-veo-demo.mp4"
         description="Describe your actor in a text prompt, or start from a photo or a short video — either way, you type the script and your actor says it back in the video. That actor is generated privately for your account: we never hand the same generated actor to another customer, and every new one is checked against everyone else's before it's finalized so even an accidental lookalike gets regenerated. Reuse that one actor across unlimited ads afterward - new scripts, new scenes, or upload an existing ad/UGC video and Seedance recreates its content and motion with your actor instead - one consistent 'face' across every ad, at a click, without booking a real actor each time."
-        footnote="Seedance's own safety filter blocks anything that reads as a real person's likeness - including some fully AI-generated faces that look too photorealistic. For a hyper-realistic actor, that generation runs through Kling instead (same underlying actor image, different engine) - Seedance is used for its unique upload-a-video recreation trick and for more stylized actor looks."
+        footnote="This demo (and any hyper-realistic actor) is generated through Veo - Seedance's own safety filter blocks fully AI-generated faces that look too photorealistic, so it's reserved for its unique upload-a-video recreation trick and more stylized actor looks instead."
       />
 
       <p className="rounded-2xl bg-white/70 p-3 text-xs leading-relaxed text-muted">
