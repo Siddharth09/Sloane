@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 
 // Mirrors web/src/app/page.tsx's VideoCloneSection - same three modes, same
@@ -134,6 +134,21 @@ export function VideoPreviewSection() {
           them) for processing — different from our audio feature, which runs entirely on our own servers.
         </Text>
       </View>
+
+      <View style={styles.payAsYouGoCard}>
+        <Text style={styles.payAsYouGoTitle}>Pay as you go: any prompt, any engine</Text>
+        <Text style={styles.body}>
+          Type any prompt, pick Kling, Veo, or Seedance, get a video - no subscription, prepaid credits
+          instead. This needs a signed-in account, so it lives on the website for now rather than being
+          rebuilt natively here.
+        </Text>
+        <Pressable
+          style={styles.payAsYouGoButton}
+          onPress={() => Linking.openURL(`${WEB_BASE}/#pay-as-you-go`).catch(() => {})}
+        >
+          <Text style={styles.payAsYouGoButtonText}>Open on the website →</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -191,4 +206,8 @@ const styles = StyleSheet.create({
   footnote: { fontSize: 11, fontStyle: "italic", color: COLORS.coralDark, marginTop: 4 },
   noteBox: { backgroundColor: "#fff", borderRadius: 16, padding: 12 },
   noteText: { fontSize: 11, lineHeight: 17, color: COLORS.muted },
+  payAsYouGoCard: { backgroundColor: "#fff", borderRadius: 16, padding: 14, gap: 8 },
+  payAsYouGoTitle: { fontSize: 14, fontWeight: "700", color: COLORS.foreground },
+  payAsYouGoButton: { backgroundColor: COLORS.purple, borderRadius: 999, paddingVertical: 10, alignItems: "center" },
+  payAsYouGoButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },
 });

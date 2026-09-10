@@ -211,6 +211,7 @@ function Card({
   subtitle,
   headerRight,
   children,
+  id,
 }: {
   wash: string;
   iconColor: string;
@@ -219,9 +220,11 @@ function Card({
   subtitle: string;
   headerRight?: React.ReactNode;
   children: React.ReactNode;
+  id?: string;
 }) {
   return (
     <section
+      id={id}
       className={`shadow-soft-lg rounded-[28px] border border-white/60 p-7 backdrop-blur-xl transition hover:shadow-soft-lg ${wash}`}
     >
       <div className="flex items-start justify-between gap-3.5">
@@ -653,6 +656,7 @@ function PayAsYouGoVideoSection() {
 
   return (
     <Card
+      id="pay-as-you-go"
       wash="bg-purple-wash/90"
       iconColor="text-purple"
       icon="🎟"
