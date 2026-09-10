@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
-import { upsertSubscriberForCheckout, setSubscriberStatus, linkSubscriberToUser, initSchema } from "@/lib/db";
+import { upsertSubscriberForCheckout, setSubscriberStatus, linkSubscriberToUser, initSchema, addVideoCredits } from "@/lib/db";
 import { planFromStripePriceId } from "@/lib/plans";
+import { videoCreditPackFromStripePriceId } from "@/lib/videoPaygo";
 import { sendAccessCodeEmail, sendPaymentFailedEmail } from "@/lib/email";
 import type Stripe from "stripe";
 
@@ -26,6 +27,27 @@ export async function POST(req: NextRequest) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+
+      // One-time video-credit-pack purchase (mode: "payment") - a
+      // completely different flow from the subscription checkout below,
+      // distinguished by session.mode since both events share this same
+      // Stripe event type. Requires client_reference_id (the video-paygo
+      // checkout route always sets it - credits are meaningless without an
+      // account to hold the balance, unlike the subscription flow where
+      // it's optional).
+      if (session.mode === "payment") {
+        const lineItems = await stripe.checkout.sessions.listLineItems(session.id);
+        const priceId = lineItems.data[0]?.price?.id;
+        const pack = priceId ? videoCreditPackFromStripePriceId(priceId) : null;
+        const userId = session.client_reference_id;
+        if (pack && userId) {
+          await addVideoCredits(userId, pack.credits);
+        } else {
+          console.error("Video credit checkout completed but couldn't resolve pack/user", { priceId, userId });
+        }
+        break;
+      }
+
       const subscriptionId = session.subscription as string;
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
       const priceId = subscription.items.data[0]?.price.id;

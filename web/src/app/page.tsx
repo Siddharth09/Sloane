@@ -565,6 +565,169 @@ function VideoCloneSection() {
   );
 }
 
+const PAYGO_ENGINES: { id: "veo" | "kling" | "seedance"; label: string; blurb: string }[] = [
+  { id: "veo", label: "Veo", blurb: "Most realistic, 8s clips" },
+  { id: "kling", label: "Kling", blurb: "Reliable, 5s clips" },
+  { id: "seedance", label: "Seedance", blurb: "Stylized/UGC look, 8s clips" },
+];
+
+const PAYGO_PACKS = [
+  { id: "single", credits: 1, priceLabel: "$6.99" },
+  { id: "pack5", credits: 5, priceLabel: "$32.00" },
+  { id: "pack10", credits: 10, priceLabel: "$59.00" },
+];
+
+const PAYGO_POLL_INTERVAL_MS = 3000;
+const PAYGO_POLL_TIMEOUT_MS = 300_000; // 5 min - each of these engines' own generation is short, not a long-form narration
+
+function PayAsYouGoVideoSection() {
+  const [signedIn, setSignedIn] = useState(false);
+  const [balance, setBalance] = useState(0);
+  const [engine, setEngine] = useState<"veo" | "kling" | "seedance">("veo");
+  const [prompt, setPrompt] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [buyingPack, setBuyingPack] = useState<string | null>(null);
+
+  async function refreshBalance() {
+    const res = await fetch("/api/video-paygo/balance");
+    const data = await res.json();
+    setSignedIn(data.signedIn);
+    setBalance(data.balance);
+  }
+
+  useEffect(() => {
+    refreshBalance().catch(() => {});
+  }, []);
+
+  async function handleBuy(packId: string) {
+    setBuyingPack(packId);
+    try {
+      const res = await fetch("/api/video-paygo/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packId }),
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else setError(data.error ?? "Checkout failed");
+    } finally {
+      setBuyingPack(null);
+    }
+  }
+
+  async function handleGenerate() {
+    setLoading(true);
+    setError(null);
+    setVideoUrl(null);
+    try {
+      const res = await fetch("/api/video-paygo/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ engine, prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Generation failed");
+      const jobId = data.jobId as string;
+
+      const startedAt = Date.now();
+      for (;;) {
+        if (Date.now() - startedAt > PAYGO_POLL_TIMEOUT_MS) throw new Error("Taking much longer than usual - try again shortly.");
+        await new Promise((resolve) => setTimeout(resolve, PAYGO_POLL_INTERVAL_MS));
+        const statusRes = await fetch(`/api/video-paygo/status?jobId=${encodeURIComponent(jobId)}`);
+        const statusData = await statusRes.json();
+        if (statusData.status === "COMPLETED") {
+          setVideoUrl(statusData.videoUrl);
+          break;
+        }
+        if (statusData.status === "FAILED") throw new Error(statusData.error ?? "Generation failed");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed");
+    } finally {
+      setLoading(false);
+      refreshBalance().catch(() => {});
+    }
+  }
+
+  return (
+    <Card
+      wash="bg-purple-wash/90"
+      iconColor="text-purple"
+      icon="🎟"
+      title="Pay as you go: any prompt, any engine"
+      subtitle="Type any prompt, pick Kling, Veo, or Seedance, get an 8-second (5s for Kling) 720p video - no subscription."
+    >
+      {!signedIn ? (
+        <p className="rounded-2xl bg-white/70 p-3 text-sm text-muted">
+          <a href="/account" className="font-semibold text-purple underline">
+            Sign in
+          </a>{" "}
+          to buy video credits and generate.
+        </p>
+      ) : (
+        <>
+          <p className="text-sm text-muted">
+            Credit balance: <span className="font-bold text-foreground">{balance}</span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {PAYGO_PACKS.map((pack) => (
+              <button
+                key={pack.id}
+                onClick={() => handleBuy(pack.id)}
+                disabled={buyingPack !== null}
+                className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-purple shadow-soft disabled:opacity-50"
+              >
+                {buyingPack === pack.id ? "Redirecting…" : `${pack.credits} video${pack.credits > 1 ? "s" : ""} - ${pack.priceLabel}`}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            {PAYGO_ENGINES.map((e) => (
+              <button
+                key={e.id}
+                onClick={() => setEngine(e.id)}
+                className={`flex-1 rounded-2xl border p-2 text-center text-xs transition ${
+                  engine === e.id ? "border-purple bg-purple text-white shadow-soft" : "border-border bg-white text-muted"
+                }`}
+              >
+                <div className="font-bold">{e.label}</div>
+                <div className="mt-0.5">{e.blurb}</div>
+              </button>
+            ))}
+          </div>
+
+          <textarea
+            className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
+            rows={3}
+            placeholder="Describe the video you want..."
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+
+          <button
+            onClick={handleGenerate}
+            disabled={loading || !prompt.trim() || balance < 1}
+            className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
+          >
+            {loading ? "Generating… (usually 30-90s)" : balance < 1 ? "Buy credits to generate" : "Generate (1 credit)"}
+          </button>
+
+          {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
+          {videoUrl && <video className="w-full rounded-xl" src={videoUrl} controls autoPlay loop playsInline />}
+        </>
+      )}
+
+      <p className="text-xs italic leading-relaxed text-muted">
+        Same flat price per video regardless of engine - real clip length differs (Kling is a hard 5s, Veo/Seedance are 8s) since
+        each vendor's own API enforces different duration limits, not something we can unify further on our end.
+      </p>
+    </Card>
+  );
+}
+
 export default function Home() {
   useEffect(() => {
     // Fire-and-forget: wakes up Modal well before the visitor finishes
@@ -585,6 +748,7 @@ export default function Home() {
         <PresetVoiceSection />
         <CloneVoiceSection />
         <VideoCloneSection />
+        <PayAsYouGoVideoSection />
         <Footer />
       </main>
     </div>

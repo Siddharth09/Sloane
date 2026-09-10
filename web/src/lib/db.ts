@@ -109,6 +109,32 @@ export async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // Pay-as-you-go video credits (2026-09-11) - a prepaid balance, not a
+  // subscription: each credit buys one 8s/720p generation on any of Kling/
+  // Veo/Seedance, same flat price regardless of engine (see plans.ts for
+  // the real-cost math behind that). Deliberately separate from the
+  // subscribers/PLANS system above - this is a one-time purchase, not a
+  // recurring plan, and the two shouldn't be conflated.
+  await sql`
+    CREATE TABLE IF NOT EXISTS video_credits (
+      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      balance INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS video_paygo_jobs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      engine TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      fal_request_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      video_url TEXT,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
 }
 
 // Generic runtime settings, switchable from the admin dashboard without a
@@ -460,4 +486,93 @@ export async function createPendingGeneration(params: {
 export async function consumePendingGeneration(jobId: string): Promise<PendingGeneration | null> {
   const rows = await sql`DELETE FROM pending_generations WHERE job_id = ${jobId} RETURNING *`;
   return (rows[0] as PendingGeneration) ?? null;
+}
+
+// --- Pay-as-you-go video credits ---
+
+export async function getVideoCreditBalance(userId: string): Promise<number> {
+  const rows = await sql`SELECT balance FROM video_credits WHERE user_id = ${userId}`;
+  return rows[0] ? Number(rows[0].balance) : 0;
+}
+
+export async function addVideoCredits(userId: string, amount: number) {
+  await sql`
+    INSERT INTO video_credits (user_id, balance)
+    VALUES (${userId}, ${amount})
+    ON CONFLICT (user_id) DO UPDATE SET balance = video_credits.balance + ${amount}, updated_at = now()
+  `;
+}
+
+// Atomic decrement guarded by the balance check in the same statement -
+// two concurrent requests can't both succeed against a balance of 1 credit
+// (the second one's WHERE clause simply matches zero rows). Returns false
+// (not an error) when there's nothing to spend, same "expected outcome, not
+// exceptional" shape as checkQuota() above.
+export async function spendVideoCredit(userId: string): Promise<boolean> {
+  const rows = await sql`
+    UPDATE video_credits SET balance = balance - 1, updated_at = now()
+    WHERE user_id = ${userId} AND balance > 0
+    RETURNING balance
+  `;
+  return rows.length > 0;
+}
+
+// Used when a generation fails outright (content-policy block, vendor
+// error) - the user shouldn't lose a credit for a video they never got.
+export async function refundVideoCredit(userId: string) {
+  await addVideoCredits(userId, 1);
+}
+
+export type VideoPaygoJob = {
+  id: string;
+  user_id: string;
+  engine: string;
+  prompt: string;
+  fal_request_id: string | null;
+  status: "pending" | "in_progress" | "completed" | "failed";
+  video_url: string | null;
+  error: string | null;
+  created_at: string;
+};
+
+export async function createVideoPaygoJob(params: {
+  userId: string;
+  engine: string;
+  prompt: string;
+}): Promise<string> {
+  const rows = await sql`
+    INSERT INTO video_paygo_jobs (user_id, engine, prompt)
+    VALUES (${params.userId}, ${params.engine}, ${params.prompt})
+    RETURNING id
+  `;
+  return rows[0].id as string;
+}
+
+export async function setVideoPaygoJobRequestId(jobId: string, falRequestId: string) {
+  await sql`UPDATE video_paygo_jobs SET fal_request_id = ${falRequestId}, status = 'in_progress' WHERE id = ${jobId}`;
+}
+
+export async function completeVideoPaygoJob(jobId: string, videoUrl: string) {
+  await sql`UPDATE video_paygo_jobs SET status = 'completed', video_url = ${videoUrl} WHERE id = ${jobId}`;
+}
+
+export async function failVideoPaygoJob(jobId: string, error: string) {
+  await sql`UPDATE video_paygo_jobs SET status = 'failed', error = ${error} WHERE id = ${jobId}`;
+}
+
+export async function getVideoPaygoJob(jobId: string): Promise<VideoPaygoJob | null> {
+  const rows = await sql`SELECT * FROM video_paygo_jobs WHERE id = ${jobId}`;
+  return (rows[0] as VideoPaygoJob) ?? null;
+}
+
+export async function getVideoPaygoJobOwner(jobId: string): Promise<string | null> {
+  const rows = await sql`SELECT user_id FROM video_paygo_jobs WHERE id = ${jobId}`;
+  return rows[0] ? (rows[0].user_id as string) : null;
+}
+
+export async function listVideoPaygoJobsForUser(userId: string): Promise<VideoPaygoJob[]> {
+  const rows = await sql`
+    SELECT * FROM video_paygo_jobs WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT 20
+  `;
+  return rows as VideoPaygoJob[];
 }
