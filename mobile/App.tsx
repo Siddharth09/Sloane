@@ -85,7 +85,6 @@ const PRESET_VOICES = [
   { id: "voice_tech", label: "Brad", color: COLORS.butter, initial: "B" },
   { id: "voice_comedy", label: "Izzy", color: COLORS.lavender, initial: "I" },
   { id: "voice_sales", label: "Robbo", color: COLORS.coral, initial: "R" },
-  { id: "voice_meditation", label: "Michelle", color: COLORS.coralDark, initial: "M" },
   { id: "voice_mark", label: "Mark", color: COLORS.sage, initial: "M" },
 ];
 
@@ -571,7 +570,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     color: COLORS.foreground,
   },
-  // 10 preset voices don't fit in one unwrapped row on a phone width -
+  // 9 preset voices don't fit in one unwrapped row on a phone width -
   // wrap, and cut the gap down so more fit per line.
   voiceRow: { flexDirection: "row", flexWrap: "wrap", gap: 12, rowGap: 16, justifyContent: "center" },
   voiceOption: { alignItems: "center", gap: 4 },

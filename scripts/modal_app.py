@@ -158,11 +158,20 @@ class LucyTTS:
             UnsupportedReferenceAudioError as _URAE,
             generate_clone as _gc,
             generate_preset as _gp,
+            warm_all_preset_voices,
         )
 
         generate_preset, generate_clone = _gp, _gc
         UnknownVoiceError, ReferenceAudioTooShortError = _UVE, _RATSE
         UnsupportedReferenceAudioError = _URAE
+        # Preload every preset voice's LoRA now, not on each voice's first
+        # request - see lucy_tts_engine.py's MAX_CACHED_VOICES comment for
+        # why a "warm" container was still slow the first time it saw a
+        # given voice. Adds some seconds to cold start; removes a
+        # per-voice tax from every request afterward, cold or warm.
+        print("[modal] preloading all preset voices...")
+        warm_all_preset_voices()
+        print("[modal] all preset voices preloaded")
 
     @modal.method()
     def run_generate_preset(self, text: str, voice_id: str, exaggeration=None, cfg_weight=None, pitch_semitones=None, speed=None):

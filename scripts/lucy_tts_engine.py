@@ -97,10 +97,14 @@ PRESET_VOICES = {
         "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_comedy/chatterbox_output/new_lang_adapter",
         "reference": f"{MODEL_ROOT}/training_data/voice_comedy/clips/00001.wav",
     },
-    "voice_meditation": {  # Michelle
-        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_meditation/chatterbox_output/new_lang_adapter",
-        "reference": f"{MODEL_ROOT}/training_data/voice_meditation/clips/00001.wav",
-    },
+    # Michelle (voice_meditation) removed 2026-09-10 per direct user
+    # feedback ("not good at all we can remove her") - also the voice this
+    # session's own notes already flagged as never actually fixed (see
+    # MAX_CHUNK_WORDS_BY_VOICE history below and PROJECT_CONTEXT.md Sec 12):
+    # capped at a 14-word chunk limit because anything longer reproduced a
+    # near-silent-clip forced-EOS bug even after a 4.5x larger retrain. Not
+    # deleting her LoRA/training data on the Volume - just no longer offered
+    # as a preset.
 }
 
 # Runtime pitch adjustment, applied as post-processing (librosa.effects.
@@ -129,27 +133,53 @@ HIGHPASS_HZ_BY_VOICE: dict[str, float] = {}
 # classes. plan_delivery() may nudge further from punctuation/discourse;
 # explicit request form fields still win last.
 GEN_PARAMS_BY_VOICE: dict[str, dict] = {
-    # Softer / more measured: lower exaggeration + slightly higher cfg for a
-    # steadier, slower-feeling pace without a fake "calm emotion" class.
-    "voice_meditation": {
-        "exaggeration": 0.4,
-        "cfg_weight": 0.5,
-        "temperature": 0.7,
-    },
     # Punchier comedy timing — a bit more expressive intensity, looser cfg.
     "voice_comedy": {
         "exaggeration": 0.75,
         "cfg_weight": 0.35,
         "temperature": 0.85,
     },
-    # Sales energy (Robbo): slightly higher exaggeration. Pitch jitter below
-    # still mitigates flatness; more training data is the real fix.
+    # Sales energy (Robbo). Was cfg_weight 0.35 / temperature 0.85 (looser
+    # than DEFAULT_GEN_PARAMS's 0.4/0.8 in both directions) - reported live
+    # 2026-09-10 as switching accents mid-sentence and sounding sped up.
+    # Both symptoms point the same direction: looser cfg_weight gives the
+    # model more freedom to drift from the reference accent/pacing, and
+    # higher temperature adds more sampling randomness on top of that -
+    # exactly the two knobs that were pushed further from center for
+    # "energy." Pulled cfg_weight up and temperature down past even the
+    # default (tighter than any other voice) to prioritize staying on-accent
+    # over sales punch, kept some exaggeration for a bit of energy without
+    # the loose sampling that let it drift. Needs re-testing by ear - this
+    # is a targeted hypothesis based on which knobs were pushed and in which
+    # direction, not a verified-by-listening fix (see PROJECT_CONTEXT.md
+    # "Voice tuning requests" for why pitch-shifting/highpass aren't the
+    # right tool for an accent problem - this is a generation-conditioning
+    # problem, not a signal-processing one).
     "voice_sales": {
-        "exaggeration": 0.7,
-        "cfg_weight": 0.35,
-        "temperature": 0.85,
+        "exaggeration": 0.55,
+        "cfg_weight": 0.55,
+        "temperature": 0.65,
     },
     # Broadcast / instructor voices stay near DEFAULT_GEN_PARAMS (no entry).
+}
+
+# Per-voice baseline speed correction, multiplied together with whatever
+# speed the client requests (DeliverySliders defaults to 1.0, i.e. "use the
+# voice's own natural pace") rather than replacing it - so a user who drags
+# the slider still gets faster/slower relative to that voice's corrected
+# baseline instead of the correction being silently overridden the moment
+# they touch the control. Reported live 2026-09-10: Izzy/Alice/Robbo all
+# sound noticeably sped up by default relative to the other voices, with
+# Izzy described as "very fast." Chatterbox has no training-time "speed"
+# knob (see apply_speed's docstring) so this is the same real
+# post-generation time-stretch already used for the user-facing slider,
+# just applied as each voice's own default rather than left at 1.0 for
+# everyone. Starting corrections, not ear-verified - tune from real
+# feedback once heard live rather than treating these as final.
+SPEED_BY_VOICE: dict[str, float] = {
+    "voice_comedy": 0.82,  # Izzy - reported "very fast"
+    "voice_business": 0.88,  # Alice
+    "voice_sales": 0.88,  # Robbo
 }
 
 # Per-voice natural pitch micro-jitter (semitones), applied across the whole
@@ -202,16 +232,37 @@ PAUSE_MULTIPLIER_RANGE = (0.7, 1.6)
 # per-voice (that's what the LoRA adapter is fine-tuned on) - s3gen/ve are
 # identical, untrained, shared weights across every voice including the
 # zero-shot base engine. Loading all preset voices this way OOM'd at ~23.5GB
-# on a 24GB card even after sharing s3gen/ve, once the roster grew past ~8
+# on the 24GB card this ran on at the time, once the roster grew past ~8
 # voices. Fixed with lazy loading: only the shared components load at
 # startup (fast); each voice's much-smaller T3+LoRA loads on its first
 # request and is kept in an LRU cache capped at MAX_CACHED_VOICES, evicting
-# the least-recently-used voice if a new one is requested at capacity. This
-# also directly answers "can we run this on-demand instead of 24/7" - this
-# is the same fix that makes serverless (scale-to-zero) viable, since it
-# turns "load all 10 voices, several minutes" into "load shared components
-# once (still needed even cold), then ~seconds per new voice."
-MAX_CACHED_VOICES = 6  # ~2GB/voice + ~10GB shared comfortably fits a 24GB card with headroom for inference itself
+# the least-recently-used voice if a new one is requested at capacity.
+#
+# On Modal (L40S, 48GB) this cap was still only 6 out of the roster's
+# voices, and that turned out to be a real, previously-undiscovered latency
+# bug, not just a memory optimization: a Modal container can be fully
+# "warm" (shared engine loaded, already served a request) and still eat a
+# per-voice LoRA-load-from-Volume cost on every request for whichever voice
+# isn't in that container's cache yet - reproduced live 2026-09-10, a
+# "warm" container logging "loading fine-tuned T3 for 'voice_business'
+# (cache miss)" on a real request, directly explaining "Modal is slow even
+# after warmed up" for realistic traffic that tries more than 6 voices
+# across a container's lifetime. MAX_CACHED_VOICES now covers every preset
+# voice (~2GB/voice x9 + ~10GB shared ≈ 28GB, comfortable headroom on 48GB)
+# and modal_app.py's @modal.enter() eagerly preloads all of them at
+# container start - trading a somewhat longer cold start (already the
+# dominant cost at 85-150s) for eliminating this per-voice tax on every
+# later request, cold or warm. Recompute if the roster grows enough to
+# threaten the VRAM budget again.
+MAX_CACHED_VOICES = len(PRESET_VOICES)
+
+
+def warm_all_preset_voices() -> None:
+    """Preloads every preset voice's T3+LoRA into preset_t3_cache - see
+    MAX_CACHED_VOICES comment above for why this now runs eagerly at
+    container start instead of lazily per-voice."""
+    for voice_id in PRESET_VOICES:
+        get_preset_t3(voice_id)
 
 
 def load_finetuned_t3(pretrained_state: dict, t3_hp, adapter_dir: str):
@@ -435,23 +486,15 @@ MAX_CHUNK_WORDS = 40
 # exhausting all 4 retries and shipping a near-silent clip).
 #
 # 2026-09-09 retrain expanded voice_sales to ~665 clips/~53min (now exceeds
-# the well-trained-voice benchmark) and voice_meditation to ~318 clips/
-# ~29.7min. Tested raising both to the shared 40-word default post-retrain
-# with real multi-clause 30-50 word generations:
-# - voice_sales: fixed. A ~60-word sentence produced ~10s of audio, in line
-#   with a similar-length pre-fix sample (~12.6s) - no truncation. Removed
-#   from this dict entirely (uses the 40-word default).
-# - voice_meditation: NOT fixed. A ~50-word sentence produced a 0.64s
-#   clip - the exact near-silent-clip failure this cap exists to prevent,
-#   reproduced a third time (after 2026-09-08 and 2026-09-09) despite the
-#   retrain. Her extra data wasn't enough to resolve this specific
-#   instability - kept at the known-safe 14 rather than guessing at an
-#   untested intermediate value. Worth real investigation later (why does
-#   she still hit this at a word count Robbo now handles fine with less
-#   relative data growth?), not just re-guessing the cap again.
-MAX_CHUNK_WORDS_BY_VOICE: dict[str, int] = {
-    "voice_meditation": 14,
-}
+# the well-trained-voice benchmark) - tested raising to the shared 40-word
+# default post-retrain with a real ~60-word generation: fixed, ~10s of
+# audio, no truncation. Removed from this dict entirely (uses the 40-word
+# default). voice_meditation was never fixed the same way (a ~50-word
+# generation still produced a 0.64s near-silent clip after her retrain too)
+# but that voice (Michelle) was removed from the roster entirely 2026-09-10
+# per direct user feedback, so the entry moot either way. Empty for now -
+# every remaining voice uses the shared MAX_CHUNK_WORDS default.
+MAX_CHUNK_WORDS_BY_VOICE: dict[str, int] = {}
 
 
 def split_long_sentence(sentence: str, max_words: int) -> list[str]:
@@ -655,7 +698,33 @@ def apply_pitch_jitter(audio: np.ndarray, sr: int, jitter_semitones: float, seed
 
 
 MAX_GENERATION_ATTEMPTS = 4  # see generate_sentence_with_retry - the underlying bugs this works around
-MIN_WORD_OVERLAP_RATIO = 0.7  # below this, treat as a bad generation (words skipped/mangled) and retry
+# Was 0.7. Multi-sentence chunking (grouping several sentences into one
+# generation call for cross-sentence prosody, see chunk_sentences) means a
+# generation can drop one *entire* sentence out of several and still clear
+# a lenient overlap bar - e.g. losing a 12-word middle sentence out of a
+# 40-word chunk only drops overlap to ~70%, exactly at the old threshold.
+# Reported live 2026-09-10 as "skipped most of the words" (Megan), "skipped
+# a whole sentence in the middle" (Katie), and "skipped some words"
+# (Brad/Mark) - all the same failure mode, just at different severities.
+# Raised to catch a dropped sentence/clause reliably. Trade-off, stated
+# plainly: this means more retries (and more GPU seconds) on borderline
+# generations, compounding the separate "Modal is slow" complaint - the
+# real fix for the underlying instability is still more training data or a
+# better base model, not a stricter proxy metric, but this is the honest
+# lever available today without retraining.
+MIN_WORD_OVERLAP_RATIO = 0.85  # below this, treat as a bad generation (words skipped/mangled) and retry
+
+# Filler words Chatterbox has been observed to prepend that weren't in the
+# input at all - reported live 2026-09-10 as "Alice is saying 'so' for no
+# reason." Whisper transcribes it same as any other word, so it doesn't fail
+# the overlap check above (overlap only measures *missing* input words, not
+# *extra* output ones) - a single inserted "so" among 20 real words barely
+# moves that ratio. Rather than trying to surgically cut audio (fragile -
+# no reliable word-level timestamps here), treat a leading filler that
+# isn't how the input actually starts as a bad take and retry, the same
+# stochastic-retry approach already proven to work for missing/mangled
+# words below.
+LEADING_FILLER_WORDS = {"so", "um", "uh", "well", "okay", "ok", "like", "and", "now", "right"}
 
 
 def _normalize_words(text: str) -> set[str]:
@@ -669,6 +738,18 @@ def word_overlap_ratio(input_text: str, transcribed_text: str) -> float:
         return 1.0
     output_words = _normalize_words(transcribed_text)
     return len(input_words & output_words) / len(input_words)
+
+
+def has_spurious_leading_filler(input_text: str, transcribed_text: str) -> bool:
+    input_words = input_text.strip().split()
+    transcribed_words = transcribed_text.strip().split()
+    if not input_words or not transcribed_words:
+        return False
+    said_first = transcribed_words[0].lower().strip(string.punctuation)
+    if said_first not in LEADING_FILLER_WORDS:
+        return False
+    wrote_first = input_words[0].lower().strip(string.punctuation)
+    return said_first != wrote_first
 
 
 def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference_path: str, **kwargs) -> np.ndarray:
@@ -709,9 +790,13 @@ def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference
         segments, _ = verifier_model.transcribe(trimmed, language="en")
         transcribed_text = " ".join(seg.text for seg in segments)
         overlap = word_overlap_ratio(sentence, transcribed_text)
-        if overlap >= MIN_WORD_OVERLAP_RATIO:
-            return trimmed
-        print(f"[engine] word mismatch (overlap {overlap:.0%}) - said \"{transcribed_text[:80]}\" for \"{sentence[:80]}\", retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+        if overlap < MIN_WORD_OVERLAP_RATIO:
+            print(f"[engine] word mismatch (overlap {overlap:.0%}) - said \"{transcribed_text[:80]}\" for \"{sentence[:80]}\", retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+            continue
+        if has_spurious_leading_filler(sentence, transcribed_text):
+            print(f"[engine] spurious leading filler - said \"{transcribed_text[:40]}\" for \"{sentence[:40]}\", retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
+            continue
+        return trimmed
 
     print(f"[engine] all {MAX_GENERATION_ATTEMPTS} attempts came back bad - shipping the last one rather than failing outright")
     return last_trimmed
@@ -821,7 +906,7 @@ def generate_preset(
     pitch_semitones: float | None = None,
     speed: float | None = None,
 ) -> tuple[np.ndarray | None, int | None]:
-    """Feature A: one of the 10 named preset voices. Raises UnknownVoiceError
+    """Feature A: one of the named preset voices. Raises UnknownVoiceError
     for an unrecognized voice_id. Returns (audio, sr), or (None, None) if
     generation produced nothing at all (empty input text)."""
     if voice_id not in PRESET_VOICES:
@@ -840,6 +925,9 @@ def generate_preset(
     highpass = HIGHPASS_HZ_BY_VOICE.get(voice_id, 0.0)
     jitter = PITCH_JITTER_BY_VOICE.get(voice_id, 0.0)
     max_chunk_words = MAX_CHUNK_WORDS_BY_VOICE.get(voice_id, MAX_CHUNK_WORDS)
+    # Multiplied with the client's speed (default 1.0 = "this voice's own
+    # normal pace"), not replaced by it - see SPEED_BY_VOICE comment.
+    effective_speed = SPEED_BY_VOICE.get(voice_id, 1.0) * (speed if speed is not None else 1.0)
     return synthesize(
         base_engine,
         text,
@@ -847,7 +935,7 @@ def generate_preset(
         pitch_semitones=pitch,
         highpass_hz=highpass,
         pitch_jitter_semitones=jitter,
-        speed=speed if speed is not None else 1.0,
+        speed=effective_speed,
         max_chunk_words=max_chunk_words,
         pause_multiplier=pause_multiplier,
         **gen_params,

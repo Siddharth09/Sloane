@@ -136,7 +136,7 @@ export default function BillingPage() {
             const videoBlurb = videoCreditsBlurb(plan.videoCreditsPerMonth);
             const features = [
               `${plan.charactersPerMonth.toLocaleString()} characters of audio/month`,
-              p.id === "free" ? "All 10 preset voices" : "Clone any voice from an upload",
+              p.id === "free" ? "All 9 preset voices" : "Clone any voice from an upload",
               videoBlurb ?? "No video credits",
             ];
             return (

@@ -9,7 +9,6 @@ export const PRESET_VOICES: Voice[] = [
   { id: "voice_tech", label: "Brad", color: "bg-butter", initial: "B" },
   { id: "voice_comedy", label: "Izzy", color: "bg-lavender", initial: "I" },
   { id: "voice_sales", label: "Robbo", color: "bg-coral", initial: "R" },
-  { id: "voice_meditation", label: "Michelle", color: "bg-coral-dark", initial: "M" },
   { id: "voice_mark", label: "Mark", color: "bg-sage", initial: "M" },
 ];
 

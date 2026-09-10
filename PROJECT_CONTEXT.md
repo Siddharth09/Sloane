@@ -1414,3 +1414,46 @@ test (see `STATUS.md` "Mobile / iOS App Store"): Play button not working a
 second time, no mic-recording option on Clone Voice, the whole-app
 decorative background never having been added to mobile at all, and video
 trailer clips never actually starting playback.
+
+## 15. Voice-quality bug batch + Modal per-voice latency bug, 2026-09-10
+
+A batch of live bug reports arrived together: Alice inserting a spurious
+"so", Megan/Katie/Brad/Mark all skipping words, Izzy/Alice/Robbo sounding
+sped up, Robbo switching accents mid-sentence, Michelle judged bad enough to
+remove outright, and separately "Modal is slow even after warmed up." Full
+technical detail (exact code changes, exact verification done vs. not done)
+lives in `STATUS.md`'s "Voice quality + Modal latency fixes, 2026-09-10" -
+not duplicated here. Decisions worth recording at this level:
+
+**The "slow even warmed up" report had a real, previously-undocumented root
+cause, not just retry variance.** Sec 14 above documented container-level
+warm/cold (whole GPU container up or not) but missed a second layer: each
+preset voice's fine-tuned LoRA adapter also has its own load-from-Volume
+cost on that voice's first request per container, gated by an LRU cache
+capped below the actual roster size. A "warm" container could still eat
+this cost on any voice it hadn't served yet - confirmed directly in
+`modal app logs` via a real `"cache miss"` line on a request to an
+already-warm container. Fixed by preloading every voice at container start
+instead of lazily (L40S has enough VRAM headroom for all of them at once,
+unlike the 24GB card this design was originally built for).
+
+**Michelle (`voice_meditation`) is now off the roster** - decided by direct
+user feedback, not a technical fix. This retires the long-running "her
+chunk cap can't be safely raised" open item from Sec 12 by removing the
+voice rather than solving the underlying instability. Her training
+data/LoRA are untouched on the network volume in case this is revisited.
+
+**Everything else in this batch (word-skipping retry threshold, the
+spurious-filler retry check, Robbo's re-tuning, per-voice speed correction)
+was shipped from code-level reasoning plus a non-crashing smoke test, not
+verified by actually listening** - stated this plainly to the user rather
+than implying these are confirmed fixes, and STATUS.md's next-steps now
+lead with getting real ear-feedback before any further tuning.
+
+Also fixed the same day, unrelated to voice tuning but reported live in a
+screenshot: clone-voice ("record yourself") was silently broken for every
+real recording, not just slow - browser/mobile mic recordings are WebM/Opus
+or M4A/AAC, never WAV, but were written to a `.wav`-suffixed file and handed
+to a WAV-only decoder. Fixed with an ffmpeg transcode step; this one *was*
+verified end-to-end with a real non-WAV test upload against the live
+endpoint, unlike the voice-tuning items above.
