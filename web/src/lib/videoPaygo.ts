@@ -29,24 +29,47 @@
  * refundVideoCredit in db.ts) - that cost has to be spread across the
  * successful ones, not eaten silently.
  *
- * **Re-priced 2026-09-11 to a true reseller markup, per direct feedback**
- * ("fal ai is so cheap, we need to make our pay as you go cheap like them
- * with a little markup... basically like a reseller of fal ai which is a
- * reseller"). Originally launched at a flat $6.99 (60-80% margin, sized
- * like the rest of this project's subscription pricing) - dropped to a
- * flat $2.99/video instead: ~25% margin over Seedance's $2.23 buffered
- * cost (the worst case), thinner but positive even after Stripe's ~2.9%+
- * $0.30 fee on a single no-commitment purchase (~14% net). Packs still
- * give a volume discount and better net margin once Stripe's flat fee is
- * amortized over more than one video. No persistent storage of generated
- * videos either - users get the fal-hosted URL directly and download it
- * themselves, so there's no ongoing storage cost to price in here.
+ * **Re-priced twice on 2026-09-11 - first cheaper, then raised again once a
+ * hard profit floor was set.** First pass: dropped from a launch price of
+ * $6.99 to a flat $2.99/video per feedback to price this like a true
+ * reseller markup over fal's own cost ("fal ai is so cheap... basically
+ * like a reseller of fal ai which is a reseller"). That $2.99 number
+ * turned out to net only ~$0.35-0.40 profit in the worst case (Seedance)
+ * once Stripe's real ~2.9%+$0.30 fee was subtracted - nowhere near a
+ * separately-stated hard requirement of **at least $1 profit/video, in the
+ * worst case, after every real cost**. Re-priced again to the numbers
+ * below, which do clear $1 in every case:
+ *
+ * Worst case is always Seedance ($2.23 buffered generation cost - see
+ * VIDEO_PAYGO_ENGINE_COST_USD below):
+ * - $3.99 single video: net after Stripe fee ($0.4157) = $3.574;
+ *   profit = $3.574 - $2.23 = **$1.34**
+ * - $18.00 for 5 (=$3.60/video): net after Stripe fee ($0.522 total,
+ *   $0.1044/video) = $3.4356/video; profit = **$1.21/video**
+ * - $35.00 for 10 (=$3.50/video): net after Stripe fee ($0.315 gone
+ *   from division, $0.0315/video... actual: fee=$1.315 total/10=$0.1315/
+ *   video) = $3.3685/video; profit = **$1.14/video**
+ * All three clear the $1 floor with real margin to spare, not razor-thin
+ * at exactly $1.00, since real costs (fal price changes, more retries than
+ * the 15% buffer assumes) can move against us.
+ *
+ * **Other costs checked and confirmed negligible/not applicable, so
+ * nothing here is silently missing**: Vercel serverless compute for the
+ * generate/status routes (a few seconds of function time per video,
+ * effectively sub-cent); Neon Postgres row writes (negligible at this
+ * volume); no video storage cost (never persisted server-side - users get
+ * the fal-hosted URL directly and download it themselves); Stripe payout
+ * fees (a periodic account-level fee, not per-transaction, standard to
+ * exclude from per-unit COGS); no sales tax currently collected
+ * (`managed_payments: {enabled: false}` on the checkout route, same
+ * deliberate deferral as the subscription checkout - a real future cost if
+ * enabled, not one being incurred today).
  */
 
 export type VideoEngine = "kling" | "veo" | "seedance";
 
 export const VIDEO_PAYGO_RESOLUTION = "720p";
-export const VIDEO_PAYGO_PRICE_USD_CENTS = 299; // $2.99, flat across all three engines
+export const VIDEO_PAYGO_PRICE_USD_CENTS = 399; // $3.99, flat across all three engines
 
 export const VIDEO_PAYGO_ENGINES: Record<
   VideoEngine,
@@ -84,15 +107,14 @@ export type VideoCreditPack = {
   stripePriceEnvVar: string;
 };
 
-// Packs give a small volume discount over the flat $2.99 single-video price
-// while keeping the worst-case (Seedance, $2.23 buffered cost) margin
-// positive: pack5 is $2.70/video (~17% margin, better net after Stripe fees
-// amortize), pack10 is $2.50/video (~11% margin) - thin, deliberately, per
-// the reseller-pricing request - real numbers, not round-number guesses.
+// Packs give a small volume discount over the flat $3.99 single-video price
+// while still clearing the $1/video profit floor (see the module comment
+// above for the exact worst-case math): pack5 nets ~$1.21/video, pack10
+// ~$1.14/video - real numbers, not round-number guesses.
 export const VIDEO_CREDIT_PACKS: VideoCreditPack[] = [
-  { id: "single", credits: 1, priceUsdCents: 299, stripePriceEnvVar: "STRIPE_PRICE_VIDEO_CREDIT_1" },
-  { id: "pack5", credits: 5, priceUsdCents: 1350, stripePriceEnvVar: "STRIPE_PRICE_VIDEO_CREDIT_5" },
-  { id: "pack10", credits: 10, priceUsdCents: 2500, stripePriceEnvVar: "STRIPE_PRICE_VIDEO_CREDIT_10" },
+  { id: "single", credits: 1, priceUsdCents: 399, stripePriceEnvVar: "STRIPE_PRICE_VIDEO_CREDIT_1" },
+  { id: "pack5", credits: 5, priceUsdCents: 1800, stripePriceEnvVar: "STRIPE_PRICE_VIDEO_CREDIT_5" },
+  { id: "pack10", credits: 10, priceUsdCents: 3500, stripePriceEnvVar: "STRIPE_PRICE_VIDEO_CREDIT_10" },
 ];
 
 export function videoCreditPackFromStripePriceId(priceId: string): VideoCreditPack | null {

@@ -645,40 +645,40 @@ function CharacterVideoSection() {
       title="Pick a character, make an ad"
       subtitle="Tap a face to hear them, then type what they should say."
     >
+      <video ref={previewRef} onEnded={() => setPlayingId(null)} className="hidden" />
+      <div className="flex flex-wrap justify-center gap-4">
+        {CHARACTERS.map((c) => (
+          <button key={c.id} onClick={() => handlePickCharacter(c.id)} className="flex flex-col items-center gap-1.5">
+            <span className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={c.imageUrl}
+                alt={c.name}
+                className={`h-16 w-16 rounded-full object-cover shadow-soft transition ${
+                  characterId === c.id ? "shadow-soft-lg scale-110 ring-4 ring-purple" : "opacity-70 hover:opacity-100"
+                }`}
+              />
+              {playingId === c.id && (
+                <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] shadow-soft">
+                  🔊
+                </span>
+              )}
+            </span>
+            <span className={`text-xs ${characterId === c.id ? "font-bold text-purple" : "text-muted"}`}>{c.name}</span>
+          </button>
+        ))}
+      </div>
+
       {!token ? (
         <p className="rounded-2xl bg-white/70 p-3 text-sm text-muted">
-          This needs the Video plan and an access code - paste yours above (or{" "}
+          Sign in with a Video-plan access code (paste yours above, or{" "}
           <a href="/billing" className="font-semibold text-purple underline">
             see plans
           </a>
-          ) to use it.
+          ) to actually generate a video with them.
         </p>
       ) : (
         <>
-          <video ref={previewRef} onEnded={() => setPlayingId(null)} className="hidden" />
-          <div className="flex flex-wrap justify-center gap-4">
-            {CHARACTERS.map((c) => (
-              <button key={c.id} onClick={() => handlePickCharacter(c.id)} className="flex flex-col items-center gap-1.5">
-                <span className="relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={c.imageUrl}
-                    alt={c.name}
-                    className={`h-16 w-16 rounded-full object-cover shadow-soft transition ${
-                      characterId === c.id ? "shadow-soft-lg scale-110 ring-4 ring-purple" : "opacity-70 hover:opacity-100"
-                    }`}
-                  />
-                  {playingId === c.id && (
-                    <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] shadow-soft">
-                      🔊
-                    </span>
-                  )}
-                </span>
-                <span className={`text-xs ${characterId === c.id ? "font-bold text-purple" : "text-muted"}`}>{c.name}</span>
-              </button>
-            ))}
-          </div>
-
           <textarea
             className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
             rows={3}
@@ -712,9 +712,9 @@ const PAYGO_ENGINES: { id: "veo" | "kling" | "seedance"; label: string; blurb: s
 ];
 
 const PAYGO_PACKS = [
-  { id: "single", credits: 1, priceLabel: "$2.99" },
-  { id: "pack5", credits: 5, priceLabel: "$13.50" },
-  { id: "pack10", credits: 10, priceLabel: "$25.00" },
+  { id: "single", credits: 1, priceLabel: "$3.99" },
+  { id: "pack5", credits: 5, priceLabel: "$18.00" },
+  { id: "pack10", credits: 10, priceLabel: "$35.00" },
 ];
 
 const PAYGO_POLL_INTERVAL_MS = 3000;

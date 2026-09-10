@@ -23,6 +23,10 @@ zeroshot_test_output/
 !web/public/voice-samples/*.wav
 # Same reasoning, for the character click-to-preview clips.
 !web/public/character-samples/*.mp4
+# Different reasoning, same fix: these are archived research/investigation
+# media (deliberately kept, not source training data) - see
+# docs/fal-video-research/assets/README.md for what's here and why.
+!docs/fal-video-research/assets/**/*.mp4
 
 # Env/secrets
 .env

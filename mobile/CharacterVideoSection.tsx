@@ -107,29 +107,29 @@ export function CharacterVideoSection() {
       <Text style={styles.title}>Pick a character, make an ad</Text>
       <Text style={styles.subtitle}>Tap a face to hear them, then type what they should say.</Text>
 
+      <View style={styles.characterRow}>
+        {CHARACTERS.map((c) => (
+          <Pressable key={c.id} onPress={() => handlePickCharacter(c.id)} style={styles.characterItem}>
+            <View>
+              <Image
+                source={{ uri: c.imageUrl }}
+                style={[styles.characterImage, characterId === c.id && styles.characterImageSelected]}
+              />
+              {playingId === c.id && (
+                <View style={styles.playingBadge}>
+                  <Text style={styles.playingBadgeText}>🔊</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.characterName, characterId === c.id && styles.characterNameSelected]}>{c.name}</Text>
+          </Pressable>
+        ))}
+      </View>
+
       {!token ? (
-        <Text style={styles.muted}>This needs the Video plan and an access code - add yours in Account to use it.</Text>
+        <Text style={styles.muted}>Sign in with a Video-plan access code in Account to actually generate a video with them.</Text>
       ) : (
         <>
-          <View style={styles.characterRow}>
-            {CHARACTERS.map((c) => (
-              <Pressable key={c.id} onPress={() => handlePickCharacter(c.id)} style={styles.characterItem}>
-                <View>
-                  <Image
-                    source={{ uri: c.imageUrl }}
-                    style={[styles.characterImage, characterId === c.id && styles.characterImageSelected]}
-                  />
-                  {playingId === c.id && (
-                    <View style={styles.playingBadge}>
-                      <Text style={styles.playingBadgeText}>🔊</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={[styles.characterName, characterId === c.id && styles.characterNameSelected]}>{c.name}</Text>
-              </Pressable>
-            ))}
-          </View>
-
           <TextInput
             style={styles.textArea}
             multiline
