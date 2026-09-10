@@ -97,6 +97,18 @@ PRESET_VOICES = {
         "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_comedy/chatterbox_output/new_lang_adapter",
         "reference": f"{MODEL_ROOT}/training_data/voice_comedy/clips/00001.wav",
     },
+    "voice_adam": {  # Adam - 2026-09-10, isolated via k=2 speaker clustering
+        # from a user-supplied podcast (kept cluster 1, 567/662 clips - the
+        # other cluster was a second speaker in the same recording).
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_adam/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_adam/clips/00001.wav",
+    },
+    "voice_rachel": {  # Rachel - 2026-09-10, from a user-supplied podcast.
+        # Deliberately NOT speaker-isolated - explicit instruction was to
+        # merge all clusters into one voice, same precedent as voice_sales.
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_rachel/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_rachel/clips/00001.wav",
+    },
     # Michelle (voice_meditation) removed 2026-09-10 per direct user
     # feedback ("not good at all we can remove her") - also the voice this
     # session's own notes already flagged as never actually fixed (see

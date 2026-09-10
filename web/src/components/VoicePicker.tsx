@@ -10,6 +10,12 @@ export const PRESET_VOICES: Voice[] = [
   { id: "voice_comedy", label: "Izzy", color: "bg-lavender", initial: "I" },
   { id: "voice_sales", label: "Robbo", color: "bg-coral", initial: "R" },
   { id: "voice_mark", label: "Mark", color: "bg-sage", initial: "M" },
+  // Adam/Rachel added 2026-09-10 - 11 voices, only 9 defined brand colors,
+  // so these reuse existing ones (freed bg-coral-dark from Michelle's
+  // removal; bg-rose shared with Vicky) rather than inventing new ones -
+  // same documented design constraint as Patrick/Mark sharing bg-sage.
+  { id: "voice_adam", label: "Adam", color: "bg-coral-dark", initial: "A" },
+  { id: "voice_rachel", label: "Rachel", color: "bg-rose", initial: "R" },
 ];
 
 export function VoicePicker({

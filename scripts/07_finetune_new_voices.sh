@@ -19,8 +19,16 @@ set -euo pipefail
 
 BASE_TOOLKIT=/workspace/sloane/chatterbox-finetuning
 PROJECT_ROOT=/workspace/sloane
-VOICES=(voice_meditation voice_sales)
-# Retraining both 2026-09-08 with newly-recovered/added source data:
+VOICES=(voice_adam voice_rachel)
+# 2026-09-10: two new voices from user-supplied podcast source (~65min each).
+# voice_adam was k=2 speaker-clustered and filtered to the confirmed target
+# cluster (see 09_finalize_speaker_data.py KEEP_CLUSTER) - same pattern as
+# voice_business/voice_finance/voice_broadcast. voice_rachel was
+# deliberately NOT filtered - per direct instruction, merge all clusters
+# into one voice rather than isolate a single speaker, same precedent as
+# voice_sales below.
+#
+# Previously trained here 2026-09-08 with newly-recovered/added source data:
 # voice_meditation went from 6.6 to 29.7 minutes (03_chunk_by_speech.py was
 # discarding long segments instead of splitting them - fixed). voice_sales
 # went from 16 clips/9MB to ~58 minutes of new source video, deliberately

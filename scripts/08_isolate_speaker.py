@@ -33,7 +33,7 @@ TRAINING_DATA = PROJECT_ROOT / "training_data"
 # Voices known/suspected to have two speakers mixed together (interviewer +
 # target). See PROJECT_CONTEXT.md "Speaker isolation" entry for the transcript
 # evidence per file.
-TARGETS = ["voice_business", "voice_finance", "voice_broadcast", "voice_comedy", "voice_adam", "voice_rachel"]
+TARGETS = ["voice_business", "voice_finance", "voice_broadcast", "voice_comedy", "voice_adam", "voice_rachel", "voice_emily"]
 SAMPLES_PER_CLUSTER = 3
 
 

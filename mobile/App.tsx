@@ -86,6 +86,11 @@ const PRESET_VOICES = [
   { id: "voice_comedy", label: "Izzy", color: COLORS.lavender, initial: "I" },
   { id: "voice_sales", label: "Robbo", color: COLORS.coral, initial: "R" },
   { id: "voice_mark", label: "Mark", color: COLORS.sage, initial: "M" },
+  // Adam/Rachel added 2026-09-10 - reuse existing colors (freed
+  // COLORS.coralDark from Michelle's removal; COLORS.rose shared with
+  // Vicky), same documented constraint as Patrick/Mark sharing sage.
+  { id: "voice_adam", label: "Adam", color: COLORS.coralDark, initial: "A" },
+  { id: "voice_rachel", label: "Rachel", color: COLORS.rose, initial: "R" },
 ];
 
 function GradientButton({

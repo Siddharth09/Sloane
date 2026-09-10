@@ -29,6 +29,8 @@ SPEAKERS = [
     "voice_meditation",
     "voice_sales",
     "voice_mark",
+    "voice_adam",
+    "voice_rachel",
 ]
 
 
