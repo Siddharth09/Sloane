@@ -109,6 +109,12 @@ PRESET_VOICES = {
         "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_rachel/chatterbox_output/new_lang_adapter",
         "reference": f"{MODEL_ROOT}/training_data/voice_rachel/clips/00001.wav",
     },
+    "voice_emily": {  # Emily - 2026-09-10, isolated via k=2 speaker
+        # clustering from a third user-supplied podcast (kept cluster 0,
+        # 155/254 clips - confirmed by ear).
+        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_emily/chatterbox_output/new_lang_adapter",
+        "reference": f"{MODEL_ROOT}/training_data/voice_emily/clips/00018.wav",
+    },
     # Michelle (voice_meditation) removed 2026-09-10 per direct user
     # feedback ("not good at all we can remove her") - also the voice this
     # session's own notes already flagged as never actually fixed (see

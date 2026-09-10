@@ -16,6 +16,7 @@ export const PRESET_VOICES: Voice[] = [
   // same documented design constraint as Patrick/Mark sharing bg-sage.
   { id: "voice_adam", label: "Adam", color: "bg-coral-dark", initial: "A" },
   { id: "voice_rachel", label: "Rachel", color: "bg-rose", initial: "R" },
+  { id: "voice_emily", label: "Emily", color: "bg-blue", initial: "E" },
 ];
 
 export function VoicePicker({

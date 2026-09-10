@@ -19,10 +19,16 @@ set -euo pipefail
 
 BASE_TOOLKIT=/workspace/sloane/chatterbox-finetuning
 PROJECT_ROOT=/workspace/sloane
-VOICES=(voice_adam voice_rachel)
-# 2026-09-10: two new voices from user-supplied podcast source (~65min each).
-# voice_adam was k=2 speaker-clustered and filtered to the confirmed target
-# cluster (see 09_finalize_speaker_data.py KEEP_CLUSTER) - same pattern as
+VOICES=(voice_emily)
+# 2026-09-10: third new voice from user-supplied podcast source (~27.6min,
+# no start timestamp given). k=2 speaker-clustered and filtered to the
+# confirmed target cluster (155/254 clips), same pattern as voice_adam
+# below.
+#
+# Previously trained here same day: voice_adam + voice_rachel, two new
+# voices from user-supplied podcast source (~65min each). voice_adam was
+# k=2 speaker-clustered and filtered to the confirmed target cluster (see
+# 09_finalize_speaker_data.py KEEP_CLUSTER) - same pattern as
 # voice_business/voice_finance/voice_broadcast. voice_rachel was
 # deliberately NOT filtered - per direct instruction, merge all clusters
 # into one voice rather than isolate a single speaker, same precedent as

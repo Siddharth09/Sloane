@@ -91,6 +91,7 @@ const PRESET_VOICES = [
   // Vicky), same documented constraint as Patrick/Mark sharing sage.
   { id: "voice_adam", label: "Adam", color: COLORS.coralDark, initial: "A" },
   { id: "voice_rachel", label: "Rachel", color: COLORS.rose, initial: "R" },
+  { id: "voice_emily", label: "Emily", color: COLORS.blue, initial: "E" },
 ];
 
 function GradientButton({
