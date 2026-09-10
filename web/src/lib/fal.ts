@@ -50,3 +50,30 @@ export async function getFalJobResult(endpoint: string, requestId: string): Prom
   }
   return res.json();
 }
+
+// Two-step upload to fal's own storage (verified working 2026-09-11 against
+// the real REST API - the "storage_type=gcs" query param some docs mention
+// returns "Invalid storage type" on this account; omit it entirely).
+// Needed for the character-video Lucy-voice path: Kling Avatar's audio_url
+// input needs a real hosted URL, and generated TTS audio only exists as
+// in-memory bytes until uploaded somewhere fal can fetch it from.
+export async function uploadBufferToFal(data: Buffer, contentType: string, fileName: string): Promise<string> {
+  const initRes = await fetch("https://rest.fal.ai/storage/upload/initiate", {
+    method: "POST",
+    headers: { Authorization: `Key ${process.env.FAL_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ file_name: fileName, content_type: contentType }),
+  });
+  if (!initRes.ok) {
+    throw new Error(`fal storage initiate failed (${initRes.status}): ${(await initRes.text()).slice(0, 300)}`);
+  }
+  const { upload_url, file_url } = await initRes.json();
+  const putRes = await fetch(upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": contentType },
+    body: new Uint8Array(data),
+  });
+  if (!putRes.ok) {
+    throw new Error(`fal storage upload failed (${putRes.status}): ${(await putRes.text()).slice(0, 300)}`);
+  }
+  return file_url as string;
+}

@@ -135,6 +135,29 @@ export async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // Character-video generation (2026-09-11) - pick one of the pre-made
+  // AI actors, choose a voice (a Lucy preset -> Kling Avatar lip-sync, or
+  // "veo" -> Veo generates its own dialogue+voice), type text. Billed
+  // through the access_token/subscribers video-credit quota above, NOT the
+  // user_id/prepaid video_credits table video_paygo_jobs uses - this is a
+  // Video-plan subscription perk, not a separate purchase.
+  await sql`
+    CREATE TABLE IF NOT EXISTS character_video_jobs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      access_token TEXT NOT NULL,
+      character_id TEXT NOT NULL,
+      voice_choice TEXT NOT NULL,
+      script TEXT NOT NULL,
+      credits_cost INTEGER NOT NULL,
+      fal_endpoint TEXT NOT NULL,
+      modal_job_id TEXT,
+      fal_request_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      video_url TEXT,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
 }
 
 // Generic runtime settings, switchable from the admin dashboard without a
@@ -252,6 +275,24 @@ export function checkQuota(sub: Subscriber, additionalCharacters: number): strin
   }
   if (sub.characters_used + additionalCharacters > plan.charactersPerMonth) {
     return `This would put you over your ${plan.name} plan's ${plan.charactersPerMonth.toLocaleString()} character/month limit. Upgrade or wait for your next billing period.`;
+  }
+  return null;
+}
+
+// Character-video generation (2026-09-11) is the first real feature to
+// actually draw from the Video plan's video_seconds_used/videoCreditsPerMonth
+// tracking - previously "reserved/aspirational" (see plans.ts). Reuses the
+// exact same column/limit, just checked here instead of only characters.
+export function checkVideoCreditQuota(sub: Subscriber, additionalCredits: number): string | null {
+  const plan = PLANS[sub.plan];
+  if (sub.status !== "active") {
+    return "Your subscription isn't active - check your billing status.";
+  }
+  if (plan.videoCreditsPerMonth <= 0) {
+    return "Character videos need the Video plan - upgrade to get 40 video credits/month.";
+  }
+  if (sub.video_seconds_used + additionalCredits > plan.videoCreditsPerMonth) {
+    return `This would put you over your ${plan.name} plan's ${plan.videoCreditsPerMonth} video credits/month. Wait for your next billing period.`;
   }
   return null;
 }
@@ -575,4 +616,59 @@ export async function listVideoPaygoJobsForUser(userId: string): Promise<VideoPa
     SELECT * FROM video_paygo_jobs WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT 20
   `;
   return rows as VideoPaygoJob[];
+}
+
+// --- Character video generation (pre-made AI actors) ---
+
+export type CharacterVideoJob = {
+  id: string;
+  access_token: string;
+  character_id: string;
+  voice_choice: string;
+  script: string;
+  credits_cost: number;
+  fal_endpoint: string;
+  modal_job_id: string | null;
+  fal_request_id: string | null;
+  status: "pending" | "in_progress" | "completed" | "failed";
+  video_url: string | null;
+  error: string | null;
+  created_at: string;
+};
+
+export async function createCharacterVideoJob(params: {
+  accessToken: string;
+  characterId: string;
+  voiceChoice: string;
+  script: string;
+  creditsCost: number;
+  falEndpoint: string;
+}): Promise<string> {
+  const rows = await sql`
+    INSERT INTO character_video_jobs (access_token, character_id, voice_choice, script, credits_cost, fal_endpoint)
+    VALUES (${params.accessToken}, ${params.characterId}, ${params.voiceChoice}, ${params.script}, ${params.creditsCost}, ${params.falEndpoint})
+    RETURNING id
+  `;
+  return rows[0].id as string;
+}
+
+export async function setCharacterVideoJobModalId(jobId: string, modalJobId: string) {
+  await sql`UPDATE character_video_jobs SET modal_job_id = ${modalJobId} WHERE id = ${jobId}`;
+}
+
+export async function setCharacterVideoJobRequestId(jobId: string, falRequestId: string) {
+  await sql`UPDATE character_video_jobs SET fal_request_id = ${falRequestId}, status = 'in_progress' WHERE id = ${jobId}`;
+}
+
+export async function completeCharacterVideoJob(jobId: string, videoUrl: string) {
+  await sql`UPDATE character_video_jobs SET status = 'completed', video_url = ${videoUrl} WHERE id = ${jobId}`;
+}
+
+export async function failCharacterVideoJob(jobId: string, error: string) {
+  await sql`UPDATE character_video_jobs SET status = 'failed', error = ${error} WHERE id = ${jobId}`;
+}
+
+export async function getCharacterVideoJob(jobId: string): Promise<CharacterVideoJob | null> {
+  const rows = await sql`SELECT * FROM character_video_jobs WHERE id = ${jobId}`;
+  return (rows[0] as CharacterVideoJob) ?? null;
 }

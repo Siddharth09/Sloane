@@ -12,6 +12,7 @@ import { WaitingGame } from "@/components/WaitingGame";
 import { useAccessToken } from "@/lib/useAccessToken";
 import { useFreeTierId } from "@/lib/useFreeTierId";
 import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
+import { CHARACTERS, LUCY_VOICE_CREDIT_COST, VEO_VOICE_CREDIT_COST } from "@/lib/characters";
 
 // Backend mode is switchable at runtime from /admin (see
 // @/lib/inferenceBackend) - fetched here rather than read from a build-time
@@ -568,6 +569,151 @@ function VideoCloneSection() {
   );
 }
 
+const CHARACTER_POLL_INTERVAL_MS = 3000;
+const CHARACTER_POLL_TIMEOUT_MS = 300_000;
+
+function CharacterVideoSection() {
+  const { token } = useAccessToken();
+  const [characterId, setCharacterId] = useState(CHARACTERS[0].id);
+  const [voiceChoice, setVoiceChoice] = useState<string>("veo");
+  const [script, setScript] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  const creditsCost = voiceChoice === "veo" ? VEO_VOICE_CREDIT_COST : LUCY_VOICE_CREDIT_COST;
+
+  async function handleGenerate() {
+    setLoading(true);
+    setError(null);
+    setVideoUrl(null);
+    try {
+      const res = await fetch("/api/generate-character-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token: token, character_id: characterId, voice_choice: voiceChoice, script }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Generation failed");
+      const jobId = data.jobId as string;
+
+      const startedAt = Date.now();
+      for (;;) {
+        if (Date.now() - startedAt > CHARACTER_POLL_TIMEOUT_MS) throw new Error("Taking much longer than usual - try again shortly.");
+        await new Promise((resolve) => setTimeout(resolve, CHARACTER_POLL_INTERVAL_MS));
+        const statusRes = await fetch(`/api/generate-character-video/status?jobId=${encodeURIComponent(jobId)}`);
+        const statusData = await statusRes.json();
+        if (statusData.status === "COMPLETED") {
+          setVideoUrl(statusData.videoUrl);
+          break;
+        }
+        if (statusData.status === "FAILED") throw new Error(statusData.error ?? "Generation failed");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card
+      wash="bg-purple-wash/90"
+      iconColor="text-purple"
+      icon="🎭"
+      title="Pick a character, make an ad"
+      subtitle="5 pre-made AI actors - choose one, pick a voice, type a script."
+    >
+      {!token ? (
+        <p className="rounded-2xl bg-white/70 p-3 text-sm text-muted">
+          This needs the Video plan and an access code - paste yours above (or{" "}
+          <a href="/billing" className="font-semibold text-purple underline">
+            see plans
+          </a>
+          ) to use it.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-5 gap-2">
+            {CHARACTERS.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setCharacterId(c.id)}
+                className="flex flex-col items-center gap-1"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={c.imageUrl}
+                  alt={c.name}
+                  className={`h-16 w-16 rounded-full object-cover shadow-soft transition ${
+                    characterId === c.id ? "ring-4 ring-purple" : "opacity-70 hover:opacity-100"
+                  }`}
+                />
+                <span className={`text-xs ${characterId === c.id ? "font-bold text-purple" : "text-muted"}`}>{c.name}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setVoiceChoice("veo")}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                voiceChoice === "veo" ? "bg-purple text-white shadow-soft" : "bg-white text-muted"
+              }`}
+            >
+              This character&apos;s own voice ({VEO_VOICE_CREDIT_COST} credits)
+            </button>
+            {PRESET_VOICES.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => setVoiceChoice(v.id)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  voiceChoice === v.id ? "bg-purple text-white shadow-soft" : "bg-white text-muted"
+                }`}
+              >
+                {v.label} ({LUCY_VOICE_CREDIT_COST} credits)
+              </button>
+            ))}
+          </div>
+          {voiceChoice === "veo" && (
+            <p className="text-xs italic leading-relaxed text-coral-dark">
+              Heads up: the character&apos;s own voice re-generates the whole scene, and in testing this has
+              sometimes drifted to a different-looking face than the photo shown above - a real, unresolved
+              limitation. A Lucy voice (Kling Avatar lip-sync onto the actual photo) is more reliable for
+              keeping the exact character.
+            </p>
+          )}
+
+          <textarea
+            className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
+            rows={3}
+            placeholder="What should they say?"
+            value={script}
+            onChange={(e) => setScript(e.target.value)}
+          />
+
+          <button
+            onClick={handleGenerate}
+            disabled={loading || !script.trim()}
+            className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
+          >
+            {loading ? "Generating… (usually 30-90s)" : `Generate (${creditsCost} video credits)`}
+          </button>
+
+          {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
+          {videoUrl && <video className="w-full rounded-xl" src={videoUrl} controls autoPlay loop playsInline />}
+        </>
+      )}
+
+      <p className="text-xs italic leading-relaxed text-muted">
+        Video credits come from your Video plan&apos;s existing 40/month allotment - a Lucy-voice video costs{" "}
+        {LUCY_VOICE_CREDIT_COST} credits (real lip-sync via Kling Avatar), the character&apos;s own Veo-generated voice costs{" "}
+        {VEO_VOICE_CREDIT_COST} (Veo generates both the video and the dialogue).
+      </p>
+    </Card>
+  );
+}
+
 const PAYGO_ENGINES: { id: "veo" | "kling" | "seedance"; label: string; blurb: string }[] = [
   { id: "veo", label: "Veo", blurb: "Most realistic, 8s clips" },
   { id: "kling", label: "Kling", blurb: "Reliable, 5s clips" },
@@ -752,6 +898,7 @@ export default function Home() {
         <PresetVoiceSection />
         <CloneVoiceSection />
         <VideoCloneSection />
+        <CharacterVideoSection />
         <PayAsYouGoVideoSection />
         <Footer />
       </main>

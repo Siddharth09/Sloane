@@ -28,6 +28,7 @@ import { useAccessToken } from "./useAccessToken";
 import { useFreeTierId } from "./useFreeTierId";
 import { DeliverySliders, DEFAULT_DELIVERY, type Delivery } from "./DeliverySliders";
 import { VideoPreviewSection } from "./VideoPreviewSection";
+import { CharacterVideoSection } from "./CharacterVideoSection";
 import { Footer } from "./Footer";
 import { useAudioGeneration } from "./useAudioGeneration";
 import { WaitingGame } from "./WaitingGame";
@@ -544,6 +545,7 @@ export default function App() {
           <PresetVoiceSection />
           <CloneVoiceSection />
           <VideoPreviewSection />
+          <CharacterVideoSection />
           <Footer />
         </ScrollView>
       </SafeAreaView>
