@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 
-// Mirrors web/src/app/page.tsx's VideoCloneSection - same two modes, same
+// Mirrors web/src/app/page.tsx's VideoCloneSection - same three modes, same
 // honesty disclaimers, same shared-credit framing. Videos stream from the
 // web app's own hosting rather than bundling multi-MB clips into the app
 // binary - this is preview/marketing content, not something that needs to
@@ -84,53 +84,56 @@ export function VideoPreviewSection() {
         <Text style={styles.cardIcon}>🎬</Text>
         <View style={{ flex: 1 }}>
           <Text style={styles.cardTitle}>Video</Text>
-          <Text style={styles.cardSubtitle}>Two modes we&apos;re building toward, shown honestly.</Text>
+          <Text style={styles.cardSubtitle}>Three real modes, being wired up now.</Text>
         </View>
       </View>
 
       <Text style={styles.body}>
-        Lucy Labs is building two video modes: Kling for a talking-head video in your own Lucy voice, and
-        Veo for a fully AI-generated cinematic scene. Both clips below are real early tests, not polished
-        demos, and there&apos;s still a lot of work to go before either is good enough to charge for — we&apos;d
-        rather show you exactly where things stand, drawbacks included, than oversell it.
+        Video is landing as three distinct modes, each built on the AI video engine that&apos;s actually
+        best at that job: Kling for a talking-head video in any voice, Veo for a fully AI-generated
+        cinematic scene, and Seedance for ad-style videos built around your own reusable AI actor. The
+        clips below are real tests run against the live APIs, not mockups — here&apos;s exactly what to
+        expect, drawbacks included.
       </Text>
 
       <VideoModeCard
         badge="Talking head"
-        title="Kling + your Lucy voice"
+        title="Kling + any Lucy voice (or Kling's own)"
         videoUri={`${WEB_BASE}/trailers/kirsty-kling-dub.mp4`}
-        description="Upload a photo or short video of a face, plus audio — either type text narrated in your Lucy voice, or upload your own audio. We lip-sync it to that face. The voice is yours."
+        description="Upload a photo or short video of a face, plus audio — either type text narrated in one of Lucy's voices (including a cloned one), or let Kling use its own voice. We lip-sync it to that face."
       />
 
       <VideoModeCard
         badge="Cinematic"
         title="Veo, any scene you describe"
         videoUri={`${WEB_BASE}/trailers/kirsty-moon-veo-audio.mp4`}
-        description="Upload a photo and describe a scene in a prompt — Veo generates the video around it, including its own AI-generated voice and dialogue, not your Lucy voice: dubbing a separate voice over this much camera motion doesn't sync convincingly, so we don't pretend it does."
+        description="Upload a photo and describe a scene in a prompt — Veo generates the video around it, with a choice of its own AI-generated voice/dialogue or a Lucy voice dubbed in afterward for shots calm enough for the dub to sync convincingly."
         promptExamples={CINEMATIC_PROMPT_EXAMPLES}
         footnote="The more the character moves within a scene, the more their face can drift or distort from the original reference photo — a real limitation of current AI video technology broadly, ours included, not something we can fully fix on our end. Cinematic mode isn't reliable yet for a shot that needs the face to stay consistent throughout a lot of motion."
+      />
+
+      <VideoModeCard
+        badge="Ads"
+        title="Seedance + your own exclusive AI actor"
+        videoUri={`${WEB_BASE}/trailers/ads-seedance-demo.mp4`}
+        description="Describe your actor in a text prompt, or start from a photo or a short video — either way, you type the script and your actor says it back in the video. That actor is generated privately for your account: we never hand the same generated actor to another customer, and every new one is checked against everyone else's before it's finalized so even an accidental lookalike gets regenerated. Reuse that one actor across unlimited ads afterward - new scripts, new scenes, or upload an existing ad/UGC video and Seedance recreates its content and motion with your actor instead."
+        footnote="Seedance's own safety filter blocks anything that reads as a real person's likeness - including some fully AI-generated faces that look too photorealistic. For a hyper-realistic actor, that generation runs through Kling instead (same underlying actor image, different engine) - Seedance is used for its unique upload-a-video recreation trick and for more stylized actor looks."
       />
 
       <View style={styles.noteBox}>
         <Text style={styles.noteText}>
           <Text style={{ fontWeight: "700", color: COLORS.foreground }}>
-            Video credits are shared across both modes
+            Video credits are shared across all three modes
           </Text>{" "}
-          — one monthly balance, spend it on talking-head, cinematic, or a mix of both. 1 credit ≈{" "}
-          {VIDEO_CREDITS.talkSecondsPerCredit}s of talking-head, or ≈{VIDEO_CREDITS.cineSecondsPerCredit}s
-          of cinematic (cinematic costs more to produce). Once this ships: the Video plan gets{" "}
-          {VIDEO_CREDITS.video} credits/month - Free/Starter/Plus don&apos;t include video. Whichever mode
-          you use, your photo, video, and any reference audio are sent to third-party AI vendors (Kling, Veo,
-          and the fal.ai platform we use to reach them) for processing — different from our audio
-          feature, which runs entirely on our own servers.
+          — one monthly balance. 1 credit ≈ {VIDEO_CREDITS.talkSecondsPerCredit}s of talking-head, or ≈
+          {VIDEO_CREDITS.cineSecondsPerCredit}s of cinematic (cinematic costs more to produce) - ads-mode
+          pricing depends on which engine a given generation actually uses and is still being finalized.
+          Once this ships: the Video plan gets {VIDEO_CREDITS.video} credits/month - Free/Starter/Plus
+          don&apos;t include video. Whichever mode you use, your photo, video, and any reference audio are
+          sent to third-party AI vendors (Kling, Veo, Seedance, and the fal.ai platform we use to reach
+          them) for processing — different from our audio feature, which runs entirely on our own servers.
         </Text>
       </View>
-
-      <Text style={styles.body}>
-        If you need production-quality AI video today, the current best options are Kling and Utopai
-        Studios&apos; PAI (the engine behind the &quot;Chloe vs History&quot; AI creator). We&apos;ll
-        bring both modes here once they&apos;re actually good.
-      </Text>
     </View>
   );
 }

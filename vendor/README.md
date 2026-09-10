@@ -34,6 +34,25 @@ re-pull manually if a newer version is needed.
   fine-tune on whichever wins once real source video is available.
   Demo assets (`examples/`, ~12MB of sample audio/video) dropped before
   committing.
+- **`wan2.2-upstream/`** — [Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2),
+  Apache-2.0 licensed, public weights (e.g. `Wan-AI/Wan2.2-TI2V-5B` on
+  Hugging Face, not gated). Open video generation model - vendored 2026-09-10
+  while considering whether a narrow fine-tune (our own avatar/character
+  look specifically, not general-purpose parity with Kling/Veo) could be a
+  future self-hosted option for the Ads video mode. Not integrated or
+  fine-tuned yet - see STATUS.md/PROJECT_CONTEXT.md Sec 17 for why this is
+  scoped as a real future R&D project, not something to jump into. Demo
+  media (`assets/`, `examples/` - sample images/audio/video) dropped before
+  committing, same as the other entries here.
+- **`qwen3-tts-upstream/`** — [QwenLM/Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS),
+  Apache-2.0 licensed, public weights (e.g. `Qwen/Qwen3-TTS-12Hz-0.6B-Base`,
+  not gated). Open, multilingual TTS with zero-shot cloning and per-voice
+  fine-tuning support - vendored 2026-09-10 as a possible alternative or
+  supplement to Chatterbox (the model this product actually fine-tunes and
+  runs in production today). A real side-by-side speed/quality test was run
+  against fal.ai's hosted endpoint (not this vendored code) the same day -
+  see STATUS.md for the result. Kept `examples/` (real usage scripts) and
+  the technical report PDF; nothing dropped.
 
 ## Feature C model selection: OmniTalker → Hallo3 → EchoMimicV3
 

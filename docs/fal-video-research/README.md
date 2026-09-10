@@ -226,4 +226,61 @@ Exact prompts: see [`prompts/PROMPTS.md`](./prompts/PROMPTS.md).
 - [`STATUS.md`](../../STATUS.md) — live product status + billing  
 - [`PROJECT_CONTEXT.md`](../../PROJECT_CONTEXT.md) — longer decision history  
 
-_Last updated: 2026-09-08 (Sydney)._
+---
+
+## 2026-09-10 update — third mode locked (Ads/Seedance), all three engines live-tested
+
+**Decision: video ships as three modes, not two, and it's no longer framed as "coming soon."** Talking head (Kling), Cinematic (Veo), and a new **Ads** mode built on Seedance's newer reference-to-video capability plus a persistent, exclusive AI-actor concept modeled on Arcads.ai. Product copy on the home page/mobile/billing was rewritten from hedged "coming soon" language to a confident "three real modes, being wired up now" framing, matching the tone shift already applied once before in Sec 13.
+
+### Real API tests run today (fal.ai, real billed generations, not mocks)
+
+All three called directly via `fal_client` against production fal.ai endpoints:
+
+| Mode | Endpoint | Input | Result |
+| --- | --- | --- | --- |
+| Talking head | `fal-ai/kling-video/ai-avatar/v2/standard` | AI-generated face (stylized, then hyper-realistic) + real Lucy TTS audio (`art_instructor` voice) | **Worked both times** - Kling has no issue with photorealistic AI faces |
+| Cinematic | `fal-ai/veo3.1/fast/image-to-video` | Same stylized face + prompt, `generate_audio: true`, `duration: "4s"` | **Worked** (note: `duration` must be exactly `"4s"`/`"6s"`/`"8s"`, not an arbitrary number) |
+| Ads | `bytedance/seedance-2.0/fast/reference-to-video` | `@Image1` = AI face + text prompt describing an action, `generate_audio: false` | **Blocked on the hyper-realistic face** (`content_policy_violation`: "may contain likenesses of real people") - **worked fine on the more stylized face** |
+
+**Real, load-bearing finding**: Seedance's own safety filter cannot tell a very convincing AI-generated face from an actual photo of a real person, and blocks both. Kling has no equivalent restriction and accepted the identical hyper-realistic image without issue. This directly decides how "Ads" mode routes:
+
+- **Photorealistic actor** (the common case, matches what was asked for - "hyper realistic" like Arcads) → generation runs through **Kling** (Avatar for talking, standard image-to-video for non-talking action shots) using the same stored actor image.
+- **Stylized/3D-character actor**, or specifically the **upload-a-video, recreate-with-my-actor** trick → **Seedance reference-to-video**, which is the only one of the three with a real multi-reference (`@Image1`/`@Video1`/`@Audio1`) motion-transfer capability. Confirmed via fal's own docs/GitHub example: `"@Image1 performs the choreography from @Video1 on a rooftop at sunset."` - exactly the "upload a video, get it recreated with an AI character" mechanic that was asked about.
+
+Demo clip saved to the repo: `web/public/trailers/ads-seedance-demo.mp4` (force-added past the `*.mp4` gitignore, same as the two existing trailer clips) - Seedance reference-to-video, stylized AI character holding a product, UGC-style.
+
+### Seedance 2.0/2.5 reference-to-video - what it actually is (researched via fal's own docs, not guessed)
+
+- Endpoint accepts up to 12 (2.0) or 50 (2.5) reference files across images/videos/audio, referenced in the prompt as `@Image1`/`@Video1`/`@Audio1`, plus a required text prompt.
+- Pricing (720p): Standard ~$0.30/s, Standard-with-video-input ~$0.18/s (40% discount for supplying a video reference), Fast tiers roughly 20% cheaper than Standard. 2.5 supports up to 30s in one pass and up to 50 references but costs more per second.
+- This is a real, documented capability (not inferred) - fal's own GitHub README shows the exact `@Image1 ... @Video1` prompt pattern for motion transfer.
+
+### Arcads.ai research - how the "exclusive AI actor" concept actually works there
+
+Fetched Arcads' own site plus the auto-generated captions of a demo video the user linked (via `yt-dlp --write-auto-sub`, transcript only, no video downloaded/redistributed). Confirmed mechanics, direct quotes from the demo:
+
+- **Avatar creation is text-prompt-driven** ("instead of selecting an existing actor from the library, you can like type your own script... type this prompt and our model - that's a proprietary model - will basically generate multiple images for you"), or photo-driven.
+- **Exclusivity is an account-scoping guarantee, not cryptography**: "this one will be unique to your account. You will be the only one to be able to use this one." I.e., the generated avatar is simply never surfaced to any other customer - a private-storage/access-control guarantee, the same mechanism proposed below for Lucy Labs, not an NFT/blockchain claim despite the "kind of like an NFT" framing.
+- **Consistency across settings/products**: the same actor identity gets re-rendered in new scenes/outfits/holding a specific product photo, explicitly contrasted against Veo/"V3" which the demo says can't hold one consistent actor across different situations - this maps directly to why Ads mode needs its own persistent actor-image asset rather than relying on Cinematic's per-generation Veo pipeline.
+- **Non-talking action shots exist too** (an actor "typing on a laptop... without talking", "looking at the glass... admiring", etc.) - Ads mode should support both a talking path (actor + script + voice, same shape as Talking head) and a silent action path (actor + prompt describing what they're doing, no audio).
+- Arcads explicitly lists Seedance 2.5, Kling, and Sora 2 Pro as backend models it uses - confirms Seedance is a real, current choice for this category of product, not a stretch.
+
+### Exclusive-avatar architecture (proposed, not yet built)
+
+Directly answers "how can we ensure it will be exclusive": exclusivity here means **Lucy Labs' own systems privately own and gate the generated asset** - a real, enforceable guarantee within our platform, not a claim that the underlying image model could never coincidentally produce something similar for someone else (an AI image model is a shared third-party service; that part genuinely can't be locked down, and the copy shouldn't imply otherwise).
+
+1. **Generation inputs**: text prompt, an uploaded photo, or a frame/reference from an uploaded video - all three route to an image-generation call (text→image for a prompt, image-to-image/character-consistency for a photo or video frame) producing one or more candidate portraits.
+2. **Private storage**: the chosen portrait is stored in our own DB/blob storage (same pattern as `generations` table + Vercel Blob already used for audio history) under a new `ai_actors` table, keyed to `user_id`. Never added to any shared/public gallery, never referenced in a generation request for a different account. This is the actual exclusivity mechanism - straightforward to build and enforce since Lucy Labs' backend is the only thing that ever calls fal with that image URL.
+3. **Duplicate/lookalike safeguard**: before finalizing a new actor, compute a face-embedding (a small, fast face-recognition model - several free/cheap options exist, e.g. `insightface`/fal's own face-embedding utilities) and compare it against every other stored actor's embedding. Above a similarity threshold, discard and regenerate with a new seed automatically before showing the user any result. This gives a real technical backstop against two different customers ending up with visually-confusable actors, on top of the private-storage guarantee - not built yet, flagged as a concrete next step.
+4. **Reuse**: every later ad generation (talking or silent, Kling or Seedance) references that same stored image URL, giving one consistent "face" across a brand's whole campaign, exactly matching the Arcads pattern above.
+5. **Contractual reinforcement**: ToS language granting the customer an exclusive usage license to their generated actor within the platform - a policy commitment layered on top of the technical access control, same idea as a design agency not reselling a client's custom logo.
+
+### Still not built (next engineering steps, in order)
+
+1. `ai_actors` DB table + an avatar-generation API route (text/photo/video-frame → candidate image(s) → user picks → stored privately).
+2. The face-embedding similarity safeguard described above.
+3. `/api/generate-video` itself - routes to Kling or Seedance depending on the chosen actor's realism level and whether a reference video was supplied; handles the talking (script + voice) vs. silent-action path.
+4. Ads-mode credit pricing - genuinely varies by engine (Kling path costs the same per-second as Talking head; Seedance path costs meaningfully more, especially without a video-reference discount) - needs a real decision, not a placeholder ratio like Talking head/Cinematic have.
+5. Mobile parity for actor creation/upload UI once the web version exists.
+
+_Last updated: 2026-09-10 (Sydney)._

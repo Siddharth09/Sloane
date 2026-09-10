@@ -1457,3 +1457,106 @@ or M4A/AAC, never WAV, but were written to a `.wav`-suffixed file and handed
 to a WAV-only decoder. Fixed with an ffmpeg transcode step; this one *was*
 verified end-to-end with a real non-WAV test upload against the live
 endpoint, unlike the voice-tuning items above.
+
+## 16. Third video mode (Ads/Seedance) added, all three engines live-tested, 2026-09-10
+
+**Decision: video ships as three modes - Talking head (Kling), Cinematic
+(Veo), and a new Ads mode (Seedance + a persistent, exclusive-per-account AI
+actor) - and product copy no longer frames video as a vague "coming soon."**
+Full technical detail (exact API payloads, pricing, the Arcads.ai research,
+the proposed exclusivity architecture, what's still not built) lives in
+`docs/fal-video-research/README.md`'s 2026-09-10 section - not duplicated
+here. Decisions worth recording at this level:
+
+**Real API access was the actual blocker, not knowledge** - a `FAL_KEY` had
+to be sourced fresh (the account was locked on "exhausted balance" until
+topped up), after which all three engines - Kling Avatar, Veo 3.1 Fast, and
+Seedance 2.0 reference-to-video - were called for real and produced real
+video. This replaces "we should test these APIs" with an actual, verified
+answer: all three work as advertised for this product's needs.
+
+**Seedance has a real, specific limitation that decided the architecture**:
+its own content-policy filter blocks a fully AI-generated but
+hyper-realistic face as a possible real-person likeness, while Kling has no
+such issue on the identical image. Rather than treat this as a dead end for
+"hyper-realistic AI actors" (which is explicitly what was asked for, modeled
+on Arcads.ai), the fix is architectural: route a given Ads-mode generation
+to Kling when the actor is photorealistic, and to Seedance specifically for
+its unique capability neither Kling nor Veo has - recreating an *uploaded
+video's* motion/content with a different character
+(`@Image1 performs the choreography from @Video1`, a real documented fal
+capability) - or for a more stylized actor look. Same stored actor image
+either way; the engine choice is an implementation detail, not something
+the user needs to think about.
+
+**"Exclusive" avatar - researched what this actually means in a shipped
+product (Arcads.ai), not invented from scratch.** Fetched Arcads' own site
+and a demo video's auto-captions (transcript only, via `yt-dlp`, nothing
+downloaded/redistributed) - their own explanation confirms exclusivity is
+an account-scoping/access-control guarantee ("you will be the only one to
+be able to use this one"), not a cryptographic or NFT-backed claim despite
+the surface-level "kind of like an NFT" resemblance. The proposed Lucy Labs
+design mirrors this: a private per-account `ai_actors` table, never
+surfaced to any other customer, plus a new safeguard Arcads' own materials
+didn't describe - a face-embedding similarity check against every other
+stored actor before finalizing a new one, to catch even an accidental
+lookalike across two unrelated customers. Stated plainly to the user: this
+guarantees Lucy Labs' own platform never reuses a generated actor for
+someone else - it cannot guarantee the underlying third-party image model
+could never coincidentally produce something similar for anyone, anywhere,
+which is a meaningfully different (weaker) claim than "exclusive" might
+otherwise imply, and the product copy was written to reflect the real
+guarantee rather than the stronger-sounding one.
+
+**Nothing here is wired into the live product yet** - today's work was real
+API verification plus a product-copy/architecture decision, not
+`/api/generate-video` itself. The `ai_actors` table, the similarity
+safeguard, the actual generation endpoint, and ads-mode credit pricing are
+all still open engineering work, listed in order in STATUS.md's "Next
+steps."
+
+## 17. Open-source model research: Wan 2.2 (video) + Qwen3-TTS (audio), 2026-09-10
+
+The user pointed at two open, ungated, Apache-2.0 models with real public
+weights (not vaporware - checked and confirmed, same diligence as Sec 15's
+OmniTalker-turned-out-to-be-inaccessible lesson) and asked about training
+them to reach Kling/Veo quality. Two different, deliberately separate
+verdicts:
+
+**Wan 2.2 (video): the "match Kling/Veo" framing itself is the wrong goal.**
+Kling and Veo are large, closed, heavily-funded commercial models - matching
+them in general via a from-scratch or lightly-fine-tuned open 5B model isn't
+realistic on this project's GPU budget. The framing that *is* realistic
+mirrors exactly what already works here for TTS: fine-tune narrowly on our
+own avatar/character look (not general video quality), the same way
+Chatterbox is LoRA-fine-tuned per preset voice rather than retrained from
+scratch. Real prerequisites this would need that don't exist yet: a
+consistent-character video training dataset, and meaningfully more GPU time
+than the audio fine-tunes needed (video diffusion training is far more
+compute-hungry). Scoped explicitly as a **future, separate R&D project** -
+vendored the code (`vendor/wan2.2-upstream/`) for reference, did not start
+training, did not spend GPU money on it.
+
+**Qwen3-TTS (audio): genuinely promising, verified with one real, cheap
+test, not just a migration decision.** Desk research surfaced real
+advantages relevant to this project's two biggest recurring pain points this
+session - state-of-the-art word-error-rate on the public Seed-TTS
+benchmark (directly relevant to the skipped-words bugs just fixed in
+Chatterbox with a retry-threshold workaround) and a streaming architecture
+with ~100-130ms latency (directly relevant to the whole "Modal is slow"
+saga). Rather than accept those claims on faith, ran one real test against
+fal.ai's hosted endpoint: cloned Vicky's own voice (from a Chatterbox
+output, not raw training data) and synthesized the same sentence used
+earlier to reproduce Megan's word-skipping bug. Real result: 16s total
+end-to-end vs. 132s for the same sentence on our own Chatterbox/Modal setup
+in that run (a cold-start hit, so not perfectly apples-to-apples, but a real
+number, and still favorable to Qwen3-TTS even against Chatterbox's
+documented warm-case numbers). Both clips sent to the user directly for a
+real quality judgment, since audio quality isn't something Claude can
+evaluate - only timing and Whisper-measured word overlap. **This is
+evidence a closer look might be worthwhile, not a decision to migrate** -
+switching production TTS engines means re-fine-tuning all 9 preset voices
+on a different architecture and rebuilding `lucy_tts_engine.py`'s entire
+generation/chunking/retry pipeline, real work on top of everything already
+invested in the current one. Vendored at `vendor/qwen3-tts-upstream/` for
+when/if a real fine-tuning trial is decided on.
