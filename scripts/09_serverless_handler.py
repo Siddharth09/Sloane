@@ -31,6 +31,7 @@ import soundfile as sf
 from lucy_tts_engine import (
     ReferenceAudioTooShortError,
     UnknownVoiceError,
+    UnsupportedReferenceAudioError,
     generate_clone,
     generate_preset,
 )
@@ -80,7 +81,7 @@ def handler(job):
 
     except UnknownVoiceError as exc:
         return {"error": str(exc)}
-    except ReferenceAudioTooShortError as exc:
+    except (ReferenceAudioTooShortError, UnsupportedReferenceAudioError) as exc:
         return {"error": str(exc)}
 
 

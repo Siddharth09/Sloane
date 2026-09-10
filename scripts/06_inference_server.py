@@ -26,6 +26,7 @@ from lucy_tts_engine import (
     PRESET_VOICES,
     ReferenceAudioTooShortError,
     UnknownVoiceError,
+    UnsupportedReferenceAudioError,
     generate_clone,
     generate_preset,
     preset_t3_cache,
@@ -84,7 +85,7 @@ async def clone_voice_route(
             cfg_weight=cfg_weight,
             speed=speed,
         )
-    except ReferenceAudioTooShortError as exc:
+    except (ReferenceAudioTooShortError, UnsupportedReferenceAudioError) as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     if audio is None:
         return JSONResponse({"error": "no audio generated"}, status_code=500)

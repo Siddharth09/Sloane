@@ -12,7 +12,9 @@ chunking fix.
 """
 import os
 import re
+import shutil
 import string
+import subprocess
 import sys
 import tempfile
 from collections import OrderedDict
@@ -777,6 +779,40 @@ class ReferenceAudioTooShortError(ValueError):
         super().__init__(f"reference audio too short ({duration:.1f}s) — need at least {MIN_UPLOAD_SECONDS}s")
 
 
+class UnsupportedReferenceAudioError(ValueError):
+    def __init__(self):
+        super().__init__("couldn't read that recording — please try again or upload a file instead")
+
+
+def _write_reference_wav(reference_audio_bytes: bytes, tmp_dir: Path) -> Path:
+    """A real uploaded .wav file always worked here, but a browser/app mic
+    recording never actually did: MediaRecorder produces WebM/Opus (web) and
+    expo-audio produces M4A/AAC (mobile) - neither is a WAV container, yet
+    the bytes were written straight to a ".wav"-suffixed file and handed to
+    soundfile (libsndfile), which only decodes WAV/AIFF/FLAC/OGG-Vorbis.
+    Reproduced live 2026-09-10 from a real browser recording:
+    "Error opening '/tmp/....wav': Format not recognised." ffmpeg is already
+    in the deploy image (see modal_app.py's apt_install, added for a
+    different dependency but happens to cover this) and decodes effectively
+    any container/codec, so transcode whenever the bytes aren't already a
+    RIFF/WAVE file instead of assuming the client always sends real WAV.
+    """
+    wav_path = tmp_dir / "reference.wav"
+    if reference_audio_bytes[:4] == b"RIFF" and reference_audio_bytes[8:12] == b"WAVE":
+        wav_path.write_bytes(reference_audio_bytes)
+        return wav_path
+
+    src_path = tmp_dir / "reference.src"
+    src_path.write_bytes(reference_audio_bytes)
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-i", str(src_path), "-ar", "24000", "-ac", "1", str(wav_path)],
+        capture_output=True,
+    )
+    if result.returncode != 0 or not wav_path.exists():
+        raise UnsupportedReferenceAudioError()
+    return wav_path
+
+
 def generate_preset(
     text: str,
     voice_id: str,
@@ -826,13 +862,14 @@ def generate_clone(
     speed: float | None = None,
 ) -> tuple[np.ndarray | None, int | None]:
     """Feature B: zero-shot clone from an uploaded reference clip. Raises
-    ReferenceAudioTooShortError if the upload is under MIN_UPLOAD_SECONDS.
+    ReferenceAudioTooShortError if the upload is under MIN_UPLOAD_SECONDS, or
+    UnsupportedReferenceAudioError if the bytes can't be decoded at all (see
+    _write_reference_wav - covers browser/app mic recordings, not just
+    unrecognized file uploads).
     Returns (audio, sr), or (None, None) if generation produced nothing."""
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp.write(reference_audio_bytes)
-        tmp_path = Path(tmp.name)
-
+    tmp_dir = Path(tempfile.mkdtemp())
     try:
+        tmp_path = _write_reference_wav(reference_audio_bytes, tmp_dir)
         duration = sf.info(str(tmp_path)).duration
         if duration < MIN_UPLOAD_SECONDS:
             raise ReferenceAudioTooShortError(duration)
@@ -853,4 +890,4 @@ def generate_clone(
             **gen_params,
         )
     finally:
-        tmp_path.unlink(missing_ok=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)

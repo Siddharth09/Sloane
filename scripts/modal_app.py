@@ -151,16 +151,18 @@ class LucyTTS:
         import sys
 
         sys.path.insert(0, "/app")
-        global generate_preset, generate_clone, UnknownVoiceError, ReferenceAudioTooShortError
+        global generate_preset, generate_clone, UnknownVoiceError, ReferenceAudioTooShortError, UnsupportedReferenceAudioError
         from lucy_tts_engine import (
             ReferenceAudioTooShortError as _RATSE,
             UnknownVoiceError as _UVE,
+            UnsupportedReferenceAudioError as _URAE,
             generate_clone as _gc,
             generate_preset as _gp,
         )
 
         generate_preset, generate_clone = _gp, _gc
         UnknownVoiceError, ReferenceAudioTooShortError = _UVE, _RATSE
+        UnsupportedReferenceAudioError = _URAE
 
     @modal.method()
     def run_generate_preset(self, text: str, voice_id: str, exaggeration=None, cfg_weight=None, pitch_semitones=None, speed=None):
@@ -184,7 +186,7 @@ class LucyTTS:
                 text, reference_audio_bytes,
                 exaggeration=exaggeration, cfg_weight=cfg_weight, speed=speed,
             )
-        except (UnknownVoiceError, ReferenceAudioTooShortError) as exc:
+        except (UnknownVoiceError, ReferenceAudioTooShortError, UnsupportedReferenceAudioError) as exc:
             return {"error": str(exc)}
         if audio is None:
             return {"error": "no audio generated"}
