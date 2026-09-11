@@ -1280,16 +1280,25 @@ function PayAsYouGoVideoSection() {
 
           <div className="flex gap-2">
             {(Object.entries(VIDEO_PAYGO_ENGINES) as [VideoEngine, (typeof VIDEO_PAYGO_ENGINES)[VideoEngine]][]).map(([id, e]) => (
-              <button
-                key={id}
-                onClick={() => setEngine(id)}
-                className={`flex-1 rounded-2xl border p-2 text-center text-xs transition ${
-                  engine === id ? "border-purple bg-purple text-white shadow-soft" : "border-border bg-white text-muted"
-                }`}
-              >
-                <div className="font-bold">{e.label}</div>
-                <div className="mt-0.5">{e.versionLabel}</div>
-              </button>
+              <div key={id} className="flex-1">
+                <button
+                  onClick={() => setEngine(id)}
+                  className={`w-full rounded-2xl border p-2 text-center text-xs transition ${
+                    engine === id ? "border-purple bg-purple text-white shadow-soft" : "border-border bg-white text-muted"
+                  }`}
+                >
+                  <div className="font-bold">{e.label}</div>
+                  <div className="mt-0.5">{e.versionLabel}</div>
+                </button>
+                <a
+                  href={e.exampleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 block text-center text-[11px] text-purple underline"
+                >
+                  See examples ↗
+                </a>
+              </div>
             ))}
           </div>
 
@@ -1306,7 +1315,16 @@ function PayAsYouGoVideoSection() {
 
           <button
             onClick={balance < 1 ? () => handleBuy("single") : handleGenerate}
-            disabled={loading || (balance >= 1 && !prompt.trim() && !audio.selectedBlob) || buyingPack !== null}
+            disabled={
+              loading ||
+              // Matches the server's real rule (video-paygo/generate/route.ts):
+              // only Kling+audio (its lip-sync Avatar path) can skip the
+              // prompt - Veo/Seedance always need a real scene description,
+              // even when audio is also given (they render silent/ambient
+              // first, then the audio gets muxed on afterward).
+              (balance >= 1 && !prompt.trim() && !(engine === "kling" && audio.selectedBlob)) ||
+              buyingPack !== null
+            }
             className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
           >
             {loading

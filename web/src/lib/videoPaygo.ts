@@ -89,6 +89,11 @@ export const VIDEO_PAYGO_ENGINES: Record<
     falAvatarEndpoint?: string; // only Kling has a proven lip-sync/avatar path in this stack
     durationSeconds: number;
     falDurationValue: string;
+    // fal's own model page for this exact endpoint - real example galleries
+    // showing that engine's actual output quality, linked directly from the
+    // engine picker per direct request ("so they can see the quality of
+    // each") rather than us maintaining our own curated gallery per engine.
+    exampleUrl: string;
   }
 > = {
   veo: {
@@ -98,6 +103,7 @@ export const VIDEO_PAYGO_ENGINES: Record<
     falImageToVideoEndpoint: "fal-ai/veo3.1/fast/image-to-video",
     durationSeconds: 8,
     falDurationValue: "8s",
+    exampleUrl: "https://fal.ai/models/fal-ai/veo3.1/fast",
   },
   kling: {
     label: "Kling",
@@ -107,6 +113,7 @@ export const VIDEO_PAYGO_ENGINES: Record<
     falAvatarEndpoint: "fal-ai/kling-video/ai-avatar/v2/standard",
     durationSeconds: 5,
     falDurationValue: "5",
+    exampleUrl: "https://fal.ai/models/fal-ai/kling-video/v2.1/master/text-to-video",
   },
   seedance: {
     label: "Seedance",
@@ -115,6 +122,7 @@ export const VIDEO_PAYGO_ENGINES: Record<
     falImageToVideoEndpoint: "bytedance/seedance-2.0/fast/image-to-video",
     durationSeconds: 8,
     falDurationValue: "8",
+    exampleUrl: "https://fal.ai/models/bytedance/seedance-2.0/fast/text-to-video",
   },
 };
 

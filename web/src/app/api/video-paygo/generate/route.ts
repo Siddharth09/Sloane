@@ -61,9 +61,14 @@ export async function POST(req: NextRequest) {
     }
     const hasAudio = referenceAudio instanceof Blob && referenceAudio.size > 0;
     const hasImage = referenceImage instanceof Blob && referenceImage.size > 0;
-    if (!prompt && !hasAudio) {
-      // Kling Avatar needs no text prompt (it lip-syncs to the given audio),
-      // every other path needs at least a scene/subject description.
+    const useKlingAvatar = hasAudio && engine === "kling";
+    if (!prompt && !useKlingAvatar) {
+      // Kling Avatar is the only path needing no text prompt (it lip-syncs
+      // to the given audio) - every other path (including Veo/Seedance
+      // with audio, which render silent then get the audio muxed on
+      // afterward) still needs a real scene/subject description, or it'd
+      // submit an empty prompt to the vendor and spend a real credit on a
+      // generation nobody actually described.
       return NextResponse.json({ error: "Describe the video you want" }, { status: 400 });
     }
     if (prompt.length > MAX_PROMPT_LENGTH) {
@@ -100,7 +105,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: 500 });
     }
 
-    const useKlingAvatar = hasAudio && engine === "kling";
     const needsMerge = hasAudio && (engine === "veo" || engine === "seedance");
     const falEndpoint = useKlingAvatar
       ? VIDEO_PAYGO_ENGINES.kling.falAvatarEndpoint!
