@@ -13,6 +13,76 @@ function falHeaders() {
   };
 }
 
+// Real balance-guard infrastructure (2026-09-12) - direct answer to "what if
+// $10k of requests land at once and we don't have that much prepaid on fal."
+// Lucy Labs already collects payment BEFORE ever calling fal (Stripe ->
+// prepaid video credits -> then generate), so no customer can cost real
+// money we haven't already banked - the actual exposure is just a treasury-
+// timing gap (fal's own prepaid balance keeping pace with revenue already
+// collected), not a billing-passthrough problem. This closes that gap two
+// ways: checked live on every generation request (real-time guard, so a
+// burst of demand can't silently drain the balance and start failing mid-
+// generation) and via a periodic low-balance email alert (see
+// @/lib/email.ts's sendLowFalBalanceEmail and
+// api/cron/check-fal-balance/route.ts) so a human tops up before it's ever
+// actually zero.
+export type FalBalance = { usd: number };
+
+// Real finding while wiring this up: fal's billing endpoint requires a
+// separate ADMIN-scoped API key - the regular FAL_KEY used for generation
+// (falHeaders() above) gets a real 401 ("This API key is not permitted to
+// perform this action") against it, confirmed directly against the live
+// account. FAL_ADMIN_KEY needs to be created on fal's dashboard (an API key
+// with admin scope, not the generation key) and set as its own env var -
+// until that exists, getFalBalance throws and hasEnoughFalBalanceToGenerate
+// below fails open (allows generation) rather than silently blocking every
+// real customer over a missing credential.
+export async function getFalBalance(): Promise<FalBalance> {
+  if (!process.env.FAL_ADMIN_KEY) {
+    throw new Error("FAL_ADMIN_KEY is not set - an admin-scoped fal.ai API key is required for balance checks");
+  }
+  const res = await fetch("https://api.fal.ai/v1/account/billing?expand=credits", {
+    headers: { Authorization: `Key ${process.env.FAL_ADMIN_KEY}` },
+  });
+  if (!res.ok) {
+    throw new Error(`fal balance check failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  }
+  const data = await res.json();
+  // Schema not fully documented publicly - defensively check the couple of
+  // shapes fal's own docs/examples show credits under, rather than assuming
+  // one exact path and silently reporting $0 (which would trip the guard
+  // below and block real generation) if fal's response shape differs.
+  const usd =
+    data?.credits?.balance_usd ?? data?.credits?.balance ?? data?.balance_usd ?? data?.balance ?? null;
+  if (typeof usd !== "number") {
+    throw new Error(`fal balance check returned an unexpected shape: ${JSON.stringify(data).slice(0, 300)}`);
+  }
+  return { usd };
+}
+
+// Worst-case real cost of a single pay-as-you-go video (Seedance, see
+// videoPaygo.ts's VIDEO_PAYGO_ENGINE_COST_USD) - if fal's live balance can't
+// cover even one more worst-case video, decline before spending a customer
+// credit rather than find out mid-generation. Deliberately not per-engine
+// (the guard runs before we necessarily know the exact cost path - e.g.
+// whether a lip-sync pass will be needed) - erring toward blocking a little
+// early over letting a real generation fail after a credit's already spent.
+export const FAL_MIN_BALANCE_TO_GENERATE_USD = 2.5;
+
+export async function hasEnoughFalBalanceToGenerate(): Promise<boolean> {
+  try {
+    const { usd } = await getFalBalance();
+    return usd >= FAL_MIN_BALANCE_TO_GENERATE_USD;
+  } catch (err) {
+    // If the balance check itself fails (network blip, fal API change), we
+    // can't prove there's enough - but we also shouldn't block every real
+    // generation on a transient check failure. Logs loudly so this is
+    // visible without ever silently locking out paying customers over it.
+    console.error("[fal] balance guard check failed, allowing generation to proceed", err);
+    return true;
+  }
+}
+
 export async function submitFalJob(endpoint: string, input: Record<string, unknown>): Promise<string> {
   const res = await fetch(`${FAL_BASE}/${endpoint}`, {
     method: "POST",

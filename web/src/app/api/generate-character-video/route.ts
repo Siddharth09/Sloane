@@ -12,6 +12,7 @@ import {
 import { getCharacter, LUCY_VOICE_CREDIT_COST } from "@/lib/characters";
 import { PRESET_VOICES } from "@/lib/presetVoices";
 import { submitModalJob } from "@/lib/modal";
+import { hasEnoughFalBalanceToGenerate } from "@/lib/fal";
 import { PLANS } from "@/lib/plans";
 
 const MAX_SCRIPT_LENGTH = 400;
@@ -86,6 +87,13 @@ export async function POST(req: NextRequest) {
     const quotaError = checkVideoCreditQuota(sub, LUCY_VOICE_CREDIT_COST);
     if (quotaError) {
       return NextResponse.json({ error: quotaError }, { status: 402 });
+    }
+    // Real-time fal balance guard - see fal.ts's comment for why.
+    if (!(await hasEnoughFalBalanceToGenerate())) {
+      return NextResponse.json(
+        { error: "Video generation is temporarily paused while we top up - please try again shortly." },
+        { status: 503 },
+      );
     }
     const reserved = await reserveVideoCredits(accessToken, LUCY_VOICE_CREDIT_COST, PLANS[sub.plan].videoCreditsPerMonth);
     if (!reserved) {

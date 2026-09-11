@@ -63,6 +63,40 @@ export async function sendMagicLinkEmail(email: string, link: string) {
   }
 }
 
+// Operator alert (2026-09-12), not a customer-facing email - sent to
+// whoever ADMIN_ALERT_EMAIL is set to (the account owner), from the
+// scheduled fal-balance check (see api/cron/check-fal-balance/route.ts).
+// Real point of this: catch a draining fal.ai balance with enough runway
+// to top up before it actually locks and starts failing real customer
+// generations - see fal.ts's balance-guard comment for the full picture.
+export async function sendLowFalBalanceEmail(balanceUsd: number) {
+  const to = process.env.ADMIN_ALERT_EMAIL;
+  if (!to || !resend) {
+    if (!resend) console.warn("[email] RESEND_API_KEY not set - skipping low-fal-balance alert");
+    else console.warn("[email] ADMIN_ALERT_EMAIL not set - skipping low-fal-balance alert");
+    return;
+  }
+  try {
+    await resend.emails.send({
+      from: FROM,
+      to,
+      subject: `Lucy Labs — fal.ai balance is low ($${balanceUsd.toFixed(2)})`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+          <h1 style="font-size: 20px;">fal.ai balance is getting low</h1>
+          <p>Current balance: <strong>$${balanceUsd.toFixed(2)}</strong>. Video generation on lucylabs.app draws from this prepaid balance - once it runs out, real customer generations will fail.</p>
+          <p style="text-align: center; margin: 32px 0;">
+            <a href="https://fal.ai/dashboard/billing" style="display: inline-block; background: #1a1a1a; color: #fff; text-decoration: none; padding: 14px 28px; border-radius: 999px; font-weight: 600;">Top up on fal.ai</a>
+          </p>
+          <p style="color: #9a8b83; font-size: 13px;">A real-time guard is already in place to decline new generations gracefully (no charge) rather than let them fail mid-generation once the balance is critically low - but topping up before then keeps things running smoothly for real customers.</p>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error("[email] Failed to send low-fal-balance alert", err);
+  }
+}
+
 export async function sendPaymentFailedEmail(email: string) {
   if (!email || !resend) {
     if (!resend) console.warn("[email] RESEND_API_KEY not set - skipping payment-failed email to", email);

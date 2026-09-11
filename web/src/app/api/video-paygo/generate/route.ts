@@ -10,7 +10,7 @@ import {
   failVideoPaygoJob,
 } from "@/lib/db";
 import { VIDEO_PAYGO_ENGINES, buildFalInput, type VideoEngine } from "@/lib/videoPaygo";
-import { submitFalJob, uploadBufferToFal } from "@/lib/fal";
+import { submitFalJob, uploadBufferToFal, hasEnoughFalBalanceToGenerate } from "@/lib/fal";
 import { submitModalJob } from "@/lib/modal";
 import { PRESET_VOICES } from "@/lib/presetVoices";
 
@@ -107,6 +107,19 @@ export async function POST(req: NextRequest) {
       if (f instanceof Blob && f.size > MAX_UPLOAD_BYTES) {
         return NextResponse.json({ error: `File too large (max ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB)` }, { status: 400 });
       }
+    }
+
+    // Real-time fal balance guard (2026-09-12) - checked right before we'd
+    // actually commit to spending a credit, so a thin fal balance declines
+    // gracefully with no charge instead of a customer's credit being spent
+    // on a generation that then fails mid-flight. See fal.ts's comment for
+    // the full reasoning (this is what makes a burst of real demand safe
+    // without needing a much larger prepaid buffer).
+    if (!(await hasEnoughFalBalanceToGenerate())) {
+      return NextResponse.json(
+        { error: "Video generation is temporarily paused while we top up - please try again shortly." },
+        { status: 503 },
+      );
     }
 
     const spent = await spendVideoCredit(user.id);
