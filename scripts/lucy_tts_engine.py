@@ -232,6 +232,39 @@ NOTCH_HZ_BY_VOICE: dict[str, float] = {
 # classes. plan_delivery() may nudge further from punctuation/discourse;
 # explicit request form fields still win last.
 GEN_PARAMS_BY_VOICE: dict[str, dict] = {
+    # Katie, 2026-09-11 - direct report after her retrain: "bland... no
+    # charisma or energy". Neither of the retrain steps (training data,
+    # reference clip) touches delivery character - that lives here. Same
+    # template already used for Izzy's "punchier... more expressive"
+    # request below: raise exaggeration for energy, loosen cfg_weight so
+    # it isn't fighting the reference for a rigid/flat delivery, raise
+    # temperature a bit for natural variation instead of the flattened
+    # "clearer voices" nudge every other voice got. Not yet ear-confirmed -
+    # needs a real listen like every DSP/param tuning pass in this file.
+    "voice_broadcast": {
+        "exaggeration": 0.75,
+        "cfg_weight": 0.35,
+        "temperature": 0.80,
+    },
+    # Megan, 2026-09-11 - direct report after her retrain: "rushed and
+    # doesn't have enough inflection". Deliberately NOT using DSP
+    # time-stretch to literally slow her down - that mechanism is already
+    # documented elsewhere in this file as causing exactly the "robotic"
+    # artifact she's also describing (see the reverted 0.82/0.96 speed
+    # entries below). Instead reusing the Robbo precedent directly: his
+    # "sped up, drifting" complaint from a loose cfg_weight (0.35) + high
+    # temperature (0.85) was fixed by tightening cfg_weight UP and cutting
+    # temperature DOWN, which reduces the sampling looseness that reads as
+    # rushed/erratic pacing. A modest exaggeration lift (above the 0.5
+    # flat-neutral point) is the separate lever for "inflection" - kept
+    # lower than Katie's above since "rushed" is the bigger complaint here,
+    # and looser exaggeration without also loosening cfg_weight/temperature
+    # shouldn't reintroduce the rushed feeling. Not yet ear-confirmed.
+    "voice_finance": {
+        "exaggeration": 0.6,
+        "cfg_weight": 0.55,
+        "temperature": 0.60,
+    },
     # Punchier comedy timing — a bit more expressive intensity, looser cfg.
     # Reverted back to these original values 2026-09-10 ("revert izzy back
     # to original voice") after a same-day tightened variant
