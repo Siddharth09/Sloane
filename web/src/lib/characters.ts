@@ -84,7 +84,13 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: "marcus",
-    name: "Marcus",
+    // 2026-09-11: display name changed to Mark per direct request
+    // ("rename marcus as mark") - id stays "marcus" (character_id in
+    // generation jobs/URLs, not user-facing), same pattern as Vicky/Jess
+    // above. His voice was already "Mark" (voice_mark), so his existing
+    // character-picker clip already says "Mark" out loud - no video
+    // regen needed, unlike Jess's rename which required a new clip.
+    name: "Mark",
     gender: "male",
     age: "late 20s",
     region: "Nashville, USA",
