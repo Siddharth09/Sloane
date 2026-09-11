@@ -63,16 +63,24 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: "vicky",
-    name: "Vicky",
+    // 2026-09-11: display name changed to Jess per direct request
+    // ("change vicky's name in the video to Jess") - id stays "vicky"
+    // (used as the character_id in generation jobs/URLs, not user-facing)
+    // to avoid touching any stored job records; only the displayed name
+    // changed. Unrelated to the separate "Vicky" label on the
+    // art_instructor preset voice in VoicePicker.tsx - that's a different
+    // product surface (TTS voice picker vs. character picker).
+    name: "Jess",
     gender: "female",
     age: "late 20s",
     region: "Australia",
     imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/GCrI6ghEIlnUFmhtS8X7v_vicky.jpg",
-    // 2026-09-11: switched to Aoife, a second/distinct Irish-accented
-    // voice, per direct request ("give vicky another irish accent") -
-    // was Izzy (voice_comedy), also Irish, which the user felt no longer
-    // suited her face/character after living with it a while.
-    defaultVoiceId: "aoife",
+    // 2026-09-11: switched to Jess (renamed from Aoife - same zero-shot
+    // voice, just renamed to match the character), a second/distinct
+    // Irish-accented voice, per direct request ("give vicky another irish
+    // accent") - was Izzy (voice_comedy), also Irish, which the user felt
+    // no longer suited her face/character after living with it a while.
+    defaultVoiceId: "jess",
   },
   {
     id: "marcus",
@@ -91,11 +99,15 @@ export const CHARACTERS: Character[] = [
     id: "jack",
     name: "Jack",
     gender: "male",
-    age: "mid-40s",
+    age: "mid-20s",
     region: "Sydney, Australia",
-    // Re-generated 2026-09-11 (v2) aged up to mid-40s per direct request
-    // ("make jack in his 40s") - was a generic mid-20s portrait.
-    imageUrl: "https://v3b.fal.media/files/b/0aa9fa83/Qmy4MJQhWBy_JoTsThxcP_jack_v2.jpg",
+    // Reverted 2026-09-11: a mid-40s v2 portrait was generated and shipped
+    // earlier this same day, but the user felt the result read as looking
+    // like "Brad" (his voice) rather than Jack, and asked to put Jack back
+    // the way he was in the older video without spending more to
+    // regenerate - reverted to the original portrait/age rather than
+    // attempting a third portrait.
+    imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/6_ml_AMMqKfis0tvQBm8G_jack.jpg",
     defaultVoiceId: "voice_tech", // Brad - Australian accent, requested explicitly ("like Brad")
   },
 ];

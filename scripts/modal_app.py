@@ -101,7 +101,7 @@ image = (
     .add_local_file(os.path.join(_SCRIPT_DIR, "voice_references", "harper.wav"), "/app/voice_references/harper.wav")
     # 2026-09-11: same pattern for 4 more zero-shot voices - see
     # lucy_tts_engine.py's ZERO_SHOT_PRESET_VOICES for the full story.
-    .add_local_file(os.path.join(_SCRIPT_DIR, "voice_references", "aoife.wav"), "/app/voice_references/aoife.wav")
+    .add_local_file(os.path.join(_SCRIPT_DIR, "voice_references", "jess.wav"), "/app/voice_references/jess.wav")
     .add_local_file(os.path.join(_SCRIPT_DIR, "voice_references", "liam.wav"), "/app/voice_references/liam.wav")
     .add_local_file(os.path.join(_SCRIPT_DIR, "voice_references", "ryan.wav"), "/app/voice_references/ryan.wav")
     .add_local_file(os.path.join(_SCRIPT_DIR, "voice_references", "tyler.wav"), "/app/voice_references/tyler.wav")
