@@ -1102,7 +1102,7 @@ const SHOWCASE_MODELS: ShowcaseModel[] = [
   {
     id: "kling",
     name: "Kling v3 Pro",
-    note: "Our pick: the best face consistency and scene quality of the five we tested.",
+    note: "Our pick: the best face consistency and scene quality of the five we tested. Note: this is a newer Kling version than the \"Kling 2.1 Master\" you can actually generate with above.",
     videoUrl: "/model-showcase/moon_kling_v3_pro.mp4",
   },
   {
@@ -1146,9 +1146,9 @@ function ModelShowcaseSection() {
       subtitle="We ran the same reference photo and the same prompt through five video engines - tap one to see the result."
     >
       <p className="text-sm leading-relaxed text-muted">
-        Lucy Labs can generate video with Kling, Veo, Grok, MiniMax, or Seedance. Quality, speed, and reliability
-        vary a lot by engine and by scene - here&apos;s the identical lunar scene, run through each one, so you can
-        see the difference for yourself.
+        Pay as you go above lets you generate with Kling, Veo, Grok, MiniMax, or Seedance. Quality, speed, and
+        reliability vary a lot by engine and by scene - here&apos;s the identical lunar scene, run through each one,
+        so you can see the difference before you pick an engine to generate your own.
       </p>
 
       {model.videoUrl ? (
@@ -1461,9 +1461,9 @@ function PayAsYouGoVideoSection() {
             ))}
           </div>
 
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {(Object.entries(VIDEO_PAYGO_ENGINES) as [VideoEngine, (typeof VIDEO_PAYGO_ENGINES)[VideoEngine]][]).map(([id, e]) => (
-              <div key={id} className="flex-1">
+              <div key={id}>
                 <button
                   onClick={() => setEngine(id)}
                   className={`w-full rounded-2xl border p-2 text-center text-xs transition ${
@@ -1525,8 +1525,8 @@ function PayAsYouGoVideoSection() {
       )}
 
       <p className="text-xs italic leading-relaxed text-muted">
-        Same flat price per video regardless of engine - real clip length differs (Kling is a hard 5s, Veo/Seedance are 8s).
-        Adding audio on Kling lip-syncs your photo to it; on Veo/Seedance it&apos;s layered onto the finished clip instead.
+        Same flat price per video regardless of engine - real clip length differs (Kling is a hard 5s, the other four are 8s).
+        Adding audio on Kling lip-syncs your photo to it; on every other engine it&apos;s layered onto the finished clip instead.
       </p>
     </Card>
   );
@@ -1554,9 +1554,9 @@ export default function Home() {
         <VideoIntroSection />
         <CustomVideoSection />
         <CinematicVideoSection />
-        <ModelShowcaseSection />
         <CharacterVideoSection />
         <PayAsYouGoVideoSection />
+        <ModelShowcaseSection />
         <Footer />
       </main>
     </div>

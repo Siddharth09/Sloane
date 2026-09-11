@@ -66,7 +66,7 @@
  * enabled, not one being incurred today).
  */
 
-export type VideoEngine = "kling" | "veo" | "seedance";
+export type VideoEngine = "kling" | "veo" | "seedance" | "grok" | "minimax";
 
 export const VIDEO_PAYGO_RESOLUTION = "720p";
 export const VIDEO_PAYGO_PRICE_USD_CENTS = 399; // $3.99, flat across all three engines
@@ -89,6 +89,12 @@ export const VIDEO_PAYGO_ENGINES: Record<
     falAvatarEndpoint?: string; // only Kling has a proven lip-sync/avatar path in this stack
     durationSeconds: number;
     falDurationValue: string;
+    // Only set when an engine's resolution enum doesn't match the shared
+    // VIDEO_PAYGO_RESOLUTION constant below - MiniMax H3 Max has no "720p"
+    // option at all (its enum is "480P"/"768P"/"1080P", capitalized
+    // differently too), so it needs its own value rather than silently
+    // reusing Veo/Seedance/Grok's "720p".
+    falResolutionValue?: string;
     // fal's own model page for this exact endpoint - real example galleries
     // showing that engine's actual output quality, linked directly from the
     // engine picker per direct request ("so they can see the quality of
@@ -124,6 +130,32 @@ export const VIDEO_PAYGO_ENGINES: Record<
     falDurationValue: "8",
     exampleUrl: "https://fal.ai/models/bytedance/seedance-2.0/fast/text-to-video",
   },
+  // Added 2026-09-12 per direct request ("add minimax grok and our other
+  // models") after a real head-to-head test of both against the existing
+  // three (see the model-comparison showcase section on the home page).
+  // Endpoints/schemas confirmed directly against fal's own API docs and a
+  // real test submission that day, not guessed.
+  grok: {
+    label: "Grok",
+    versionLabel: "Grok Imagine Video 1.5",
+    falEndpoint: "xai/grok-imagine-video/v1.5/text-to-video",
+    falImageToVideoEndpoint: "xai/grok-imagine-video/v1.5/image-to-video",
+    durationSeconds: 8,
+    falDurationValue: "8",
+    exampleUrl: "https://fal.ai/models/xai/grok-imagine-video/v1.5/text-to-video",
+  },
+  minimax: {
+    label: "MiniMax",
+    versionLabel: "MiniMax H3 Max",
+    falEndpoint: "minimax/h3-max/text-to-video",
+    falImageToVideoEndpoint: "minimax/h3-max/image-to-video",
+    durationSeconds: 8,
+    falDurationValue: "8",
+    // "768P" (its default/mid resolution) - see falResolutionValue comment
+    // above for why this can't just reuse the shared 720p constant.
+    falResolutionValue: "768P",
+    exampleUrl: "https://fal.ai/models/minimax/h3-max/text-to-video",
+  },
 };
 
 // Real cost per engine at each engine's own duration above, +15% buffer -
@@ -146,10 +178,27 @@ export const VIDEO_PAYGO_ENGINES: Record<
 //   2026-09-11 against fal's own model page: $0.0002/second**, so ~$0.0016
 //   for an 8s clip. Negligible, comfortably inside the existing 15%
 //   buffer - confirmed, not just assumed.
+// Grok/MiniMax added 2026-09-12, same +15% buffer methodology as the three
+// above. Real list prices checked directly (fal's own pricing pages,
+// 2026-09-12):
+// - Grok Imagine Video 1.5, 720p, 8s: $0.14/s -> $1.12, +$0.01 for the one
+//   reference image when given -> $1.13 -> buffered $1.30.
+// - MiniMax H3 Max, 768p, 8s: **using the REGULAR $0.08/s rate, not the
+//   75%-off promotional $0.02/s rate** - that promo explicitly expires
+//   2026-09-14, two days from this being written, and this is a permanent
+//   engine option, not a one-off test - budgeting off a rate that expires
+//   almost immediately would quietly blow the profit floor the day after
+//   ship. $0.08/s * 8s = $0.64 -> buffered $0.74.
+// Both land well under Seedance's $2.23 (still the worst case), so the
+// existing $3.99 flat price and $1/video profit floor both hold with no
+// repricing needed - see the module comment above for the full worst-case
+// math this depends on.
 export const VIDEO_PAYGO_ENGINE_COST_USD: Record<VideoEngine, number> = {
   veo: 1.38,
   kling: 1.61,
   seedance: 2.23,
+  grok: 1.30,
+  minimax: 0.74,
 };
 
 export type VideoCreditPack = {

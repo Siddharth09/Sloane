@@ -8,7 +8,7 @@ const MAX_PROMPT_LENGTH = 600;
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
 // Pay-as-you-go now accepts an optional reference photo/video-frame and/or
-// an optional audio track alongside the text prompt, on any of the three
+// an optional audio track alongside the text prompt, on any of the five
 // engines - see @/lib/videoFrame.ts for the client-side video-frame
 // extraction that means this route only ever receives a still image, never
 // a raw video file.
@@ -19,10 +19,15 @@ const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 // - Kling + audio given -> Kling Avatar (the only proven lip-sync path;
 //   requires an image, since Avatar animates a photo to match audio).
 // - Any engine + image, no audio -> that engine's image-to-video endpoint,
-//   Veo's own voice/ambient audio baked in (generate_audio: true).
-// - Veo/Seedance + audio given -> silent/ambient generation, then muxed
-//   with the given audio afterward (fal ffmpeg merge-audio-video) - a
-//   straight audio-track swap, not lip-sync, disclosed as such in the UI.
+//   Veo's own voice/ambient audio baked in (generate_audio: true, Veo only
+//   - Seedance/Grok/MiniMax have no native-audio field on their schemas,
+//   so they render silent either way).
+// - Any engine except Kling + audio given -> silent/ambient generation,
+//   then muxed with the given audio afterward (fal ffmpeg
+//   merge-audio-video) - a straight audio-track swap, not lip-sync,
+//   disclosed as such in the UI. Originally just Veo/Seedance; Grok and
+//   MiniMax (added 2026-09-12) have the same no-native-audio schema shape,
+//   so they need the same treatment - see needsMerge below.
 // - Neither image nor audio -> unchanged existing text-to-video behavior.
 function buildFalInput(engine: VideoEngine, prompt: string, imageUrl: string | null, wantsNativeAudio: boolean): Record<string, unknown> {
   const def = VIDEO_PAYGO_ENGINES[engine];
@@ -39,6 +44,23 @@ function buildFalInput(engine: VideoEngine, prompt: string, imageUrl: string | n
       return { prompt, duration: def.falDurationValue, image_url: imageUrl ?? undefined };
     case "seedance":
       return { prompt, duration: def.falDurationValue, resolution: VIDEO_PAYGO_RESOLUTION, image_url: imageUrl ?? undefined };
+    case "grok":
+      // duration is a real integer field on this endpoint's schema (not a
+      // string enum like Kling/Veo) - sent as a number, not the string
+      // falDurationValue is stored as elsewhere, to match.
+      return { prompt, image_url: imageUrl ?? undefined, duration: Number(def.falDurationValue), resolution: def.falResolutionValue ?? VIDEO_PAYGO_RESOLUTION };
+    case "minimax":
+      // prompt_expansion_mode is required by this endpoint's schema -
+      // "balanced" (~1s overhead) rather than "quality" (~30s), same choice
+      // made in the real test submission this engine's cost was verified
+      // against.
+      return {
+        prompt,
+        image_url: imageUrl ?? undefined,
+        duration: Number(def.falDurationValue),
+        resolution: def.falResolutionValue ?? VIDEO_PAYGO_RESOLUTION,
+        prompt_expansion_mode: "balanced",
+      };
   }
 }
 
@@ -105,7 +127,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: 500 });
     }
 
-    const needsMerge = hasAudio && (engine === "veo" || engine === "seedance");
+    const needsMerge = hasAudio && engine !== "kling";
     const falEndpoint = useKlingAvatar
       ? VIDEO_PAYGO_ENGINES.kling.falAvatarEndpoint!
       : hasImage
