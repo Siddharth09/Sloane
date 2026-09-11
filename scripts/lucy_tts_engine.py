@@ -141,6 +141,29 @@ PITCH_SEMITONES_BY_VOICE: dict[str, float] = {
     # per "revert izzy back to original voice" - the real fix for her pitch
     # and accent is retraining on blended source audio (see the 3m5.mp4
     # blend below), not stacking more DSP on the same LoRA checkpoint.
+    #
+    # 2026-09-11 "make all voices sound slightly different, still human"
+    # request - a small +0.3 semitone nudge on every voice EXCEPT Rachel
+    # (already has her own +1.0 tuned in, not stacking on it) and Izzy
+    # (explicitly reverted to zero DSP above per direct request - not
+    # re-adding any pitch shift for her). Deliberately much smaller than
+    # the 1.5-2.5 semitone shifts that were reported "artificial"/
+    # "robotic" for Katie/Izzy earlier in this project - this is a
+    # genuinely different, much more conservative magnitude, not the same
+    # mistake repeated. Still: pitch-shifting doesn't touch vocal-tract
+    # resonance (see the honest caveat above) and has NOT been confirmed by
+    # ear yet - needs a real listen before treating this as final, same as
+    # every other DSP tuning pass in this project's history.
+    "art_instructor": 0.3,
+    "music_instructor": 0.3,
+    "voice_business": 0.3,
+    "voice_finance": 0.3,
+    "voice_broadcast": 0.3,
+    "voice_tech": 0.3,
+    "voice_mark": 0.3,
+    "voice_sales": 0.3,
+    "voice_adam": 0.3,
+    "voice_emily": 0.3,
 }
 
 # Per-voice high-pass filter cutoff (Hz) - cuts low-frequency room
@@ -177,7 +200,7 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
     "voice_comedy": {
         "exaggeration": 0.75,
         "cfg_weight": 0.35,
-        "temperature": 0.85,
+        "temperature": 0.80,  # was 0.85 - same -0.05 clarity nudge as DEFAULT_GEN_PARAMS, see its comment
     },
     # Sales energy (Robbo). Was cfg_weight 0.35 / temperature 0.85 (looser
     # than DEFAULT_GEN_PARAMS's 0.4/0.8 in both directions) - reported live
@@ -198,7 +221,7 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
     "voice_sales": {
         "exaggeration": 0.55,
         "cfg_weight": 0.55,
-        "temperature": 0.65,
+        "temperature": 0.60,  # was 0.65 - same -0.05 clarity nudge, and consistent with this voice's own existing "tighter = less accent drift" reasoning above
     },
     # Adam - "softer", 2026-09-10: lower exaggeration (less intense/forceful
     # delivery) + slightly higher cfg_weight (steadier, less erratic) for a
@@ -207,7 +230,7 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
     "voice_adam": {
         "exaggeration": 0.45,
         "cfg_weight": 0.5,
-        "temperature": 0.75,
+        "temperature": 0.70,  # was 0.75 - same -0.05 clarity nudge, see DEFAULT_GEN_PARAMS comment
     },
     # Rachel - "less husky, more feminine, soft yet bold", 2026-09-10.
     # Honest framing: none of these knobs change vocal-tract resonance
@@ -220,7 +243,7 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
     "voice_rachel": {
         "exaggeration": 0.55,
         "cfg_weight": 0.5,
-        "temperature": 0.7,
+        "temperature": 0.65,  # was 0.7 - same -0.05 clarity nudge, see DEFAULT_GEN_PARAMS comment
     },
     # Broadcast / instructor voices stay near DEFAULT_GEN_PARAMS (no entry).
 }
@@ -271,7 +294,15 @@ PITCH_JITTER_BY_VOICE: dict[str, float] = {}
 # why these starting values, and note they're overridable per-request below
 # so they can be A/B tested by ear without a redeploy.
 DEFAULT_GEN_PARAMS = {
-    "temperature": 0.8,
+    # Was 0.8. 2026-09-11 "make the voices clearer" request: temperature
+    # controls sampling randomness, so a small decrease trades a little
+    # spontaneity for more consistent, clearer pronunciation - deliberately
+    # NOT using cfg_weight for this (this file's own comment two lines down
+    # already documents that pushing cfg_weight UP trends toward robotic-
+    # sounding, the opposite of "clearer and human-like"). Not yet
+    # ear-verified - needs a real listen, same as every DSP tuning pass in
+    # this project's history.
+    "temperature": 0.75,
     "repetition_penalty": 1.2,
     "exaggeration": 0.6,  # emotional intensity; 0.5 = flat/neutral default
     "cfg_weight": 0.4,  # lower = looser/more natural pacing, less robotic
