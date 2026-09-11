@@ -3,6 +3,8 @@ import {
   initSchema,
   getSubscriberByToken,
   checkVideoCreditQuota,
+  reserveVideoCredits,
+  releaseVideoCredits,
   createSubscriptionVideoJob,
   setSubscriptionVideoJobModalId,
   setSubscriptionVideoJobRequestId,
@@ -13,7 +15,7 @@ import {
 import { PRESET_VOICES } from "@/components/VoicePicker";
 import { submitModalJob } from "@/lib/modal";
 import { submitFalJob, uploadBufferToFal } from "@/lib/fal";
-import { VIDEO_CREDIT_COSTS } from "@/lib/plans";
+import { VIDEO_CREDIT_COSTS, PLANS } from "@/lib/plans";
 
 const MAX_PROMPT_LENGTH = 600;
 const MAX_REFERENCE_AUDIO_BYTES = 7 * 1024 * 1024;
@@ -81,13 +83,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // checkVideoCreditQuota is a fast, friendly pre-check; reserveVideoCredits
+    // is the real atomic enforcement (see its comment in db.ts).
     const quotaError = checkVideoCreditQuota(sub, CINEMATIC_CREDIT_COST);
     if (quotaError) {
       return NextResponse.json({ error: quotaError }, { status: 402 });
     }
+    const reserved = await reserveVideoCredits(accessToken, CINEMATIC_CREDIT_COST, PLANS[sub.plan].videoCreditsPerMonth);
+    if (!reserved) {
+      return NextResponse.json({ error: quotaError ?? "Not enough video credits left this billing period" }, { status: 402 });
+    }
 
-    const imageBuffer = Buffer.from(await referenceImage.arrayBuffer());
-    const referenceImageUrl = await uploadBufferToFal(imageBuffer, referenceImage.type || "image/jpeg", "reference.jpg");
+    let referenceImageUrl: string;
+    try {
+      const imageBuffer = Buffer.from(await referenceImage.arrayBuffer());
+      referenceImageUrl = await uploadBufferToFal(imageBuffer, referenceImage.type || "image/jpeg", "reference.jpg");
+    } catch (err) {
+      await releaseVideoCredits(accessToken, CINEMATIC_CREDIT_COST);
+      const message = err instanceof Error ? err.message : "Upload failed";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
     const needsMerge = audioSource !== "engine_native";
 
     const jobId = await createSubscriptionVideoJob({
@@ -138,6 +153,7 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Submission failed";
       await failSubscriptionVideoJob(jobId, message);
+      await releaseVideoCredits(accessToken, CINEMATIC_CREDIT_COST);
       return NextResponse.json({ error: message }, { status: 500 });
     }
   } catch (err) {

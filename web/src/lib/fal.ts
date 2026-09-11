@@ -29,11 +29,25 @@ export async function submitFalJob(endpoint: string, input: Record<string, unkno
 
 export type FalJobStatus = "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
 
+// Real bug fixed here: this used to return "FAILED" on ANY non-2xx HTTP
+// response from fal's own status endpoint - indistinguishable from fal
+// genuinely reporting the underlying generation as failed. Every caller
+// treats "FAILED" the same way: mark the job failed and refund the user's
+// credit. A transient blip on fal's side (a 500/429 while the real Kling/
+// Veo job is still running or has already succeeded) would falsely refund
+// a credit for a video that either doesn't exist yet or does exist and
+// just got orphaned (no fal_request_id follow-up ever recorded it) -
+// costing real fal money for nothing while also giving the credit back for
+// free. Now throws on a non-2xx response instead, so callers can retry on
+// the next poll rather than treating "we couldn't check" as "it failed."
 export async function getFalJobStatus(endpoint: string, requestId: string): Promise<FalJobStatus> {
   const res = await fetch(`${FAL_BASE}/${endpoint}/requests/${requestId}/status`, {
     headers: falHeaders(),
   });
-  if (!res.ok) return "FAILED";
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`fal status check failed (${res.status}): ${text.slice(0, 300)}`);
+  }
   const data = await res.json();
   return (data.status as FalJobStatus) ?? "IN_PROGRESS";
 }

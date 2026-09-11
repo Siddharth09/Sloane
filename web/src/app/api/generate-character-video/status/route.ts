@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getCharacterVideoJob,
-  completeCharacterVideoJob,
-  failCharacterVideoJob,
-  setCharacterVideoJobRequestId,
-  incrementUsage,
-} from "@/lib/db";
+import { getCharacterVideoJob, completeCharacterVideoJob, failCharacterVideoJob, setCharacterVideoJobRequestId, releaseVideoCredits } from "@/lib/db";
 import { getCharacter } from "@/lib/characters";
 import { submitFalJob, getFalJobStatus, getFalJobResult, uploadBufferToFal } from "@/lib/fal";
 import { getModalJobStatus } from "@/lib/modal";
@@ -14,12 +8,17 @@ const KLING_AVATAR_ENDPOINT = "fal-ai/kling-video/ai-avatar/v2/standard";
 
 export async function GET(req: NextRequest) {
   const jobId = req.nextUrl.searchParams.get("jobId");
+  const accessToken = req.nextUrl.searchParams.get("access_token");
   if (!jobId) {
     return NextResponse.json({ error: "jobId is required" }, { status: 400 });
   }
 
   const job = await getCharacterVideoJob(jobId);
-  if (!job) {
+  // Ownership check (real bug fixed here - this route previously let
+  // anyone who obtained a job's UUID read its script/video with no
+  // authentication at all, unlike video-paygo's status route which already
+  // checked job.user_id against the caller).
+  if (!job || job.access_token !== accessToken) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
   if (job.status === "completed") {
@@ -37,12 +36,14 @@ export async function GET(req: NextRequest) {
       modalStatus = await getModalJobStatus(job.modal_job_id.startsWith("modal:") ? job.modal_job_id.slice(6) : job.modal_job_id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "TTS status check failed";
-      await failCharacterVideoJob(job.id, message);
+      if (await failCharacterVideoJob(job.id, message)) await releaseVideoCredits(job.access_token, job.credits_cost);
       return NextResponse.json({ status: "FAILED", error: message });
     }
 
     if (modalStatus.status === "FAILED") {
-      await failCharacterVideoJob(job.id, modalStatus.error ?? "Voice generation failed");
+      if (await failCharacterVideoJob(job.id, modalStatus.error ?? "Voice generation failed")) {
+        await releaseVideoCredits(job.access_token, job.credits_cost);
+      }
       return NextResponse.json({ status: "FAILED", error: modalStatus.error ?? "Voice generation failed" });
     }
     if (modalStatus.status !== "COMPLETED") {
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ status: "IN_PROGRESS" });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Lip-sync submission failed";
-      await failCharacterVideoJob(job.id, message);
+      if (await failCharacterVideoJob(job.id, message)) await releaseVideoCredits(job.access_token, job.credits_cost);
       return NextResponse.json({ status: "FAILED", error: message });
     }
   }
@@ -75,27 +76,35 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ status: "IN_PROGRESS" });
   }
 
-  const falStatus = await getFalJobStatus(job.fal_endpoint, job.fal_request_id);
+  let falStatus;
+  try {
+    falStatus = await getFalJobStatus(job.fal_endpoint, job.fal_request_id);
+  } catch {
+    // Transient error checking status (not a real vendor failure, see
+    // fal.ts's getFalJobStatus) - try again on the next poll.
+    return NextResponse.json({ status: "IN_PROGRESS" });
+  }
+
   if (falStatus === "COMPLETED") {
     try {
       const result = await getFalJobResult(job.fal_endpoint, job.fal_request_id);
       const videoUrl = result.video?.url;
       if (!videoUrl) throw new Error("fal result had no video url");
       await completeCharacterVideoJob(job.id, videoUrl);
-      // video_seconds_used doubles as "video credits used" (see plans.ts -
-      // 1 credit = 1s talking-head) - incrementUsage's videoSeconds param
-      // is exactly this same unit, 0 characters since no audio quota is
-      // touched by this feature.
-      await incrementUsage(job.access_token, 0, job.credits_cost);
+      // Usage was already recorded atomically at submission time (see
+      // reserveVideoCredits in generate-character-video/route.ts) - no
+      // incrementUsage call needed here anymore.
       return NextResponse.json({ status: "COMPLETED", videoUrl });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to fetch result";
-      await failCharacterVideoJob(job.id, message);
+      if (await failCharacterVideoJob(job.id, message)) await releaseVideoCredits(job.access_token, job.credits_cost);
       return NextResponse.json({ status: "FAILED", error: message });
     }
   }
   if (falStatus === "FAILED") {
-    await failCharacterVideoJob(job.id, "Generation failed at the vendor (often a content-policy block)");
+    if (await failCharacterVideoJob(job.id, "Generation failed at the vendor (often a content-policy block)")) {
+      await releaseVideoCredits(job.access_token, job.credits_cost);
+    }
     return NextResponse.json({ status: "FAILED", error: "Generation failed" });
   }
   return NextResponse.json({ status: "IN_PROGRESS" });

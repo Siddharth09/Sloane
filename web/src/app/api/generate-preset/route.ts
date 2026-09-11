@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSubscriberByToken, checkQuota, incrementUsage, checkFreeQuota, recordFreeUsage, createPendingGeneration, initSchema } from "@/lib/db";
+import { getSubscriberByToken, checkQuota, reserveCharacterUsage, checkFreeQuota, recordFreeUsage, createPendingGeneration, initSchema } from "@/lib/db";
 import { isPodMode, generateViaPod, submitGenerationJob } from "@/lib/inferenceBackend";
 import { getSessionUser } from "@/lib/auth";
 import { saveGenerationAudio } from "@/lib/generationHistory";
+import { PLANS } from "@/lib/plans";
 
 // Checks the caller's plan/usage first, then generates via whichever
 // backend INFERENCE_BACKEND selects - the browser never talks to RunPod or
@@ -36,9 +37,20 @@ export async function POST(req: NextRequest) {
       if (!sub) {
         return NextResponse.json({ error: "Access code not recognized" }, { status: 401 });
       }
+      // checkQuota is a fast, friendly pre-check; reserveCharacterUsage
+      // right after is the real atomic enforcement (see its comment in
+      // db.ts). Real bug this closes: in Pod mode this request blocks for
+      // the full length of generation before usage was previously
+      // recorded, and even in Serverless mode there's a real (if smaller)
+      // window - two concurrent requests against the same subscriber could
+      // both read the same pre-generation characters_used and both pass.
       const quotaError = checkQuota(sub, text.length);
       if (quotaError) {
         return NextResponse.json({ error: quotaError }, { status: 402 });
+      }
+      const reserved = await reserveCharacterUsage(accessToken, text.length, PLANS[sub.plan].charactersPerMonth);
+      if (!reserved) {
+        return NextResponse.json({ error: quotaError ?? "This would put you over your plan's character limit." }, { status: 402 });
       }
     } else {
       const freeError = await checkFreeQuota(freeTierId, text.length);
@@ -82,9 +94,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (accessToken) {
-      await incrementUsage(accessToken, text.length, 0);
-    } else {
+    // Subscriber usage was already recorded atomically above, before
+    // generation started (see reserveCharacterUsage) - only the free tier
+    // (a soft, not-airtight nudge by design - see checkFreeQuota's own
+    // comment) still records usage here, after the fact.
+    if (!accessToken) {
       await recordFreeUsage(freeTierId, text.length);
     }
     return NextResponse.json(result);

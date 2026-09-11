@@ -32,7 +32,14 @@ export async function GET(req: NextRequest) {
   // Merge already submitted (own/cloned audio being muxed onto the video) -
   // poll THAT job for the final result instead of the original generation.
   if (job.merge_request_id) {
-    const mergeStatus = await getFalJobStatus(FFMPEG_MERGE_ENDPOINT, job.merge_request_id);
+    let mergeStatus;
+    try {
+      mergeStatus = await getFalJobStatus(FFMPEG_MERGE_ENDPOINT, job.merge_request_id);
+    } catch {
+      // Transient error checking status (not a real vendor failure) - try
+      // again on the next poll instead of failing the job.
+      return NextResponse.json({ status: "IN_PROGRESS" });
+    }
     if (mergeStatus === "COMPLETED") {
       try {
         const result = await getFalJobResult(FFMPEG_MERGE_ENDPOINT, job.merge_request_id);
@@ -42,20 +49,27 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ status: "COMPLETED", videoUrl });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to fetch merged result";
-        await failVideoPaygoJob(job.id, message);
-        await refundVideoCredit(user.id);
+        // Atomic claim - only refund if THIS call actually transitioned the
+        // job to failed, so two overlapping polls can't both refund it.
+        if (await failVideoPaygoJob(job.id, message)) await refundVideoCredit(user.id);
         return NextResponse.json({ status: "FAILED", error: message });
       }
     }
     if (mergeStatus === "FAILED") {
-      await failVideoPaygoJob(job.id, "Combining your audio with the video failed");
-      await refundVideoCredit(user.id);
+      if (await failVideoPaygoJob(job.id, "Combining your audio with the video failed")) {
+        await refundVideoCredit(user.id);
+      }
       return NextResponse.json({ status: "FAILED", error: "Generation failed - your credit has been refunded" });
     }
     return NextResponse.json({ status: "IN_PROGRESS" });
   }
 
-  const falStatus = await getFalJobStatus(job.fal_endpoint, job.fal_request_id);
+  let falStatus;
+  try {
+    falStatus = await getFalJobStatus(job.fal_endpoint, job.fal_request_id);
+  } catch {
+    return NextResponse.json({ status: "IN_PROGRESS" });
+  }
 
   if (falStatus === "COMPLETED") {
     try {
@@ -73,15 +87,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ status: "COMPLETED", videoUrl });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to fetch result";
-      await failVideoPaygoJob(job.id, message);
-      await refundVideoCredit(user.id);
+      if (await failVideoPaygoJob(job.id, message)) await refundVideoCredit(user.id);
       return NextResponse.json({ status: "FAILED", error: message });
     }
   }
 
   if (falStatus === "FAILED") {
-    await failVideoPaygoJob(job.id, "Generation failed at the vendor (often a content-policy block)");
-    await refundVideoCredit(user.id);
+    if (await failVideoPaygoJob(job.id, "Generation failed at the vendor (often a content-policy block)")) {
+      await refundVideoCredit(user.id);
+    }
     return NextResponse.json({ status: "FAILED", error: "Generation failed - your credit has been refunded" });
   }
 

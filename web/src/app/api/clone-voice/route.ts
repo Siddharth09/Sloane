@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSubscriberByToken, checkQuota, incrementUsage, checkFreeQuota, recordFreeUsage, createPendingGeneration, initSchema } from "@/lib/db";
+import { getSubscriberByToken, checkQuota, reserveCharacterUsage, checkFreeQuota, recordFreeUsage, createPendingGeneration, initSchema } from "@/lib/db";
 import { isPodMode, generateViaPod, submitGenerationJob } from "@/lib/inferenceBackend";
 import { getSessionUser } from "@/lib/auth";
 import { saveGenerationAudio } from "@/lib/generationHistory";
+import { PLANS } from "@/lib/plans";
 
 // RunPod's /run input cap is 10MB - a base64-encoded reference clip much
 // past a minute or two of decent-quality audio could exceed that. The UI
@@ -30,9 +31,15 @@ export async function POST(req: NextRequest) {
       if (!sub) {
         return NextResponse.json({ error: "Access code not recognized" }, { status: 401 });
       }
+      // Atomic reservation - see generate-preset/route.ts for the same fix
+      // and why checkQuota alone isn't enough enforcement.
       const quotaError = checkQuota(sub, text.length);
       if (quotaError) {
         return NextResponse.json({ error: quotaError }, { status: 402 });
+      }
+      const reserved = await reserveCharacterUsage(accessToken, text.length, PLANS[sub.plan].charactersPerMonth);
+      if (!reserved) {
+        return NextResponse.json({ error: quotaError ?? "This would put you over your plan's character limit." }, { status: 402 });
       }
     } else {
       const freeError = await checkFreeQuota(freeTierId, text.length);
@@ -85,9 +92,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (accessToken) {
-      await incrementUsage(accessToken, text.length, 0);
-    } else {
+    // Subscriber usage was already recorded atomically above, before
+    // generation started - only the free tier still records usage here.
+    if (!accessToken) {
       await recordFreeUsage(freeTierId, text.length);
     }
     return NextResponse.json(result);

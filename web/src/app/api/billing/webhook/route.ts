@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
-import { upsertSubscriberForCheckout, setSubscriberStatus, linkSubscriberToUser, initSchema, addVideoCredits } from "@/lib/db";
+import { upsertSubscriberForCheckout, setSubscriberStatus, linkSubscriberToUser, initSchema, addVideoCredits, claimStripeEvent } from "@/lib/db";
 import { planFromStripePriceId } from "@/lib/plans";
 import { videoCreditPackFromStripePriceId } from "@/lib/videoPaygo";
 import { sendAccessCodeEmail, sendPaymentFailedEmail } from "@/lib/email";
@@ -22,6 +22,16 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("Stripe webhook signature verification failed", err);
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+  }
+
+  // Idempotency guard - Stripe explicitly documents that the same event
+  // can be delivered more than once (slow/failed 200, manual redelivery).
+  // Real bug this closes: a redelivered checkout.session.completed for a
+  // video-credit-pack purchase used to double the credits granted, since
+  // addVideoCredits is a pure increment with no dedupe of its own.
+  const alreadyProcessed = !(await claimStripeEvent(event.id));
+  if (alreadyProcessed) {
+    return NextResponse.json({ received: true, duplicate: true });
   }
 
   switch (event.type) {
@@ -80,8 +90,17 @@ export async function POST(req: NextRequest) {
     }
 
     case "invoice.paid": {
-      // Renewal - reset usage counters for the new period.
+      // Renewal - reset usage counters for the new period. Real bug fixed
+      // here: this used to fire unconditionally, including the initial
+      // invoice Stripe sends alongside checkout.session.completed for a
+      // brand-new subscription (billing_reason "subscription_create") -
+      // if that landed after checkout.session.completed had already set
+      // up the subscriber row (already zeroed usage) but before/during any
+      // generation the new subscriber made in that narrow window, this
+      // would wipe it, granting a small amount of free generation. Only a
+      // real renewal ("subscription_cycle") should reset usage.
       const invoice = event.data.object as Stripe.Invoice;
+      if (invoice.billing_reason !== "subscription_cycle") break;
       const subscriptionId = (invoice as unknown as { subscription?: string }).subscription;
       if (!subscriptionId) break;
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);

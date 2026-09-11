@@ -3,6 +3,8 @@ import {
   initSchema,
   getSubscriberByToken,
   checkVideoCreditQuota,
+  reserveVideoCredits,
+  releaseVideoCredits,
   createCharacterVideoJob,
   setCharacterVideoJobModalId,
   failCharacterVideoJob,
@@ -10,6 +12,7 @@ import {
 import { getCharacter, LUCY_VOICE_CREDIT_COST } from "@/lib/characters";
 import { PRESET_VOICES } from "@/components/VoicePicker";
 import { submitModalJob } from "@/lib/modal";
+import { PLANS } from "@/lib/plans";
 
 const MAX_SCRIPT_LENGTH = 400;
 const MAX_REFERENCE_AUDIO_BYTES = 7 * 1024 * 1024; // same cap as /api/clone-voice
@@ -72,9 +75,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // checkVideoCreditQuota is a fast, friendly pre-check (wrong plan /
+    // inactive subscription) - reserveVideoCredits right after is the real
+    // atomic enforcement. Real bug fixed here: the quota used to only be
+    // checked against a snapshot read at the start of this request, with
+    // usage only recorded when the job *completed* 30-90s later - several
+    // concurrent submissions could all pass that stale check and together
+    // push a subscriber arbitrarily over their monthly cap, each one still
+    // costing real Kling Avatar money regardless.
     const quotaError = checkVideoCreditQuota(sub, LUCY_VOICE_CREDIT_COST);
     if (quotaError) {
       return NextResponse.json({ error: quotaError }, { status: 402 });
+    }
+    const reserved = await reserveVideoCredits(accessToken, LUCY_VOICE_CREDIT_COST, PLANS[sub.plan].videoCreditsPerMonth);
+    if (!reserved) {
+      return NextResponse.json({ error: quotaError ?? "Not enough video credits left this billing period" }, { status: 402 });
     }
 
     const jobId = await createCharacterVideoJob({
@@ -103,6 +118,7 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Submission failed";
       await failCharacterVideoJob(jobId, message);
+      await releaseVideoCredits(accessToken, LUCY_VOICE_CREDIT_COST);
       return NextResponse.json({ error: message }, { status: 500 });
     }
   } catch (err) {

@@ -53,6 +53,22 @@ export async function initSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // Stripe webhook idempotency - Stripe explicitly documents that the same
+  // event can be delivered more than once (retries after a slow/failed
+  // 200, manual redelivery from the dashboard, etc.). Real bug this closes:
+  // the webhook handler's video-credit-pack branch calls addVideoCredits
+  // (a pure increment) with no dedupe, so a redelivered
+  // checkout.session.completed for the same payment doubled the credits
+  // granted - pay for 5, receive 10. The subscription branch happened to be
+  // safe already (upsertSubscriberForCheckout sets absolute values, not an
+  // increment) but this guard is applied to every event type for
+  // consistency, not just the one bug that was found.
+  await sql`
+    CREATE TABLE IF NOT EXISTS processed_stripe_events (
+      event_id TEXT PRIMARY KEY,
+      processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
   await sql`
     CREATE TABLE IF NOT EXISTS free_tier_usage (
       id TEXT PRIMARY KEY,
@@ -269,6 +285,22 @@ function generateAccessToken(): string {
   return `lucy_${randomBytes(16).toString("hex")}`;
 }
 
+// Call once at the top of the Stripe webhook handler, before acting on the
+// event. Returns true only the first time a given event id is seen -
+// INSERT ... ON CONFLICT DO NOTHING is atomic, so two concurrent deliveries
+// of the same event can't both pass this check. If it returns false, the
+// event has already been processed (or is being processed right now) and
+// the handler should skip straight to returning 200 without repeating any
+// side effects (granting credits, sending emails, etc.).
+export async function claimStripeEvent(eventId: string): Promise<boolean> {
+  const rows = await sql`
+    INSERT INTO processed_stripe_events (event_id) VALUES (${eventId})
+    ON CONFLICT (event_id) DO NOTHING
+    RETURNING event_id
+  `;
+  return rows.length > 0;
+}
+
 export async function upsertSubscriberForCheckout(params: {
   email: string;
   stripeCustomerId: string;
@@ -331,6 +363,26 @@ export function checkQuota(sub: Subscriber, additionalCharacters: number): strin
   return null;
 }
 
+// Atomic reservation, same pattern as spendVideoCredit's `WHERE balance > 0`
+// guard - checkQuota alone is a plain read-then-compare against a value
+// fetched earlier in the request, so two concurrent requests can both read
+// the same pre-generation characters_used and both pass, together landing
+// over the real limit. This actually claims the quota in one statement:
+// the WHERE clause is re-evaluated against the current committed row when
+// the update lock is acquired, so a second concurrent call sees the first
+// call's already-applied increment and correctly fails if it would now
+// exceed the limit. Call this INSTEAD of (not in addition to) incrementUsage
+// for the characters argument - it already performs that increment.
+export async function reserveCharacterUsage(token: string, characters: number, limit: number): Promise<boolean> {
+  const rows = await sql`
+    UPDATE subscribers
+    SET characters_used = characters_used + ${characters}
+    WHERE access_token = ${token} AND status = 'active' AND characters_used + ${characters} <= ${limit}
+    RETURNING characters_used
+  `;
+  return rows.length > 0;
+}
+
 // Character-video generation (2026-09-11) is the first real feature to
 // actually draw from the Video plan's video_seconds_used/videoCreditsPerMonth
 // tracking - previously "reserved/aspirational" (see plans.ts). Reuses the
@@ -347,6 +399,40 @@ export function checkVideoCreditQuota(sub: Subscriber, additionalCredits: number
     return `This would put you over your ${plan.name} plan's ${plan.videoCreditsPerMonth} video credits/month. Wait for your next billing period.`;
   }
   return null;
+}
+
+// Atomic reservation for video credits - same reasoning/pattern as
+// reserveCharacterUsage above. checkVideoCreditQuota is still useful as a
+// fast, friendly pre-check (wrong plan / inactive subscription messages),
+// but this is the actual enforcement: several concurrent video-generation
+// requests submitted before any of them completes can no longer all pass
+// against the same stale video_seconds_used snapshot. Real bug this
+// replaces: usage was previously only incremented when a job *completed*
+// (30-90s later), leaving a wide window where concurrent submissions could
+// push a subscriber arbitrarily over quota with zero enforcement, each one
+// still costing real fal.ai/Kling/Veo money regardless of the cap.
+export async function reserveVideoCredits(token: string, credits: number, limit: number): Promise<boolean> {
+  const rows = await sql`
+    UPDATE subscribers
+    SET video_seconds_used = video_seconds_used + ${credits}
+    WHERE access_token = ${token} AND status = 'active' AND video_seconds_used + ${credits} <= ${limit}
+    RETURNING video_seconds_used
+  `;
+  return rows.length > 0;
+}
+
+// Used when a video job fails outright after credits were already reserved
+// at submission time (see reserveVideoCredits) - the user shouldn't lose
+// quota for a video they never got. Same reasoning as refundVideoCredit for
+// the separate prepaid pay-as-you-go balance below. GREATEST(0, ...) guards
+// against ever going negative if this is ever (mis)called twice for the
+// same job.
+export async function releaseVideoCredits(token: string, credits: number) {
+  await sql`
+    UPDATE subscribers
+    SET video_seconds_used = GREATEST(0, video_seconds_used - ${credits})
+    WHERE access_token = ${token}
+  `;
 }
 
 // Free-tier tracking for anonymous (no access token) users. There's no
@@ -661,8 +747,20 @@ export async function completeVideoPaygoJob(jobId: string, videoUrl: string) {
   await sql`UPDATE video_paygo_jobs SET status = 'completed', video_url = ${videoUrl} WHERE id = ${jobId}`;
 }
 
-export async function failVideoPaygoJob(jobId: string, error: string) {
-  await sql`UPDATE video_paygo_jobs SET status = 'failed', error = ${error} WHERE id = ${jobId}`;
+// Atomic claim: only the caller that actually transitions the row out of
+// 'pending'/'in_progress' gets `true` back. Real bug this closes: two
+// overlapping status-poll requests for the same job (two tabs, or a client
+// retry racing the first response) could both observe a FAILED vendor
+// status and both call this then refundVideoCredit, crediting back 2
+// credits for the 1 originally spent. Callers must only refund when this
+// returns true.
+export async function failVideoPaygoJob(jobId: string, error: string): Promise<boolean> {
+  const rows = await sql`
+    UPDATE video_paygo_jobs SET status = 'failed', error = ${error}
+    WHERE id = ${jobId} AND status NOT IN ('failed', 'completed')
+    RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 export async function getVideoPaygoJob(jobId: string): Promise<VideoPaygoJob | null> {
@@ -728,8 +826,16 @@ export async function completeCharacterVideoJob(jobId: string, videoUrl: string)
   await sql`UPDATE character_video_jobs SET status = 'completed', video_url = ${videoUrl} WHERE id = ${jobId}`;
 }
 
-export async function failCharacterVideoJob(jobId: string, error: string) {
-  await sql`UPDATE character_video_jobs SET status = 'failed', error = ${error} WHERE id = ${jobId}`;
+// Atomic claim, same reasoning as failVideoPaygoJob above - only the caller
+// that actually transitions the row gets `true`, so a concurrent duplicate
+// poll can't also release credits for this job a second time.
+export async function failCharacterVideoJob(jobId: string, error: string): Promise<boolean> {
+  const rows = await sql`
+    UPDATE character_video_jobs SET status = 'failed', error = ${error}
+    WHERE id = ${jobId} AND status NOT IN ('failed', 'completed')
+    RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 export async function getCharacterVideoJob(jobId: string): Promise<CharacterVideoJob | null> {
@@ -805,8 +911,14 @@ export async function completeSubscriptionVideoJob(jobId: string, videoUrl: stri
   await sql`UPDATE subscription_video_jobs SET status = 'completed', video_url = ${videoUrl} WHERE id = ${jobId}`;
 }
 
-export async function failSubscriptionVideoJob(jobId: string, error: string) {
-  await sql`UPDATE subscription_video_jobs SET status = 'failed', error = ${error} WHERE id = ${jobId}`;
+// Atomic claim, same reasoning as failVideoPaygoJob/failCharacterVideoJob.
+export async function failSubscriptionVideoJob(jobId: string, error: string): Promise<boolean> {
+  const rows = await sql`
+    UPDATE subscription_video_jobs SET status = 'failed', error = ${error}
+    WHERE id = ${jobId} AND status NOT IN ('failed', 'completed')
+    RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 export async function getSubscriptionVideoJob(jobId: string): Promise<SubscriptionVideoJob | null> {

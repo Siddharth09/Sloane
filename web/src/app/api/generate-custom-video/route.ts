@@ -3,6 +3,8 @@ import {
   initSchema,
   getSubscriberByToken,
   checkVideoCreditQuota,
+  reserveVideoCredits,
+  releaseVideoCredits,
   createSubscriptionVideoJob,
   setSubscriptionVideoJobModalId,
   failSubscriptionVideoJob,
@@ -11,6 +13,7 @@ import { LUCY_VOICE_CREDIT_COST } from "@/lib/characters";
 import { PRESET_VOICES } from "@/components/VoicePicker";
 import { submitModalJob } from "@/lib/modal";
 import { uploadBufferToFal } from "@/lib/fal";
+import { PLANS } from "@/lib/plans";
 
 const MAX_SCRIPT_LENGTH = 400;
 const MAX_REFERENCE_AUDIO_BYTES = 7 * 1024 * 1024; // same cap as /api/clone-voice - Modal's JSON payload limit
@@ -69,13 +72,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "voice_mode must be 'preset' or 'own'" }, { status: 400 });
     }
 
+    // checkVideoCreditQuota is a fast, friendly pre-check; reserveVideoCredits
+    // right after is the real atomic enforcement (see its own comment in
+    // db.ts) - closes the same quota-bypass race documented on the
+    // character-video route.
     const quotaError = checkVideoCreditQuota(sub, LUCY_VOICE_CREDIT_COST);
     if (quotaError) {
       return NextResponse.json({ error: quotaError }, { status: 402 });
     }
+    const reserved = await reserveVideoCredits(accessToken, LUCY_VOICE_CREDIT_COST, PLANS[sub.plan].videoCreditsPerMonth);
+    if (!reserved) {
+      return NextResponse.json({ error: quotaError ?? "Not enough video credits left this billing period" }, { status: 402 });
+    }
 
-    const imageBuffer = Buffer.from(await referenceImage.arrayBuffer());
-    const referenceImageUrl = await uploadBufferToFal(imageBuffer, referenceImage.type || "image/jpeg", "reference.jpg");
+    let referenceImageUrl: string;
+    try {
+      const imageBuffer = Buffer.from(await referenceImage.arrayBuffer());
+      referenceImageUrl = await uploadBufferToFal(imageBuffer, referenceImage.type || "image/jpeg", "reference.jpg");
+    } catch (err) {
+      await releaseVideoCredits(accessToken, LUCY_VOICE_CREDIT_COST);
+      const message = err instanceof Error ? err.message : "Upload failed";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
 
     const jobId = await createSubscriptionVideoJob({
       accessToken,
@@ -103,6 +121,7 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Submission failed";
       await failSubscriptionVideoJob(jobId, message);
+      await releaseVideoCredits(accessToken, LUCY_VOICE_CREDIT_COST);
       return NextResponse.json({ error: message }, { status: 500 });
     }
   } catch (err) {
