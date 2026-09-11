@@ -219,6 +219,10 @@ export async function initSchema() {
   await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS input_image_url TEXT`;
   await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS input_audio_url TEXT`;
   await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS needs_merge BOOLEAN NOT NULL DEFAULT false`;
+  // Column name predates 2026-09-12's switch to real lip-sync (see
+  // submitLipsyncJob in fal.ts) - this now holds a Kling lipsync request id,
+  // not an ffmpeg merge request id like subscription_video_jobs' column of
+  // the same name still does. Not renamed - same shape, not worth a migration.
   await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS merge_request_id TEXT`;
   // The actual fal endpoint used for this specific job - varies per job now
   // (plain text-to-video vs. image-to-video vs. Kling Avatar) depending on

@@ -1568,8 +1568,8 @@ function PayAsYouGoVideoSection() {
           {(audioMode === "own" || audioMode === "lucy") && (
             <p className="text-xs italic leading-relaxed text-muted">
               {engine === "kling"
-                ? "Kling lip-syncs the video to this audio - the mouth movements actually follow what's said."
-                : `${VIDEO_PAYGO_ENGINES[engine].label} renders the scene silently, then layers this audio on top afterward - not lip-synced, just a soundtrack swap.`}
+                ? "Kling lip-syncs your photo directly to this audio in one step - the mouth movements actually follow what's said."
+                : `${VIDEO_PAYGO_ENGINES[engine].label} renders the scene first, then a separate lip-sync pass matches the mouth movements to this audio afterward - two steps instead of one, same real lip-sync result.`}
             </p>
           )}
 
@@ -1607,8 +1607,8 @@ function PayAsYouGoVideoSection() {
 
       <p className="text-xs italic leading-relaxed text-muted">
         Same flat price per video regardless of engine - real clip length differs (Kling is a hard 5s, the other four are 8s).
-        Only Kling actually lip-syncs to your audio (needs a photo); every other engine plays your audio as a
-        soundtrack over a silently-rendered scene instead.
+        Every engine gives you real lip-sync when you add audio: Kling does it in one step (needs a photo); every
+        other engine renders the scene first, then a separate lip-sync pass matches the mouth movements afterward.
       </p>
     </Card>
   );

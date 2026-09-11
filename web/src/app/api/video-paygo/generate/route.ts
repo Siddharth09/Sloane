@@ -28,22 +28,24 @@ type AudioMode = "none" | "own" | "lucy";
 // Routing, decided per what was actually uploaded (all within the SAME
 // price bracket already budgeted in videoPaygo.ts, see its cost-comment
 // for the one exception - Kling+audio is actually cheaper, not riskier):
-// - Kling + own audio OR a Lucy voice -> Kling Avatar (the only proven
-//   lip-sync path; requires an image, since Avatar animates a photo to
-//   match audio). A Lucy voice needs a TTS pass first (see the phase-0
-//   handling in status/route.ts) so Avatar isn't submitted from THIS route
-//   for that case - only the modal TTS job is.
+// - Kling + own audio OR a Lucy voice -> Kling Avatar (real lip-sync in
+//   one step; requires an image, since Avatar animates a photo to match
+//   audio). A Lucy voice needs a TTS pass first (see the phase-0 handling
+//   in status/route.ts) so Avatar isn't submitted from THIS route for that
+//   case - only the modal TTS job is.
 // - Any engine + image, no audio -> that engine's image-to-video endpoint,
 //   Veo's own voice/ambient audio baked in (generate_audio: true, Veo only
 //   - Seedance/Grok/MiniMax have no native-audio field on their schemas,
 //   so they render silent either way).
 // - Any engine except Kling + own audio OR a Lucy voice -> silent/ambient
-//   generation, then muxed with the audio afterward (fal ffmpeg
-//   merge-audio-video) - a straight audio-track swap, not lip-sync,
-//   disclosed as such in the UI. A Lucy voice still needs its TTS pass
-//   first, but the video itself can start submitting right away (unlike
-//   Kling, its input never depends on the resolved audio) - see needsMerge
-//   below and the phase-0 handling in status/route.ts.
+//   generation first, THEN a real lip-sync pass via Kling's dedicated
+//   lipsync endpoint (added 2026-09-12 - see submitLipsyncJob in fal.ts;
+//   negligible extra cost, ~$0.014-0.03/video). Every engine ends up
+//   genuinely lip-synced, not just Kling - it's just a two-step pipeline
+//   instead of one. A Lucy voice still needs its TTS pass first, but the
+//   video itself can start submitting right away (unlike Kling, its input
+//   never depends on the resolved audio) - see needsMerge below and the
+//   phase-0/lipsync handling in status/route.ts.
 // - Neither image nor audio -> unchanged existing text-to-video behavior.
 // buildFalInput itself now lives in @/lib/videoPaygo.ts (shared with
 // status/route.ts's phase-0 submission) since route.ts files may only

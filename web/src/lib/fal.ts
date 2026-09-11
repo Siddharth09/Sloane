@@ -90,15 +90,40 @@ export async function getFalJobResult(endpoint: string, requestId: string): Prom
 // input needs a real hosted URL, and generated TTS audio only exists as
 // in-memory bytes until uploaded somewhere fal can fetch it from.
 // Merges a generated (often silent/ambient) video with a separate audio
-// track - used when the user supplies their own audio or a Lucy voice for
-// Cinematic/pay-as-you-go mode instead of the engine's own native voice.
-// This is NOT lip-sync (Kling Avatar is the only proven lip-sync path in
-// this stack, and it needs a static photo, not an already-generated video) -
-// it's a straight audio-track replacement, disclosed as such in the UI.
+// track - used by Cinematic/Custom mode when the user supplies their own
+// audio or a Lucy voice instead of the engine's own native voice. This is
+// NOT lip-sync - it's a straight audio-track replacement, disclosed as such
+// in the UI. Pay-as-you-go used this same endpoint until 2026-09-12, when it
+// switched to real lip-sync via submitLipsyncJob below instead (see that
+// function's comment) - kept here only for Cinematic/Custom, still real code.
 export const FFMPEG_MERGE_ENDPOINT = "fal-ai/ffmpeg-api/merge-audio-video";
 
 export async function submitMergeAudioVideo(videoUrl: string, audioUrl: string): Promise<string> {
   return submitFalJob(FFMPEG_MERGE_ENDPOINT, { video_url: videoUrl, audio_url: audioUrl });
+}
+
+// Real lip-sync (2026-09-12) - takes ANY existing video + a separate audio
+// track and re-animates the mouth to match, regardless of which engine
+// rendered the video. This is what makes real lip-sync possible on engines
+// that can't do it themselves (Veo/Seedance/Grok/MiniMax all render
+// silent/ambient only - none of their schemas have an audio-conditioning
+// input). Found and verified 2026-09-12 while investigating "how do we lip
+// sync a Grok video" for pay-as-you-go: `fal-ai/kling-video/lipsync/
+// audio-to-video` costs **$0.014 per 5s (rounded up)** - negligible next to
+// the $0.64-2.23 real cost of the video generation itself, comfortably
+// inside the existing 15% buffer in videoPaygo.ts with no repricing needed.
+// Real constraints (from fal's own API docs, not guessed): input video must
+// be .mp4/.mov, <=100MB, 2-10s, and (per fal's docs) "720p/1080p only" -
+// every pay-as-you-go engine's output duration (5-8s) and resolution
+// (720p, except MiniMax's 768p - not yet confirmed accepted, flagged for
+// real testing) fits this. `sync_mode: "cut_off"` (the default) truncates
+// if audio runs longer than the video rather than erroring - acceptable
+// for now, a real limitation for longer Lucy-voice scripts worth revisiting
+// if it comes up in practice.
+export const LIPSYNC_ENDPOINT = "fal-ai/kling-video/lipsync/audio-to-video";
+
+export async function submitLipsyncJob(videoUrl: string, audioUrl: string): Promise<string> {
+  return submitFalJob(LIPSYNC_ENDPOINT, { video_url: videoUrl, audio_url: audioUrl });
 }
 
 export async function uploadBufferToFal(data: Buffer, contentType: string, fileName: string): Promise<string> {

@@ -173,11 +173,14 @@ export const VIDEO_PAYGO_ENGINES: Record<
 //   real list price ~$0.0562/s -> ~$0.28-0.45 for a 5-8s clip, CHEAPER
 //   than the $1.40 flat this file already budgets for Kling - strictly
 //   safer for the profit floor, not a new risk.
-// - Veo/Seedance + an uploaded/cloned audio track render silent/ambient
-//   then get muxed via fal's ffmpeg merge-audio-video utility - **verified
-//   2026-09-11 against fal's own model page: $0.0002/second**, so ~$0.0016
-//   for an 8s clip. Negligible, comfortably inside the existing 15%
-//   buffer - confirmed, not just assumed.
+// - Every other engine (Veo/Seedance, and Grok/MiniMax below) + an
+//   uploaded/cloned/Lucy audio track renders silent/ambient first, then
+//   gets a REAL lip-sync pass via `fal-ai/kling-video/lipsync/audio-to-video`
+//   (switched 2026-09-12 from a plain ffmpeg audio-track swap - see
+//   submitLipsyncJob's comment in fal.ts for why and the full real-cost
+//   math) - **$0.014 per 5s, rounded up** (fal's own pricing, checked
+//   2026-09-12), so ~$0.03 for an 8-10s clip. Negligible, comfortably
+//   inside the existing 15% buffer - confirmed, not just assumed.
 // Grok/MiniMax added 2026-09-12, same +15% buffer methodology as the three
 // above. Real list prices checked directly (fal's own pricing pages,
 // 2026-09-12):
