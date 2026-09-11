@@ -48,7 +48,6 @@ const VOICE_CHOICES = [
   { id: "voice_mark", label: "Mark" },
   { id: "voice_adam", label: "Adam" },
   { id: "voice_rachel", label: "Rachel" },
-  { id: "voice_emily", label: "Emily" },
   { id: "harper", label: "Harper" },
 ];
 

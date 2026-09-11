@@ -109,12 +109,6 @@ PRESET_VOICES = {
         "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_rachel/chatterbox_output/new_lang_adapter",
         "reference": f"{MODEL_ROOT}/training_data/voice_rachel/clips/00001.wav",
     },
-    "voice_emily": {  # Emily - 2026-09-10, isolated via k=2 speaker
-        # clustering from a third user-supplied podcast (kept cluster 0,
-        # 155/254 clips - confirmed by ear).
-        "adapter_dir": f"{MODEL_ROOT}/chatterbox-ft-voice_emily/chatterbox_output/new_lang_adapter",
-        "reference": f"{MODEL_ROOT}/training_data/voice_emily/clips/00018.wav",
-    },
     # Michelle (voice_meditation) removed 2026-09-10 per direct user
     # feedback ("not good at all we can remove her") - also the voice this
     # session's own notes already flagged as never actually fixed (see
@@ -123,6 +117,10 @@ PRESET_VOICES = {
     # near-silent-clip forced-EOS bug even after a 4.5x larger retrain. Not
     # deleting her LoRA/training data on the Volume - just no longer offered
     # as a preset.
+    #
+    # Emily (voice_emily) removed 2026-09-11 per direct request ("can you
+    # remove emily"). Same precedent as Michelle - her LoRA adapter/training
+    # data are left on the Volume untouched, just no longer offered here.
 }
 
 # "Preset" voices backed by zero-shot cloning against a FIXED reference
@@ -167,17 +165,30 @@ ZERO_SHOT_PRESET_VOICES: dict[str, str] = {
 # only retraining on source audio with the actually-desired quality does
 # that. Used here anyway as the best available knob, per direct request.
 PITCH_SEMITONES_BY_VOICE: dict[str, float] = {
-    "voice_rachel": 1.0,  # Rachel - "more feminine" - see the honest caveat above; a real but limited lever, not a genuine timbre change
+    # Rachel's own +1.0 semitone "more feminine" shift removed 2026-09-11
+    # per direct report ("rachel's voice is distorted") - she was the
+    # single largest static pitch shift of any voice (3x the +0.3 nudge
+    # everyone else got), and pyworld's harvest/cheaptrick/d4c resynthesis
+    # pass is a known-real source of audible glitchiness on husky/breathy
+    # voices specifically (F0 tracking is less reliable on that kind of
+    # source audio, and running a shift+resynthesis pass on top compounds
+    # it) - the exact same category of DSP-caused artifact this file has
+    # already hit twice before (Izzy/Robbo/Alice's phase-vocoder
+    # echo, Izzy's time-stretch robotic-ness). Same fix as those: remove
+    # the DSP pass entirely rather than tune the amount down, since the
+    # "more feminine" pitch bump was already framed above as an unproven,
+    # real-but-limited lever, not worth trading for actual distortion.
     # Izzy's pitch/clarity tuning (1.5, then 2.5 semitones) removed 2026-09-10
     # per "revert izzy back to original voice" - the real fix for her pitch
     # and accent is retraining on blended source audio (see the 3m5.mp4
     # blend below), not stacking more DSP on the same LoRA checkpoint.
     #
     # 2026-09-11 "make all voices sound slightly different, still human"
-    # request - a small +0.3 semitone nudge on every voice EXCEPT Rachel
-    # (already has her own +1.0 tuned in, not stacking on it) and Izzy
-    # (explicitly reverted to zero DSP above per direct request - not
-    # re-adding any pitch shift for her). Deliberately much smaller than
+    # request - a small +0.3 semitone nudge on every voice except Rachel
+    # (had her own +1.0 at the time, since removed entirely - see above)
+    # and Izzy (explicitly reverted to zero DSP above per direct request -
+    # not re-adding any pitch shift for her). Emily also had a +0.3 entry
+    # here, removed 2026-09-11 along with the rest of her preset. Deliberately much smaller than
     # the 1.5-2.5 semitone shifts that were reported "artificial"/
     # "robotic" for Katie/Izzy earlier in this project - this is a
     # genuinely different, much more conservative magnitude, not the same
@@ -194,7 +205,6 @@ PITCH_SEMITONES_BY_VOICE: dict[str, float] = {
     "voice_mark": 0.3,
     "voice_sales": 0.3,
     "voice_adam": 0.3,
-    "voice_emily": 0.3,
 }
 
 # Per-voice high-pass filter cutoff (Hz) - cuts low-frequency room

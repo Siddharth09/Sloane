@@ -20,11 +20,10 @@ export const PRESET_VOICES: Voice[] = [
   // same documented design constraint as Patrick/Mark sharing bg-sage.
   { id: "voice_adam", label: "Adam", color: "bg-coral-dark", initial: "A" },
   { id: "voice_rachel", label: "Rachel", color: "bg-rose", initial: "R" },
-  { id: "voice_emily", label: "Emily", color: "bg-blue", initial: "E" },
   // Harper (2026-09-11) - zero-shot cloned from the surfing ads-demo clip's
   // own audio (see scripts/lucy_tts_engine.py's ZERO_SHOT_PRESET_VOICES),
   // not a real fine-tune - honest quality expectation is a rougher
-  // approximation than the other 12, whose LoRA adapters were each trained
+  // approximation than the fine-tuned LoRA voices above, each trained
   // on many minutes of real source audio. Reuses bg-pink (already Alice's)
   // - same documented color-reuse constraint as Patrick/Mark sharing sage.
   { id: "harper", label: "Harper", color: "bg-pink", initial: "H" },
