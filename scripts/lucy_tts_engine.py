@@ -138,6 +138,20 @@ PRESET_VOICES = {
 # small and don't need the Volume's fine-tuned-checkpoint machinery.
 ZERO_SHOT_PRESET_VOICES: dict[str, str] = {
     "harper": "/app/voice_references/harper.wav",
+    # 2026-09-11: same zero-shot pattern, source is a Veo-generated 4s clip
+    # (looped x3 to clear MIN_UPLOAD_SECONDS) rather than real recorded
+    # audio of a real person - aoife/liam/ryan/tyler are AI-generated voices
+    # from the start, not clones of anyone. aoife = a second, distinct Irish
+    # accent for Vicky's character video (separate from Izzy/voice_comedy,
+    # per direct request "give vicky another irish accent"); liam/ryan/tyler
+    # are the requested "male version of Izzy/Katie/Harper" - matched by
+    # accent/vibe (Irish, Australian, Australian-surfer) rather than by
+    # timbre, since there's no way to derive a "male version" of an
+    # existing voice's actual voiceprint.
+    "aoife": "/app/voice_references/aoife.wav",
+    "liam": "/app/voice_references/liam.wav",
+    "ryan": "/app/voice_references/ryan.wav",
+    "tyler": "/app/voice_references/tyler.wav",
 }
 
 # Runtime pitch adjustment, applied as post-processing (librosa.effects.

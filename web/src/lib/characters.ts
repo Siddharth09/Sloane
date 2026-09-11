@@ -68,7 +68,11 @@ export const CHARACTERS: Character[] = [
     age: "late 20s",
     region: "Australia",
     imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/GCrI6ghEIlnUFmhtS8X7v_vicky.jpg",
-    defaultVoiceId: "voice_comedy", // Izzy - requested explicitly ("make it like izzy's voice")
+    // 2026-09-11: switched to Aoife, a second/distinct Irish-accented
+    // voice, per direct request ("give vicky another irish accent") -
+    // was Izzy (voice_comedy), also Irish, which the user felt no longer
+    // suited her face/character after living with it a while.
+    defaultVoiceId: "aoife",
   },
   {
     id: "marcus",
@@ -76,18 +80,22 @@ export const CHARACTERS: Character[] = [
     gender: "male",
     age: "late 20s",
     region: "Nashville, USA",
-    // Re-generated 2026-09-11 to look more like a music instructor (guitar,
-    // teaching studio) per direct request - was a generic studio portrait.
-    imageUrl: "https://v3b.fal.media/files/b/0aa9ed98/31mAICP5_1aZQawWNnVT8_marcus_v2.jpg",
+    // Re-generated 2026-09-11 (v3) to a white male with reddish hair and a
+    // full beard per direct request ("change marcus to a white male
+    // character reddish haired beard") - v2 was a generic music-instructor
+    // studio portrait, kept the same guitar/studio setting for continuity.
+    imageUrl: "https://v3b.fal.media/files/b/0aa9fa6a/n5HtFS9LwobmqSacIVRGL_marcus_v3.jpg",
     defaultVoiceId: "voice_mark", // Mark - requested explicitly ("voice of mark")
   },
   {
     id: "jack",
     name: "Jack",
     gender: "male",
-    age: "mid-20s",
+    age: "mid-40s",
     region: "Sydney, Australia",
-    imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/6_ml_AMMqKfis0tvQBm8G_jack.jpg",
+    // Re-generated 2026-09-11 (v2) aged up to mid-40s per direct request
+    // ("make jack in his 40s") - was a generic mid-20s portrait.
+    imageUrl: "https://v3b.fal.media/files/b/0aa9fa83/Qmy4MJQhWBy_JoTsThxcP_jack_v2.jpg",
     defaultVoiceId: "voice_tech", // Brad - Australian accent, requested explicitly ("like Brad")
   },
 ];

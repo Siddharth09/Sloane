@@ -28,9 +28,9 @@ const COLORS = {
 const CHARACTERS = [
   { id: "harper", name: "Harper", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/yOpTgTwUZNYQcFCLsa822_harper.jpg", defaultVoiceId: "harper" },
   { id: "beth", name: "Beth", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/Y2m8E19pk2G12R1ewoEYH_beth.jpg", defaultVoiceId: "voice_business" },
-  { id: "vicky", name: "Vicky", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/GCrI6ghEIlnUFmhtS8X7v_vicky.jpg", defaultVoiceId: "voice_comedy" },
-  { id: "marcus", name: "Marcus", imageUrl: "https://v3b.fal.media/files/b/0aa9ed98/31mAICP5_1aZQawWNnVT8_marcus_v2.jpg", defaultVoiceId: "voice_mark" },
-  { id: "jack", name: "Jack", imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/6_ml_AMMqKfis0tvQBm8G_jack.jpg", defaultVoiceId: "voice_tech" },
+  { id: "vicky", name: "Vicky", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/GCrI6ghEIlnUFmhtS8X7v_vicky.jpg", defaultVoiceId: "aoife" },
+  { id: "marcus", name: "Marcus", imageUrl: "https://v3b.fal.media/files/b/0aa9fa6a/n5HtFS9LwobmqSacIVRGL_marcus_v3.jpg", defaultVoiceId: "voice_mark" },
+  { id: "jack", name: "Jack", imageUrl: "https://v3b.fal.media/files/b/0aa9fa83/Qmy4MJQhWBy_JoTsThxcP_jack_v2.jpg", defaultVoiceId: "voice_tech" },
 ];
 
 // Same 12 ids/labels as web/src/components/VoicePicker.tsx's PRESET_VOICES

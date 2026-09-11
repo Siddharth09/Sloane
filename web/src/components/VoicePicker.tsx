@@ -28,6 +28,16 @@ export const PRESET_VOICES: Voice[] = [
   // on many minutes of real source audio. Reuses bg-pink (already Alice's)
   // - same documented color-reuse constraint as Patrick/Mark sharing sage.
   { id: "harper", label: "Harper", color: "bg-pink", initial: "H" },
+  // 2026-09-11: aoife (second, distinct Irish accent - see characters.ts,
+  // now Vicky's character-video default) + liam/ryan/tyler ("male version
+  // of Izzy/Katie/Harper", matched by accent/vibe not timbre). All 4 are
+  // zero-shot from Veo-generated reference clips, same honest-quality
+  // caveat as Harper above - reuses colors per the same documented
+  // 9-colors-for-more-voices constraint.
+  { id: "aoife", label: "Aoife", color: "bg-lavender", initial: "A" },
+  { id: "liam", label: "Liam", color: "bg-purple", initial: "L" },
+  { id: "ryan", label: "Ryan", color: "bg-butter", initial: "R" },
+  { id: "tyler", label: "Tyler", color: "bg-coral", initial: "T" },
 ];
 
 export function VoicePicker({

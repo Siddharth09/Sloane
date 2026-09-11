@@ -29,21 +29,22 @@ export async function submitFalJob(endpoint: string, input: Record<string, unkno
 
 export type FalJobStatus = "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
 
-// fal's own docs say status/result URLs use the same full endpoint path as
-// submission (e.g. fal-ai/flux/schnell) - true for single-model apps, but
-// "kling-video" gateways several model variants (ai-avatar, v2.1/master,
-// v1.6/standard/elements) under one app, and that app only mounts its queue
-// status/result routes at the base app id, not the full submission path.
-// Verified empirically 2026-09-11 against a real completed request: GET
-// .../kling-video/ai-avatar/v2/standard/requests/{id}/status returned 405
-// Method Not Allowed on every poll for 10 minutes straight, while GET
-// .../kling-video/requests/{id}/status on the exact same request_id
-// succeeded immediately. Without this, every live Kling Avatar generation
-// (character videos, custom hyper-realistic mode, paygo avatar mode) would
-// throw on every status poll and hang in "IN_PROGRESS" forever.
+// fal's status/result queue routes live at the base org/app id (first two
+// path segments), NOT the full submission endpoint path, whenever that path
+// has extra segments beyond the app id. This is NOT a kling-video-specific
+// quirk (originally thought so) - verified empirically 2026-09-11 across
+// THREE separate fal apps, all 405ing on the full path and succeeding on
+// the base app id: `fal-ai/kling-video/ai-avatar/v2/standard`,
+// `fal-ai/flux-pro/v1.1-ultra`, and `fal-ai/veo3.1/fast`. Every one of them
+// exposes multiple model-variant sub-paths for submission but registers
+// its queue status/result backend once, at the base app - so this is a
+// general fal.ai deployment pattern, not an exception. Without this, every
+// live generation through any endpoint with a sub-path (Kling Avatar +
+// Veo cinematic/paygo, both used in production) would throw on every
+// status poll and hang in "IN_PROGRESS" forever.
 function pollingEndpoint(submitEndpoint: string): string {
-  if (submitEndpoint.startsWith("fal-ai/kling-video/")) return "fal-ai/kling-video";
-  return submitEndpoint;
+  const parts = submitEndpoint.split("/");
+  return parts.length > 2 ? parts.slice(0, 2).join("/") : submitEndpoint;
 }
 
 // Real bug fixed here: this used to return "FAILED" on ANY non-2xx HTTP

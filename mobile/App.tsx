@@ -98,6 +98,11 @@ const PRESET_VOICES = [
   // full reasoning (zero-shot cloned, not fine-tuned - a rougher
   // approximation than the other 12). Reuses COLORS.pink like web does.
   { id: "harper", label: "Harper", color: COLORS.pink, initial: "H" },
+  // 2026-09-11: aoife/liam/ryan/tyler - see web/src/components/VoicePicker.tsx.
+  { id: "aoife", label: "Aoife", color: COLORS.lavender, initial: "A" },
+  { id: "liam", label: "Liam", color: COLORS.purple, initial: "L" },
+  { id: "ryan", label: "Ryan", color: COLORS.butter, initial: "R" },
+  { id: "tyler", label: "Tyler", color: COLORS.coral, initial: "T" },
 ];
 
 function GradientButton({
