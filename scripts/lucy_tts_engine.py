@@ -985,6 +985,46 @@ def apply_pitch_jitter(audio: np.ndarray, sr: int, jitter_semitones: float, seed
     return reshaped
 
 
+def apply_pitch_shift_clean(audio: np.ndarray, sr: int, semitones: float) -> np.ndarray:
+    """Static per-voice pitch shift via pyworld's harvest/cheaptrick/d4c/
+    synthesize - the same real parametric-vocoder approach apply_pitch_jitter
+    and apply_terminal_fall/rise already use, instead of
+    librosa.effects.pitch_shift's STFT phase vocoder.
+
+    Real bug fixed here: a small +0.3 semitone PITCH_SEMITONES_BY_VOICE pass
+    (2026-09-11) used librosa's phase vocoder and was reported live as
+    sounding echoey/underwater on every voice - a textbook phase-vocoder
+    "phasiness" artifact (smeared, reverberant-sounding output from naive
+    STFT-domain pitch-shifting), not something that needed a smaller shift,
+    a different algorithm entirely. pyworld separates F0/spectral envelope/
+    aperiodicity and only moves F0 before resynthesizing, so the spectral
+    envelope (what actually carries timbre/formants) is untouched - the
+    same reason this project already switched to pyworld for jitter/
+    terminal-fall/rise instead of naive DSP. Only the F0 curve moves;
+    silence/unvoiced frames (f0 <= 0) are left alone.
+    """
+    if not semitones:
+        return audio
+    audio64 = np.ascontiguousarray(audio.astype(np.float64))
+    try:
+        f0, t = pw.harvest(audio64, sr)
+        sp = pw.cheaptrick(audio64, f0, t, sr)
+        ap = pw.d4c(audio64, f0, t, sr)
+    except Exception:
+        return audio
+
+    if (f0 > 0).sum() < 2:
+        return audio
+
+    new_f0 = np.where(f0 > 0, f0 * (2.0 ** (semitones / 12.0)), f0)
+    reshaped = pw.synthesize(new_f0, sp, ap, sr).astype(np.float32)
+    if len(reshaped) < len(audio):
+        reshaped = np.pad(reshaped, (0, len(audio) - len(reshaped)), mode="edge")
+    elif len(reshaped) > len(audio):
+        reshaped = reshaped[: len(audio)]
+    return reshaped
+
+
 # Words carrying real emotional/semantic weight - when one of these appears,
 # give it a subtle localized pitch+volume lift instead of leaving every word
 # at identical prosody. Requested live 2026-09-10: "when it's emotions like
@@ -1329,13 +1369,11 @@ def synthesize(
             sr = engine.sr
             if chunk_pitch_offset:
                 # This chunk's own happy/sad pitch nudge - separate from and
-                # applied before the per-voice static pitch_semitones below
-                # (that one still applies once to the whole final audio, as
-                # before, for zero regression on voices with no emotional
-                # content detected - see PITCH_SEMITONES_BY_VOICE history
-                # for why stacking two phase-vocoder shifts is a real risk
-                # this deliberately minimizes rather than eliminates).
-                trimmed = librosa.effects.pitch_shift(trimmed, sr=sr, n_steps=chunk_pitch_offset)
+                # applied before the per-voice static pitch_semitones below.
+                # Uses apply_pitch_shift_clean (pyworld), not librosa's phase
+                # vocoder - see that function's docstring for the real
+                # echo/underwater artifact this switch fixes.
+                trimmed = apply_pitch_shift_clean(trimmed, sr, chunk_pitch_offset)
             # Terminal fall/rise keyed off the *last* sentence ending in this
             # chunk - statements get the forced fall, questions get a real
             # forced rise (added 2026-09-10) instead of just an unforced one.
@@ -1358,7 +1396,7 @@ def synthesize(
     if pitch_jitter_semitones:
         audio = apply_pitch_jitter(audio, sr, pitch_jitter_semitones)
     if pitch_semitones:
-        audio = librosa.effects.pitch_shift(audio, sr=sr, n_steps=pitch_semitones)
+        audio = apply_pitch_shift_clean(audio, sr, pitch_semitones)
     if highpass_hz:
         audio = apply_highpass(audio, sr, highpass_hz)
     if notch_hz:
