@@ -25,12 +25,28 @@ export function useMediaRecorder(kind: "audio" | "video") {
       chunksRef.current = [];
       setLiveStream(stream);
 
-      const recorder = new MediaRecorder(stream);
+      // Safari (iOS/macOS) only supports "audio/mp4"/"video/mp4" for
+      // MediaRecorder, not webm - picking a type it doesn't support throws,
+      // and letting it default silently produces mp4 bytes. Ask for the
+      // first type the browser actually supports so recorder.mimeType
+      // (read below) reliably reflects the real encoding.
+      const candidates =
+        kind === "video"
+          ? ["video/webm;codecs=vp9,opus", "video/webm", "video/mp4"]
+          : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+      const supportedType = candidates.find(
+        (t) => typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(t)
+      );
+      const recorder = supportedType ? new MediaRecorder(stream, { mimeType: supportedType }) : new MediaRecorder(stream);
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = () => {
-        const mimeType = kind === "video" ? "video/webm" : "audio/webm";
+        // Label the Blob with whatever MediaRecorder actually used
+        // (recorder.mimeType), not a hardcoded guess - a mismatched label
+        // is exactly why Safari recordings show "Error" instead of
+        // playing back: the bytes are mp4 but were being tagged webm.
+        const mimeType = recorder.mimeType || (kind === "video" ? "video/webm" : "audio/webm");
         const outBlob = new Blob(chunksRef.current, { type: mimeType });
         setBlob(outBlob);
         setPreviewUrl(URL.createObjectURL(outBlob));

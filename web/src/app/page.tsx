@@ -411,7 +411,12 @@ function CloneVoiceSection() {
     if (!file) return;
     const form = new FormData();
     form.append("text", text);
-    form.append("reference_audio", file, "reference.webm");
+    // Match the filename's extension to the real recorded/uploaded type
+    // (Safari records mp4, Chrome/Firefox record webm) rather than
+    // hardcoding "reference.webm" for every browser.
+    const ext = file.type.includes("mp4") ? "mp4" : file.type.includes("ogg") ? "ogg" : file.type.includes("wav") ? "wav" : "webm";
+    const referenceFilename = file instanceof File ? file.name : `reference.${ext}`;
+    form.append("reference_audio", file, referenceFilename);
     form.append("exaggeration", String(delivery.expressiveness));
     form.append("speed", String(delivery.speed));
     if (token) form.append("access_token", token);
