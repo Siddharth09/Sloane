@@ -1085,6 +1085,114 @@ function CinematicVideoSection() {
   );
 }
 
+// --- Model comparison showcase: same photo + same prompt, five engines ---
+
+const MODEL_SHOWCASE_PROMPT =
+  'Cinematic wide shot on the lunar surface: this exact same woman walks slowly beside a NASA-style lunar rover, dust kicking up under her boots, Earth hanging in the black sky, dramatic lighting, photorealistic, 4K quality.';
+
+type ShowcaseModel = {
+  id: string;
+  name: string;
+  note: string;
+  videoUrl: string | null;
+  blockedReason?: string;
+};
+
+const SHOWCASE_MODELS: ShowcaseModel[] = [
+  {
+    id: "kling",
+    name: "Kling v3 Pro",
+    note: "Our pick: the best face consistency and scene quality of the five we tested.",
+    videoUrl: "/model-showcase/moon_kling_v3_pro.mp4",
+  },
+  {
+    id: "veo",
+    name: "Veo 3.1",
+    note: "Strong, reliable cinematic quality - what Cinematic mode above uses today.",
+    videoUrl: "/model-showcase/moon_veo.mp4",
+  },
+  {
+    id: "grok",
+    name: "Grok Imagine 1.5",
+    note: "Usable quality and the cheapest of the five to generate.",
+    videoUrl: "/model-showcase/moon_grok_1.5.mp4",
+  },
+  {
+    id: "minimax",
+    name: "MiniMax H3 Max",
+    note: "Weakest likeness and motion quality of the engines that actually rendered.",
+    videoUrl: "/model-showcase/moon_minimax_h3max.mp4",
+  },
+  {
+    id: "seedance",
+    name: "Seedance 2.0",
+    note: "Blocked on this test - see below.",
+    videoUrl: null,
+    blockedReason:
+      'fal’s safety classifier rejected this job ("content_policy_violation / partner_validation_failed") - it blocks AI-generated photorealistic human faces. That’s enforced on fal’s side, not something we can configure around.',
+  },
+];
+
+function ModelShowcaseSection() {
+  const [modelId, setModelId] = useState(SHOWCASE_MODELS[0].id);
+  const model = SHOWCASE_MODELS.find((m) => m.id === modelId)!;
+
+  return (
+    <Card
+      wash="bg-purple-wash/90"
+      iconColor="text-purple"
+      icon="🎞️"
+      title="Compare video models"
+      subtitle="We ran the same reference photo and the same prompt through five video engines - tap one to see the result."
+    >
+      <p className="text-sm leading-relaxed text-muted">
+        Lucy Labs can generate video with Kling, Veo, Grok, MiniMax, or Seedance. Quality, speed, and reliability
+        vary a lot by engine and by scene - here&apos;s the identical lunar scene, run through each one, so you can
+        see the difference for yourself.
+      </p>
+
+      {model.videoUrl ? (
+        <video key={model.id} className="w-full rounded-xl" src={model.videoUrl} controls loop muted playsInline />
+      ) : (
+        <div className="rounded-2xl border border-coral-dark/30 bg-white/70 p-4 text-sm text-coral-dark">
+          {model.blockedReason}
+        </div>
+      )}
+
+      <div className="flex flex-wrap justify-center gap-3">
+        {SHOWCASE_MODELS.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setModelId(m.id)}
+            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+              modelId === m.id
+                ? "bg-purple text-white shadow-soft"
+                : m.videoUrl
+                  ? "border border-border bg-white text-muted hover:opacity-100"
+                  : "border border-coral-dark/30 bg-white text-coral-dark opacity-80"
+            }`}
+          >
+            {m.name}
+            {!m.videoUrl && " ⚠️"}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-xs text-muted">{model.note}</p>
+
+      <div className="rounded-2xl bg-white/70 p-3">
+        <p className="text-xs font-semibold text-muted">The exact prompt used for all five:</p>
+        <p className="mt-1 text-xs italic text-muted">{MODEL_SHOWCASE_PROMPT}</p>
+      </div>
+
+      <p className="text-xs text-muted">
+        Caveat: these models change constantly - the labs and fal ship new versions often. This is a snapshot of
+        where each one stood when we tested it (2026-09-12), not a permanent ranking.
+      </p>
+    </Card>
+  );
+}
+
 function CharacterVideoSection() {
   const { token } = useAccessToken();
   const [characterId, setCharacterId] = useState(CHARACTERS[0].id);
@@ -1446,6 +1554,7 @@ export default function Home() {
         <VideoIntroSection />
         <CustomVideoSection />
         <CinematicVideoSection />
+        <ModelShowcaseSection />
         <CharacterVideoSection />
         <PayAsYouGoVideoSection />
         <Footer />

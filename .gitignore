@@ -31,6 +31,9 @@ zeroshot_test_output/
 # media (deliberately kept, not source training data) - see
 # docs/fal-video-research/assets/README.md for what's here and why.
 !docs/fal-video-research/assets/**/*.mp4
+# Same reasoning: the on-page model-comparison clips (same prompt/photo run
+# through each video engine) for the model showcase section.
+!web/public/model-showcase/*.mp4
 
 # Env/secrets
 .env
