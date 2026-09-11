@@ -15,6 +15,7 @@ import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
 import { CHARACTERS, LUCY_VOICE_CREDIT_COST } from "@/lib/characters";
 import { VIDEO_PAYGO_ENGINES, VIDEO_CREDIT_PACKS, type VideoEngine } from "@/lib/videoPaygo";
 import { extractVideoFrame, isVideoFile, isAudioFile } from "@/lib/videoFrame";
+import { useMediaRecorder } from "@/lib/useMediaRecorder";
 
 // Backend mode is switchable at runtime from /admin (see
 // @/lib/inferenceBackend) - fetched here rather than read from a build-time
@@ -508,72 +509,199 @@ function VideoResultPlayer({ videoUrl, jobId, jobType }: { videoUrl: string; job
 }
 
 // Shared image/video-upload control used by all 3 upload-driven video modes.
-// A video is never sent to the server as-is for the reference photo - a
-// frame is grabbed client-side (see @/lib/videoFrame.ts) the moment it's
-// chosen, so every mode's backend only ever handles a still image for
-// identity/scene reference.
+// Accepts MULTIPLE photos/videos at once - upload a few and pick which one
+// actually gets used, since every engine we call (Kling Avatar, Veo image-
+// to-video) only takes a single reference image. A video is never sent to
+// the server as-is for that image - a frame is grabbed client-side (see
+// @/lib/videoFrame.ts) the moment it's chosen.
+type ReferenceMediaItem = { blob: Blob; sourceFile: File | null; previewUrl: string; isVideo: boolean };
+
 function useReferenceMedia() {
-  const [imageBlob, setImageBlob] = useState<Blob | null>(null);
-  const [videoFile, setVideoFile] = useState<File | null>(null); // kept only so its audio track can be reused
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [items, setItems] = useState<ReferenceMediaItem[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleFile(f: File | null) {
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
     setError(null);
-    setVideoFile(null);
-    setImageBlob(null);
-    setPreviewUrl(null);
-    if (!f) return;
-    if (isAudioFile(f)) {
-      setError("That's an audio file - use the separate voice/audio option below instead.");
-      return;
-    }
-    if (isVideoFile(f)) {
-      setExtracting(true);
-      try {
-        const frame = await extractVideoFrame(f);
-        setImageBlob(frame);
-        setVideoFile(f);
-        setPreviewUrl(URL.createObjectURL(frame));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not read that video");
-      } finally {
-        setExtracting(false);
+    const chosen = Array.from(files).filter((f) => {
+      if (isAudioFile(f)) {
+        setError("Audio files go in the separate voice/audio option below, not here.");
+        return false;
       }
-    } else {
-      setImageBlob(f);
-      setPreviewUrl(URL.createObjectURL(f));
+      return true;
+    });
+    if (chosen.length === 0) return;
+    setExtracting(true);
+    try {
+      const newItems: ReferenceMediaItem[] = [];
+      for (const f of chosen) {
+        if (isVideoFile(f)) {
+          const frame = await extractVideoFrame(f);
+          newItems.push({ blob: frame, sourceFile: f, previewUrl: URL.createObjectURL(frame), isVideo: true });
+        } else {
+          newItems.push({ blob: f, sourceFile: null, previewUrl: URL.createObjectURL(f), isVideo: false });
+        }
+      }
+      setItems((prev) => {
+        setSelectedIndex(prev.length);
+        return [...prev, ...newItems];
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read one of those files");
+    } finally {
+      setExtracting(false);
     }
+  }
+
+  function removeAt(i: number) {
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
+    setSelectedIndex((prev) => (prev === i ? 0 : prev > i ? prev - 1 : prev));
   }
 
   function reset() {
-    setImageBlob(null);
-    setVideoFile(null);
-    setPreviewUrl(null);
+    setItems([]);
+    setSelectedIndex(0);
     setError(null);
   }
 
-  return { imageBlob, videoFile, previewUrl, extracting, error, handleFile, reset };
+  const selected = items[selectedIndex] ?? null;
+  return {
+    items,
+    selectedIndex,
+    setSelectedIndex,
+    imageBlob: selected?.blob ?? null,
+    videoFile: selected?.isVideo ? selected.sourceFile : null,
+    extracting,
+    error,
+    handleFiles,
+    removeAt,
+    reset,
+  };
 }
 
 function ReferenceMediaField({ media, label }: { media: ReturnType<typeof useReferenceMedia>; label: string }) {
   return (
-    <div className="flex items-center gap-3">
-      {media.previewUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={media.previewUrl} alt="Your reference" className="h-14 w-14 shrink-0 rounded-xl object-cover shadow-soft" />
+    <div className="flex flex-col gap-2">
+      {media.items.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {media.items.map((it, i) => (
+            <button key={it.previewUrl} onClick={() => media.setSelectedIndex(i)} className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={it.previewUrl}
+                alt="Your reference"
+                className={`h-14 w-14 rounded-xl object-cover shadow-soft ${media.selectedIndex === i ? "ring-2 ring-purple" : "opacity-60"}`}
+              />
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  media.removeAt(i);
+                }}
+                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs shadow-soft"
+              >
+                ×
+              </span>
+            </button>
+          ))}
+        </div>
       )}
-      <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-white py-3 text-sm font-semibold text-foreground hover:bg-white/70">
-        {media.extracting ? "Grabbing a frame…" : media.previewUrl ? "Change photo/video" : label}
-        <input
-          type="file"
-          accept="image/*,video/*"
-          className="hidden"
-          onChange={(e) => media.handleFile(e.target.files?.[0] ?? null)}
-        />
+      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-white py-3 text-sm font-semibold text-foreground hover:bg-white/70">
+        {media.extracting ? "Grabbing a frame…" : media.items.length > 0 ? "Add another photo/video" : label}
+        <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => media.handleFiles(e.target.files)} />
       </label>
+      {media.items.length > 1 && <p className="text-xs text-muted">Tap one to pick which photo/video we actually use.</p>}
       {media.error && <p className="text-xs text-coral-dark">{media.error}</p>}
+    </div>
+  );
+}
+
+// Same "upload/record several, pick one" pattern as ReferenceMediaField
+// above, for voice/audio references - reuses the existing single-clip
+// recorder hook but keeps every take in a list instead of overwriting the
+// last one.
+type AudioItem = { blob: Blob; previewUrl: string; label: string };
+
+function useMultiAudio() {
+  const [items, setItems] = useState<AudioItem[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const rec = useMediaRecorder("audio");
+
+  useEffect(() => {
+    if (!rec.blob || !rec.previewUrl) return;
+    setItems((prev) => {
+      setSelectedIndex(prev.length);
+      return [...prev, { blob: rec.blob!, previewUrl: rec.previewUrl!, label: `Recording ${prev.length + 1}` }];
+    });
+    rec.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rec.blob]);
+
+  function addFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const chosen = Array.from(files).filter((f) => !isVideoFile(f));
+    const newItems = chosen.map((f) => ({ blob: f, previewUrl: URL.createObjectURL(f), label: f.name }));
+    setItems((prev) => {
+      setSelectedIndex(prev.length);
+      return [...prev, ...newItems];
+    });
+  }
+
+  function removeAt(i: number) {
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
+    setSelectedIndex((prev) => (prev === i ? 0 : prev > i ? prev - 1 : prev));
+  }
+
+  function reset() {
+    setItems([]);
+    setSelectedIndex(0);
+    rec.reset();
+  }
+
+  const selected = items[selectedIndex] ?? null;
+  return { items, selectedIndex, setSelectedIndex, selectedBlob: selected?.blob ?? null, rec, addFiles, removeAt, reset };
+}
+
+function MultiAudioField({ audio }: { audio: ReturnType<typeof useMultiAudio> }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {audio.items.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {audio.items.map((it, i) => (
+            <div key={it.previewUrl} className="flex items-center gap-2">
+              <button
+                onClick={() => audio.setSelectedIndex(i)}
+                className={`flex-1 truncate rounded-full border px-3 py-1.5 text-left text-xs font-semibold ${
+                  audio.selectedIndex === i ? "border-purple bg-purple text-white" : "border-border bg-white text-muted"
+                }`}
+              >
+                {audio.selectedIndex === i ? "✓ " : ""}
+                {it.label}
+              </button>
+              <button onClick={() => audio.removeAt(i)} className="text-sm text-coral-dark">
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <button
+          onClick={audio.rec.recording ? audio.rec.stop : audio.rec.start}
+          className={`flex-1 rounded-full py-2.5 text-xs font-semibold ${
+            audio.rec.recording ? "bg-coral text-white" : "border border-border bg-white text-foreground"
+          }`}
+        >
+          {audio.rec.recording ? "⏹ Stop" : "🎙 Record"}
+        </button>
+        <label className="flex flex-1 cursor-pointer items-center justify-center rounded-full border border-border bg-white py-2.5 text-xs font-semibold text-foreground">
+          ↑ Upload
+          <input type="file" accept="audio/*" multiple className="hidden" onChange={(e) => audio.addFiles(e.target.files)} />
+        </label>
+      </div>
+      {audio.items.length > 1 && <p className="text-xs text-muted">Tap one to pick which take we actually use.</p>}
+      {audio.rec.error && <p className="text-xs text-coral-dark">{audio.rec.error}</p>}
     </div>
   );
 }
@@ -617,7 +745,7 @@ function CustomVideoSection() {
   const [script, setScript] = useState("");
   const [voiceMode, setVoiceMode] = useState<"preset" | "own">("preset");
   const [presetVoiceId, setPresetVoiceId] = useState(PRESET_VOICES[0].id);
-  const [ownVoiceSample, setOwnVoiceSample] = useState<Blob | File | null>(null);
+  const ownVoice = useMultiAudio();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
@@ -640,7 +768,7 @@ function CustomVideoSection() {
         // video and never separately gave a voice sample - the original
         // video file itself: the backend already transcodes any container
         // (including a video's own audio track) into the reference clip.
-        const audioSource = ownVoiceSample ?? media.videoFile;
+        const audioSource = ownVoice.selectedBlob ?? media.videoFile;
         if (!audioSource) throw new Error("Add a short sample of your voice, or upload a video that has your voice in it");
         form.append("reference_audio", audioSource);
       }
@@ -666,7 +794,12 @@ function CustomVideoSection() {
       title="Your video, hyper-realistic"
       subtitle="Upload your photo or a short video of yourself, type what to say - we animate exactly your face to say it."
     >
-      <ReferenceMediaField media={media} label="Upload your photo or video" />
+      <div className="rounded-2xl border border-white/60 bg-white/60 p-3">
+        <video className="w-full rounded-xl" src="/trailers/kirsty-kling-dub.mp4" controls loop muted playsInline />
+        <p className="mt-1.5 text-xs text-muted">Example: a real photo, dubbed with a Lucy voice via Kling.</p>
+      </div>
+
+      <ReferenceMediaField media={media} label="Upload your photo(s) or video(s)" />
 
       <textarea
         className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
@@ -705,8 +838,8 @@ function CustomVideoSection() {
         </select>
       ) : (
         <>
-          <RecordOrUpload kind="audio" onChange={setOwnVoiceSample} />
-          {!ownVoiceSample && media.videoFile && (
+          <MultiAudioField audio={ownVoice} />
+          {ownVoice.items.length === 0 && media.videoFile && (
             <p className="text-xs text-muted">No sample given - we&apos;ll use the audio from your uploaded video instead.</p>
           )}
         </>
@@ -752,7 +885,7 @@ function CinematicVideoSection() {
   const [prompt, setPrompt] = useState("");
   const [audioSource, setAudioSource] = useState<CinematicAudioSource>("engine_native");
   const [presetVoiceId, setPresetVoiceId] = useState(PRESET_VOICES[0].id);
-  const [ownAudio, setOwnAudio] = useState<Blob | File | null>(null);
+  const ownAudio = useMultiAudio();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
@@ -770,8 +903,8 @@ function CinematicVideoSection() {
       form.append("reference_image", media.imageBlob, "reference.jpg");
       form.append("audio_source", audioSource);
       if (audioSource === "lucy_preset") form.append("preset_voice_id", presetVoiceId);
-      if ((audioSource === "own_upload" || audioSource === "lucy_cloned") && ownAudio) {
-        form.append("reference_audio", ownAudio);
+      if ((audioSource === "own_upload" || audioSource === "lucy_cloned") && ownAudio.selectedBlob) {
+        form.append("reference_audio", ownAudio.selectedBlob);
       }
       const res = await fetch("/api/generate-cinematic-video", { method: "POST", body: form });
       const data = await res.json();
@@ -802,7 +935,12 @@ function CinematicVideoSection() {
       title="Cinematic"
       subtitle="Your photo + a scene you describe - Veo generates the shot around it."
     >
-      <ReferenceMediaField media={media} label="Upload your photo or video" />
+      <div className="rounded-2xl border border-white/60 bg-white/60 p-3">
+        <video className="w-full rounded-xl" src="/trailers/kirsty-moon-veo-audio.mp4" controls loop muted playsInline />
+        <p className="mt-1.5 text-xs text-muted">Example: the moon-surface scene, from the prompt below.</p>
+      </div>
+
+      <ReferenceMediaField media={media} label="Upload your photo(s) or video(s)" />
 
       <textarea
         className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
@@ -837,9 +975,7 @@ function CinematicVideoSection() {
           ))}
         </select>
       )}
-      {(audioSource === "own_upload" || audioSource === "lucy_cloned") && (
-        <RecordOrUpload kind="audio" onChange={setOwnAudio} />
-      )}
+      {(audioSource === "own_upload" || audioSource === "lucy_cloned") && <MultiAudioField audio={ownAudio} />}
       {audioSource !== "engine_native" && (
         <p className="text-xs italic text-muted">
           {audioSource === "lucy_cloned" ? "This clones your voice reading the text above." : "Your audio is layered onto the finished video afterward - not lip-synced frame-by-frame the way our Kling modes are, since Veo doesn't support that."}
@@ -880,7 +1016,7 @@ function CharacterVideoSection() {
   const [script, setScript] = useState("");
   const [voiceMode, setVoiceMode] = useState<"default" | "pick" | "own">("default");
   const [presetVoiceId, setPresetVoiceId] = useState(PRESET_VOICES[0].id);
-  const [ownVoiceSample, setOwnVoiceSample] = useState<Blob | File | null>(null);
+  const ownVoice = useMultiAudio();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
@@ -919,9 +1055,9 @@ function CharacterVideoSection() {
       form.append("character_id", characterId);
       form.append("script", script);
       if (voiceMode === "own") {
-        if (!ownVoiceSample) throw new Error("Add a short sample of your voice, or pick a Lucy voice instead");
+        if (!ownVoice.selectedBlob) throw new Error("Add a short sample of your voice, or pick a Lucy voice instead");
         form.append("voice_choice", "__own__");
-        form.append("reference_audio", ownVoiceSample);
+        form.append("reference_audio", ownVoice.selectedBlob);
       } else {
         form.append("voice_choice", voiceMode === "pick" ? presetVoiceId : character.defaultVoiceId);
       }
@@ -946,6 +1082,11 @@ function CharacterVideoSection() {
       title="Pick a character"
       subtitle="5 ready-made AI actors, always the same face - tap one to hear them, then type what they should say."
     >
+      <div className="rounded-2xl border border-white/60 bg-white/60 p-3">
+        <video className="w-full rounded-xl" src="/trailers/ads-veo-demo.mp4" controls loop muted playsInline />
+        <p className="mt-1.5 text-xs text-muted">Example: Harper, one of the 5 characters below.</p>
+      </div>
+
       <video
         ref={previewRef}
         onEnded={() => setPlayingId(null)}
@@ -1018,7 +1159,7 @@ function CharacterVideoSection() {
               ))}
             </select>
           )}
-          {voiceMode === "own" && <RecordOrUpload kind="audio" onChange={setOwnVoiceSample} />}
+          {voiceMode === "own" && <MultiAudioField audio={ownVoice} />}
 
           <button
             onClick={handleGenerate}
@@ -1043,7 +1184,7 @@ function PayAsYouGoVideoSection() {
   const [balance, setBalance] = useState(0);
   const [engine, setEngine] = useState<VideoEngine>("veo");
   const media = useReferenceMedia();
-  const [audio, setAudio] = useState<Blob | File | null>(null);
+  const audio = useMultiAudio();
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1086,7 +1227,7 @@ function PayAsYouGoVideoSection() {
       form.append("engine", engine);
       form.append("prompt", prompt);
       if (media.imageBlob) form.append("reference_image", media.imageBlob, "reference.jpg");
-      if (audio) form.append("reference_audio", audio);
+      if (audio.selectedBlob) form.append("reference_audio", audio.selectedBlob);
       const res = await fetch("/api/video-paygo/generate", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
@@ -1152,8 +1293,8 @@ function PayAsYouGoVideoSection() {
             ))}
           </div>
 
-          <ReferenceMediaField media={media} label="Add a photo or video (optional)" />
-          <RecordOrUpload kind="audio" onChange={setAudio} />
+          <ReferenceMediaField media={media} label="Add photo(s) or video(s) (optional)" />
+          <MultiAudioField audio={audio} />
 
           <textarea
             className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
@@ -1165,7 +1306,7 @@ function PayAsYouGoVideoSection() {
 
           <button
             onClick={balance < 1 ? () => handleBuy("single") : handleGenerate}
-            disabled={loading || (balance >= 1 && !prompt.trim() && !audio) || buyingPack !== null}
+            disabled={loading || (balance >= 1 && !prompt.trim() && !audio.selectedBlob) || buyingPack !== null}
             className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
           >
             {loading
