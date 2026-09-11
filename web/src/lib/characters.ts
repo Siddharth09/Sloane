@@ -73,7 +73,7 @@ export const CHARACTERS: Character[] = [
     region: "Nashville, USA",
     // Re-generated 2026-09-11 to look more like a music instructor (guitar,
     // teaching studio) per direct request - was a generic studio portrait.
-    imageUrl: "https://v3b.fal.media/files/b/PLACEHOLDER/marcus_v2.jpg",
+    imageUrl: "https://v3b.fal.media/files/b/0aa9ed98/31mAICP5_1aZQawWNnVT8_marcus_v2.jpg",
     defaultVoiceId: "voice_mark", // Mark - requested explicitly ("voice of mark")
   },
   {
