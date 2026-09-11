@@ -57,6 +57,18 @@ export async function getFalJobResult(endpoint: string, requestId: string): Prom
 // Needed for the character-video Lucy-voice path: Kling Avatar's audio_url
 // input needs a real hosted URL, and generated TTS audio only exists as
 // in-memory bytes until uploaded somewhere fal can fetch it from.
+// Merges a generated (often silent/ambient) video with a separate audio
+// track - used when the user supplies their own audio or a Lucy voice for
+// Cinematic/pay-as-you-go mode instead of the engine's own native voice.
+// This is NOT lip-sync (Kling Avatar is the only proven lip-sync path in
+// this stack, and it needs a static photo, not an already-generated video) -
+// it's a straight audio-track replacement, disclosed as such in the UI.
+export const FFMPEG_MERGE_ENDPOINT = "fal-ai/ffmpeg-api/merge-audio-video";
+
+export async function submitMergeAudioVideo(videoUrl: string, audioUrl: string): Promise<string> {
+  return submitFalJob(FFMPEG_MERGE_ENDPOINT, { video_url: videoUrl, audio_url: audioUrl });
+}
+
 export async function uploadBufferToFal(data: Buffer, contentType: string, fileName: string): Promise<string> {
   const initRes = await fetch("https://rest.fal.ai/storage/upload/initiate", {
     method: "POST",

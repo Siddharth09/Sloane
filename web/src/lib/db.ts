@@ -158,6 +158,58 @@ export async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // Two new video modes (2026-09-11), both billed against a Video-plan
+  // subscriber's existing video-credit quota (access_token +
+  // checkVideoCreditQuota/incrementUsage - same mechanism as
+  // character_video_jobs above), kept in ONE table since they share the
+  // same billing path and a very similar multi-phase pipeline, rather than
+  // adding two more near-duplicate tables:
+  // - 'custom': user's OWN photo/video-frame, animated via Kling Avatar to
+  //   speak their typed script in either a cloned version of their own
+  //   voice or a picked Lucy preset - the "hyper-realistic, exactly your
+  //   likeness" mode.
+  // - 'cinematic': user's own photo/video-frame drives a Veo-generated
+  //   scene from a text prompt, with audio being either Veo's own
+  //   generated voice, the user's own uploaded audio, or a Lucy voice
+  //   (the latter two muxed on afterward via fal's ffmpeg merge-audio-video
+  //   utility, since neither is a lip-sync step the way Kling Avatar is -
+  //   disclosed as such in the UI).
+  await sql`
+    CREATE TABLE IF NOT EXISTS subscription_video_jobs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      access_token TEXT NOT NULL,
+      mode TEXT NOT NULL, -- 'custom' | 'cinematic'
+      reference_image_url TEXT NOT NULL,
+      prompt TEXT NOT NULL, -- script (custom) or scene description (cinematic)
+      audio_source TEXT NOT NULL, -- 'lucy_preset' | 'lucy_cloned' | 'own_upload' | 'engine_native'
+      preset_voice_id TEXT,
+      credits_cost INTEGER NOT NULL,
+      fal_endpoint TEXT NOT NULL,
+      modal_job_id TEXT, -- set only when audio_source is lucy_preset/lucy_cloned (TTS phase)
+      resolved_audio_url TEXT, -- the audio actually used: TTS result upload, or the user's own upload
+      fal_request_id TEXT, -- main video-generation request (Kling Avatar or Veo)
+      needs_merge BOOLEAN NOT NULL DEFAULT false,
+      merge_request_id TEXT, -- fal ffmpeg merge-audio-video request, only when needs_merge
+      status TEXT NOT NULL DEFAULT 'pending',
+      video_url TEXT,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+
+  // Pay-as-you-go (mode 4) gains optional image/video-frame and audio
+  // references alongside the existing text-only prompt - added via ALTER
+  // since video_paygo_jobs already exists in production.
+  await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS input_image_url TEXT`;
+  await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS input_audio_url TEXT`;
+  await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS needs_merge BOOLEAN NOT NULL DEFAULT false`;
+  await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS merge_request_id TEXT`;
+  // The actual fal endpoint used for this specific job - varies per job now
+  // (plain text-to-video vs. image-to-video vs. Kling Avatar) depending on
+  // which uploads were given, so it can no longer be re-derived from just
+  // the engine name at poll time the way it could when every job used the
+  // same fixed endpoint per engine.
+  await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS fal_endpoint TEXT`;
 }
 
 // Generic runtime settings, switchable from the admin dashboard without a
@@ -570,6 +622,11 @@ export type VideoPaygoJob = {
   engine: string;
   prompt: string;
   fal_request_id: string | null;
+  fal_endpoint: string | null;
+  input_image_url: string | null;
+  input_audio_url: string | null;
+  needs_merge: boolean;
+  merge_request_id: string | null;
   status: "pending" | "in_progress" | "completed" | "failed";
   video_url: string | null;
   error: string | null;
@@ -580,10 +637,17 @@ export async function createVideoPaygoJob(params: {
   userId: string;
   engine: string;
   prompt: string;
+  falEndpoint: string;
+  inputImageUrl?: string | null;
+  inputAudioUrl?: string | null;
+  needsMerge?: boolean;
 }): Promise<string> {
   const rows = await sql`
-    INSERT INTO video_paygo_jobs (user_id, engine, prompt)
-    VALUES (${params.userId}, ${params.engine}, ${params.prompt})
+    INSERT INTO video_paygo_jobs (user_id, engine, prompt, fal_endpoint, input_image_url, input_audio_url, needs_merge)
+    VALUES (
+      ${params.userId}, ${params.engine}, ${params.prompt}, ${params.falEndpoint},
+      ${params.inputImageUrl ?? null}, ${params.inputAudioUrl ?? null}, ${params.needsMerge ?? false}
+    )
     RETURNING id
   `;
   return rows[0].id as string;
@@ -671,4 +735,87 @@ export async function failCharacterVideoJob(jobId: string, error: string) {
 export async function getCharacterVideoJob(jobId: string): Promise<CharacterVideoJob | null> {
   const rows = await sql`SELECT * FROM character_video_jobs WHERE id = ${jobId}`;
   return (rows[0] as CharacterVideoJob) ?? null;
+}
+
+// --- Subscription video jobs (custom hyper-realistic + cinematic modes) ---
+
+export type SubscriptionVideoMode = "custom" | "cinematic";
+export type SubscriptionVideoAudioSource = "lucy_preset" | "lucy_cloned" | "own_upload" | "engine_native";
+
+export type SubscriptionVideoJob = {
+  id: string;
+  access_token: string;
+  mode: SubscriptionVideoMode;
+  reference_image_url: string;
+  prompt: string;
+  audio_source: SubscriptionVideoAudioSource;
+  preset_voice_id: string | null;
+  credits_cost: number;
+  fal_endpoint: string;
+  modal_job_id: string | null;
+  resolved_audio_url: string | null;
+  fal_request_id: string | null;
+  needs_merge: boolean;
+  merge_request_id: string | null;
+  status: "pending" | "in_progress" | "completed" | "failed";
+  video_url: string | null;
+  error: string | null;
+  created_at: string;
+};
+
+export async function createSubscriptionVideoJob(params: {
+  accessToken: string;
+  mode: SubscriptionVideoMode;
+  referenceImageUrl: string;
+  prompt: string;
+  audioSource: SubscriptionVideoAudioSource;
+  presetVoiceId: string | null;
+  creditsCost: number;
+  falEndpoint: string;
+  needsMerge: boolean;
+}): Promise<string> {
+  const rows = await sql`
+    INSERT INTO subscription_video_jobs
+      (access_token, mode, reference_image_url, prompt, audio_source, preset_voice_id, credits_cost, fal_endpoint, needs_merge)
+    VALUES
+      (${params.accessToken}, ${params.mode}, ${params.referenceImageUrl}, ${params.prompt}, ${params.audioSource},
+       ${params.presetVoiceId}, ${params.creditsCost}, ${params.falEndpoint}, ${params.needsMerge})
+    RETURNING id
+  `;
+  return rows[0].id as string;
+}
+
+export async function setSubscriptionVideoJobModalId(jobId: string, modalJobId: string) {
+  await sql`UPDATE subscription_video_jobs SET modal_job_id = ${modalJobId} WHERE id = ${jobId}`;
+}
+
+export async function setSubscriptionVideoJobResolvedAudio(jobId: string, resolvedAudioUrl: string) {
+  await sql`UPDATE subscription_video_jobs SET resolved_audio_url = ${resolvedAudioUrl} WHERE id = ${jobId}`;
+}
+
+export async function setSubscriptionVideoJobRequestId(jobId: string, falRequestId: string) {
+  await sql`UPDATE subscription_video_jobs SET fal_request_id = ${falRequestId}, status = 'in_progress' WHERE id = ${jobId}`;
+}
+
+export async function setSubscriptionVideoJobMergeRequestId(jobId: string, mergeRequestId: string) {
+  await sql`UPDATE subscription_video_jobs SET merge_request_id = ${mergeRequestId} WHERE id = ${jobId}`;
+}
+
+export async function completeSubscriptionVideoJob(jobId: string, videoUrl: string) {
+  await sql`UPDATE subscription_video_jobs SET status = 'completed', video_url = ${videoUrl} WHERE id = ${jobId}`;
+}
+
+export async function failSubscriptionVideoJob(jobId: string, error: string) {
+  await sql`UPDATE subscription_video_jobs SET status = 'failed', error = ${error} WHERE id = ${jobId}`;
+}
+
+export async function getSubscriptionVideoJob(jobId: string): Promise<SubscriptionVideoJob | null> {
+  const rows = await sql`SELECT * FROM subscription_video_jobs WHERE id = ${jobId}`;
+  return (rows[0] as SubscriptionVideoJob) ?? null;
+}
+
+// --- Pay-as-you-go: merge phase (own/cloned audio muxed onto the video) ---
+
+export async function setVideoPaygoJobMergeRequestId(jobId: string, mergeRequestId: string) {
+  await sql`UPDATE video_paygo_jobs SET merge_request_id = ${mergeRequestId} WHERE id = ${jobId}`;
 }

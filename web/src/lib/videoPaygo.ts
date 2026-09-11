@@ -71,20 +71,48 @@ export type VideoEngine = "kling" | "veo" | "seedance";
 export const VIDEO_PAYGO_RESOLUTION = "720p";
 export const VIDEO_PAYGO_PRICE_USD_CENTS = 399; // $3.99, flat across all three engines
 
+// versionLabel is shown directly in the UI so the engine picker is honest
+// about exactly which model version is running, per direct request ("give
+// a dropdown ... mention which version we offer like veo 2 etc"). These are
+// deliberately the SAME model tier/version already priced and proven above
+// (Veo 3.1 fast, Kling 2.1 master, Seedance 2.0 fast) - not silently
+// upgraded to a newer/pricier version (e.g. Seedance 2.5), which would
+// invalidate the worst-case cost math this file's margin comment depends
+// on without re-verifying its real fal price first.
 export const VIDEO_PAYGO_ENGINES: Record<
   VideoEngine,
-  { label: string; falEndpoint: string; durationSeconds: number; falDurationValue: string }
+  {
+    label: string;
+    versionLabel: string;
+    falEndpoint: string;
+    falImageToVideoEndpoint: string;
+    falAvatarEndpoint?: string; // only Kling has a proven lip-sync/avatar path in this stack
+    durationSeconds: number;
+    falDurationValue: string;
+  }
 > = {
-  veo: { label: "Veo", falEndpoint: "fal-ai/veo3.1/fast", durationSeconds: 8, falDurationValue: "8s" },
+  veo: {
+    label: "Veo",
+    versionLabel: "Veo 3.1 Fast",
+    falEndpoint: "fal-ai/veo3.1/fast",
+    falImageToVideoEndpoint: "fal-ai/veo3.1/fast/image-to-video",
+    durationSeconds: 8,
+    falDurationValue: "8s",
+  },
   kling: {
     label: "Kling",
+    versionLabel: "Kling 2.1 Master",
     falEndpoint: "fal-ai/kling-video/v2.1/master/text-to-video",
+    falImageToVideoEndpoint: "fal-ai/kling-video/v2.1/master/image-to-video",
+    falAvatarEndpoint: "fal-ai/kling-video/ai-avatar/v2/standard",
     durationSeconds: 5,
     falDurationValue: "5",
   },
   seedance: {
     label: "Seedance",
+    versionLabel: "Seedance 2.0 Fast",
     falEndpoint: "bytedance/seedance-2.0/fast/text-to-video",
+    falImageToVideoEndpoint: "bytedance/seedance-2.0/fast/image-to-video",
     durationSeconds: 8,
     falDurationValue: "8",
   },
@@ -94,6 +122,24 @@ export const VIDEO_PAYGO_ENGINES: Record<
 // kept here (not just in the comment above) so a future engine price
 // change is easy to re-verify margin against, not just documented once and
 // forgotten.
+//
+// **Upload-driven paths added 2026-09-11 (image/video/audio references,
+// see /api/video-paygo/generate) - cost impact checked, not assumed:**
+// - An image/video-frame reference switches Veo/Seedance to their own
+//   image-to-video endpoint at the SAME price bracket (same model tier,
+//   same duration) - no cost change.
+// - Kling + an uploaded/cloned audio track routes through Kling's Avatar
+//   endpoint instead (the only proven lip-sync path in this stack) at
+//   real list price ~$0.0562/s -> ~$0.28-0.45 for a 5-8s clip, CHEAPER
+//   than the $1.40 flat this file already budgets for Kling - strictly
+//   safer for the profit floor, not a new risk.
+// - Veo/Seedance + an uploaded/cloned audio track render silent/ambient
+//   then get muxed via fal's ffmpeg merge-audio-video utility - real
+//   verified pricing for that endpoint hasn't been checked yet (not
+//   documented in fal's own model page at the time this was written);
+//   treat as a small additional cost to confirm before launch, likely
+//   well inside the existing 15% buffer given ffmpeg-utility endpoints are
+//   typically flat-fee and cheap, but "likely" isn't "verified."
 export const VIDEO_PAYGO_ENGINE_COST_USD: Record<VideoEngine, number> = {
   veo: 1.38,
   kling: 1.61,

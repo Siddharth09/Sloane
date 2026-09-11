@@ -13,6 +13,8 @@ import { useAccessToken } from "@/lib/useAccessToken";
 import { useFreeTierId } from "@/lib/useFreeTierId";
 import { PLANS, VIDEO_CREDIT_COSTS } from "@/lib/plans";
 import { CHARACTERS, LUCY_VOICE_CREDIT_COST } from "@/lib/characters";
+import { VIDEO_PAYGO_ENGINES, VIDEO_CREDIT_PACKS, type VideoEngine } from "@/lib/videoPaygo";
+import { extractVideoFrame, isVideoFile, isAudioFile } from "@/lib/videoFrame";
 
 // Backend mode is switchable at runtime from /admin (see
 // @/lib/inferenceBackend) - fetched here rather than read from a build-time
@@ -471,119 +473,417 @@ function CloneVoiceSection() {
   );
 }
 
-const CINEMATIC_PROMPT_EXAMPLES = [
-  "A sun-drenched clifftop terrace in Santorini, blue domes and the Aegean Sea behind me",
-  "Walking a neon-lit street in Tokyo at night, rain reflecting off the pavement",
-  "Standing in a quiet Kyoto bamboo forest at dawn, soft mist drifting through",
-  "On a black-sand beach in Iceland, glaciers in the distance, moody light",
-];
+// Shared by all 4 video modes below.
+const VIDEO_POLL_INTERVAL_MS = 3000;
+const VIDEO_POLL_TIMEOUT_MS = 300_000;
 
-function VideoModeCard({
-  badge,
-  title,
-  videoSrc,
-  description,
-  promptExamples,
-  footnote,
-}: {
-  badge: string;
-  title: string;
-  videoSrc: string;
-  description: string;
-  promptExamples?: string[];
-  footnote?: string;
-}) {
+async function pollVideoJob(statusEndpoint: string, jobId: string): Promise<string> {
+  const startedAt = Date.now();
+  for (;;) {
+    if (Date.now() - startedAt > VIDEO_POLL_TIMEOUT_MS) throw new Error("Taking much longer than usual - try again shortly.");
+    await new Promise((resolve) => setTimeout(resolve, VIDEO_POLL_INTERVAL_MS));
+    const res = await fetch(`${statusEndpoint}?jobId=${encodeURIComponent(jobId)}`);
+    const data = await res.json();
+    if (data.status === "COMPLETED") return data.videoUrl as string;
+    if (data.status === "FAILED") throw new Error(data.error ?? "Generation failed");
+  }
+}
+
+type VideoJobType = "paygo" | "character" | "custom" | "cinematic";
+
+// Real video + a real "Download MP4" that streams through our own domain
+// (see /api/download-video) instead of sending people to fal's raw CDN URL.
+function VideoResultPlayer({ videoUrl, jobId, jobType }: { videoUrl: string; jobId: string; jobType: VideoJobType }) {
   return (
-    <div className="rounded-2xl border border-white/60 bg-white/60 p-4">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="rounded-full bg-purple px-2.5 py-0.5 text-xs font-bold text-white">{badge}</span>
-        <h3 className="text-sm font-bold text-foreground">{title}</h3>
-      </div>
-      <video className="w-full rounded-xl" src={videoSrc} controls loop muted playsInline />
-      <p className="mt-2 text-sm leading-relaxed text-muted">{description}</p>
-      {promptExamples && (
-        <div className="mt-2">
-          <p className="text-xs font-semibold text-foreground">Example prompts:</p>
-          <ul className="mt-1 list-disc pl-4 text-xs leading-relaxed text-muted">
-            {promptExamples.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {footnote && <p className="mt-2 text-xs italic leading-relaxed text-coral-dark">{footnote}</p>}
+    <div>
+      <video className="w-full rounded-xl" src={videoUrl} controls autoPlay loop playsInline />
+      <a
+        href={`/api/download-video?jobType=${jobType}&jobId=${encodeURIComponent(jobId)}`}
+        className="mt-3 inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
+      >
+        Download MP4
+      </a>
     </div>
   );
 }
 
-function VideoCloneSection() {
-  const videoCredits = PLANS.video.videoCreditsPerMonth;
+// Shared image/video-upload control used by all 3 upload-driven video modes.
+// A video is never sent to the server as-is for the reference photo - a
+// frame is grabbed client-side (see @/lib/videoFrame.ts) the moment it's
+// chosen, so every mode's backend only ever handles a still image for
+// identity/scene reference.
+function useReferenceMedia() {
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null); // kept only so its audio track can be reused
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  async function handleFile(f: File | null) {
+    setError(null);
+    setVideoFile(null);
+    setImageBlob(null);
+    setPreviewUrl(null);
+    if (!f) return;
+    if (isAudioFile(f)) {
+      setError("That's an audio file - use the separate voice/audio option below instead.");
+      return;
+    }
+    if (isVideoFile(f)) {
+      setExtracting(true);
+      try {
+        const frame = await extractVideoFrame(f);
+        setImageBlob(frame);
+        setVideoFile(f);
+        setPreviewUrl(URL.createObjectURL(frame));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not read that video");
+      } finally {
+        setExtracting(false);
+      }
+    } else {
+      setImageBlob(f);
+      setPreviewUrl(URL.createObjectURL(f));
+    }
+  }
+
+  function reset() {
+    setImageBlob(null);
+    setVideoFile(null);
+    setPreviewUrl(null);
+    setError(null);
+  }
+
+  return { imageBlob, videoFile, previewUrl, extracting, error, handleFile, reset };
+}
+
+function ReferenceMediaField({ media, label }: { media: ReturnType<typeof useReferenceMedia>; label: string }) {
   return (
-    <Card
-      wash="bg-purple-wash/90"
-      iconColor="text-purple"
-      icon="🎬"
-      title="Video"
-      subtitle="Three real modes, being wired up now — not a vague someday."
-    >
-      <p className="text-sm leading-relaxed text-muted">
-        Video is landing as three distinct modes, each built on the AI video engine that's actually
-        best at that job: Kling for a talking-head video in any voice, Veo for a fully AI-generated
-        cinematic scene, and Seedance for ad-style videos built around your own reusable AI actor. The
-        clips below are real tests run against the live APIs, not mockups — here&apos;s exactly what to
-        expect, drawbacks included.
-      </p>
+    <div className="flex items-center gap-3">
+      {media.previewUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={media.previewUrl} alt="Your reference" className="h-14 w-14 shrink-0 rounded-xl object-cover shadow-soft" />
+      )}
+      <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-white py-3 text-sm font-semibold text-foreground hover:bg-white/70">
+        {media.extracting ? "Grabbing a frame…" : media.previewUrl ? "Change photo/video" : label}
+        <input
+          type="file"
+          accept="image/*,video/*"
+          className="hidden"
+          onChange={(e) => media.handleFile(e.target.files?.[0] ?? null)}
+        />
+      </label>
+      {media.error && <p className="text-xs text-coral-dark">{media.error}</p>}
+    </div>
+  );
+}
 
-      <VideoModeCard
-        badge="Talking head"
-        title="Kling + any Lucy voice (or Kling's own)"
-        videoSrc="/trailers/kirsty-kling-dub.mp4"
-        description="Upload a photo or short video of a face, plus audio — either type text narrated in one of Lucy's voices (including a cloned one), or let Kling use its own voice. We lip-sync it to that face."
-      />
-
-      <VideoModeCard
-        badge="Cinematic"
-        title="Veo, any scene you describe"
-        videoSrc="/trailers/kirsty-moon-veo-audio.mp4"
-        description="Upload a photo and describe a scene in a prompt — Veo generates the video around it, with a choice of its own AI-generated voice/dialogue or a Lucy voice dubbed in afterward for shots calm enough for the dub to sync convincingly."
-        promptExamples={CINEMATIC_PROMPT_EXAMPLES}
-        footnote="The more the character moves within a scene, the more their face can drift or distort from the original reference photo — a real limitation of current AI video technology broadly, ours included, not something we can fully fix on our end. Cinematic mode isn't reliable yet for a shot that needs the face to stay consistent throughout a lot of motion."
-      />
-
-      <VideoModeCard
-        badge="Ads"
-        title="Your own exclusive AI actor"
-        videoSrc="/trailers/ads-veo-demo.mp4"
-        description="Describe your actor in a text prompt, or start from a photo or a short video — either way, you type the script and your actor says it back in the video. That actor is generated privately for your account: we never hand the same generated actor to another customer, and every new one is checked against everyone else's before it's finalized so even an accidental lookalike gets regenerated. Reuse that one actor across unlimited ads afterward - new scripts, new scenes, or upload an existing ad/UGC video and Seedance recreates its content and motion with your actor instead - one consistent 'face' across every ad, at a click, without booking a real actor each time."
-        footnote="This demo (and any hyper-realistic actor) is generated through Veo - Seedance's own safety filter blocks fully AI-generated faces that look too photorealistic, so it's reserved for its unique upload-a-video recreation trick and more stylized actor looks instead."
-      />
-
+function VideoIntroSection() {
+  const videoCredits = PLANS.video.videoCreditsPerMonth;
+  return (
+    <Card wash="bg-purple-wash/90" iconColor="text-purple" icon="🎬" title="Video" subtitle="Four ways to make a video with Lucy - pick what fits.">
+      <ul className="grid gap-2 text-sm leading-relaxed text-muted sm:grid-cols-2">
+        <li>
+          <strong className="text-foreground">Your video, hyper-realistic.</strong> Your own photo/video + a script -
+          exactly your face, powered by Kling.
+        </li>
+        <li>
+          <strong className="text-foreground">Cinematic.</strong> Your photo + a scene you describe - Veo generates
+          the shot.
+        </li>
+        <li>
+          <strong className="text-foreground">Pick a character.</strong> 5 ready-made AI actors, always the same
+          face.
+        </li>
+        <li>
+          <strong className="text-foreground">Pay as you go.</strong> Any prompt (+ optional photo/audio), any
+          engine, no subscription.
+        </li>
+      </ul>
       <p className="rounded-2xl bg-white/70 p-3 text-xs leading-relaxed text-muted">
-        <strong className="text-foreground">Video credits are shared across all three modes</strong> —
-        one monthly balance. 1 credit ≈ {VIDEO_CREDIT_COSTS.talkingHeadSecondsPerCredit}s of
-        talking-head, or ≈{Math.round(VIDEO_CREDIT_COSTS.cinematicSecondsPerCredit * 100) / 100}s of
-        cinematic (cinematic costs more to produce) - ads-mode pricing depends on which engine a given
-        generation actually uses and is still being finalized. Once this ships: the Video plan gets{" "}
-        {videoCredits} credits/month - Free/Starter/Plus don&apos;t include video. Whichever mode you
-        use, your photo, video, and any reference audio are sent to third-party AI vendors (Kling, Veo,
-        Seedance, and the fal.ai platform we use to reach them) for processing — different from our
-        audio feature, which runs entirely on our own servers.
+        The first three modes share one Video-plan balance: {videoCredits} credits/month. Whichever mode you use,
+        your photo, video, and any audio are sent to third-party AI vendors (Kling, Veo, Seedance, and the fal.ai
+        platform we use to reach them) for processing.
       </p>
     </Card>
   );
 }
 
-const CHARACTER_POLL_INTERVAL_MS = 3000;
-const CHARACTER_POLL_TIMEOUT_MS = 300_000;
+// --- Mode 1: your own photo/video, hyper-realistic, exactly your likeness ---
+
+function CustomVideoSection() {
+  const { token } = useAccessToken();
+  const media = useReferenceMedia();
+  const [script, setScript] = useState("");
+  const [voiceMode, setVoiceMode] = useState<"preset" | "own">("preset");
+  const [presetVoiceId, setPresetVoiceId] = useState(PRESET_VOICES[0].id);
+  const [ownVoiceSample, setOwnVoiceSample] = useState<Blob | File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
+
+  async function handleGenerate() {
+    if (!media.imageBlob) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const form = new FormData();
+      form.append("access_token", token ?? "");
+      form.append("script", script);
+      form.append("reference_image", media.imageBlob, "reference.jpg");
+      form.append("voice_mode", voiceMode);
+      if (voiceMode === "preset") {
+        form.append("preset_voice_id", presetVoiceId);
+      } else {
+        // Their own recorded/uploaded voice sample, or - if they uploaded a
+        // video and never separately gave a voice sample - the original
+        // video file itself: the backend already transcodes any container
+        // (including a video's own audio track) into the reference clip.
+        const audioSource = ownVoiceSample ?? media.videoFile;
+        if (!audioSource) throw new Error("Add a short sample of your voice, or upload a video that has your voice in it");
+        form.append("reference_audio", audioSource);
+      }
+      const res = await fetch("/api/generate-custom-video", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Generation failed");
+      const jobId = data.jobId as string;
+      const videoUrl = await pollVideoJob("/api/generate-custom-video/status", jobId);
+      setResult({ videoUrl, jobId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card
+      id="hyper-realistic"
+      wash="bg-purple-wash/90"
+      iconColor="text-purple"
+      icon="🪞"
+      title="Your video, hyper-realistic"
+      subtitle="Upload your photo or a short video of yourself, type what to say - we animate exactly your face to say it."
+    >
+      <ReferenceMediaField media={media} label="Upload your photo or video" />
+
+      <textarea
+        className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
+        rows={3}
+        placeholder="Type what you want to say..."
+        value={script}
+        onChange={(e) => setScript(e.target.value)}
+      />
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => setVoiceMode("preset")}
+          className={`flex-1 rounded-full py-2 text-xs font-semibold ${voiceMode === "preset" ? "bg-purple text-white shadow-soft" : "border border-border bg-white text-muted"}`}
+        >
+          Pick a Lucy voice
+        </button>
+        <button
+          onClick={() => setVoiceMode("own")}
+          className={`flex-1 rounded-full py-2 text-xs font-semibold ${voiceMode === "own" ? "bg-purple text-white shadow-soft" : "border border-border bg-white text-muted"}`}
+        >
+          Use my own voice
+        </button>
+      </div>
+
+      {voiceMode === "preset" ? (
+        <select
+          value={presetVoiceId}
+          onChange={(e) => setPresetVoiceId(e.target.value)}
+          className="w-full rounded-2xl border border-border bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple"
+        >
+          {PRESET_VOICES.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <>
+          <RecordOrUpload kind="audio" onChange={setOwnVoiceSample} />
+          {!ownVoiceSample && media.videoFile && (
+            <p className="text-xs text-muted">No sample given - we&apos;ll use the audio from your uploaded video instead.</p>
+          )}
+        </>
+      )}
+
+      {!token ? (
+        <p className="rounded-2xl bg-white/70 p-3 text-sm text-muted">
+          Sign in with a Video-plan access code (paste yours above, or{" "}
+          <a href="/billing" className="font-semibold text-purple underline">
+            see plans
+          </a>
+          ) to generate.
+        </p>
+      ) : (
+        <button
+          onClick={handleGenerate}
+          disabled={loading || !media.imageBlob || !script.trim()}
+          className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
+        >
+          {loading ? "Generating… (usually 30-90s)" : `Generate (${LUCY_VOICE_CREDIT_COST} video credits)`}
+        </button>
+      )}
+
+      {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
+      {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="custom" />}
+      <p className="text-xs text-muted">Powered by Kling - the only engine in our tests that reliably keeps your exact face, not a lookalike.</p>
+    </Card>
+  );
+}
+
+// --- Mode 2: cinematic scenes with Veo, from your own photo ---
+
+type CinematicAudioSource = "engine_native" | "own_upload" | "lucy_preset" | "lucy_cloned";
+
+// Guides people toward a genuinely more detailed prompt (Veo's real output
+// quality tracks how specific the description is), quoting the real prompt
+// used for the moon-surface demo clip on this page as a worked example.
+const CINEMATIC_PROMPT_PLACEHOLDER = `Describe the scene in detail - the more specific, the better the result. For example, for the astronaut-on-the-moon video above, we used: "Cinematic wide shot on the lunar surface: this exact same woman walks slowly beside a NASA-style lunar rover, dust kicking up under her boots, Earth hanging in the black sky. In the mid-ground a futuristic..."`;
+
+function CinematicVideoSection() {
+  const { token } = useAccessToken();
+  const media = useReferenceMedia();
+  const [prompt, setPrompt] = useState("");
+  const [audioSource, setAudioSource] = useState<CinematicAudioSource>("engine_native");
+  const [presetVoiceId, setPresetVoiceId] = useState(PRESET_VOICES[0].id);
+  const [ownAudio, setOwnAudio] = useState<Blob | File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
+  const cinematicCredits = Math.round(8 / VIDEO_CREDIT_COSTS.cinematicSecondsPerCredit);
+
+  async function handleGenerate() {
+    if (!media.imageBlob) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const form = new FormData();
+      form.append("access_token", token ?? "");
+      form.append("prompt", prompt);
+      form.append("reference_image", media.imageBlob, "reference.jpg");
+      form.append("audio_source", audioSource);
+      if (audioSource === "lucy_preset") form.append("preset_voice_id", presetVoiceId);
+      if ((audioSource === "own_upload" || audioSource === "lucy_cloned") && ownAudio) {
+        form.append("reference_audio", ownAudio);
+      }
+      const res = await fetch("/api/generate-cinematic-video", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Generation failed");
+      const jobId = data.jobId as string;
+      const videoUrl = await pollVideoJob("/api/generate-cinematic-video/status", jobId);
+      setResult({ videoUrl, jobId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const AUDIO_OPTIONS: { id: CinematicAudioSource; label: string }[] = [
+    { id: "engine_native", label: "Veo's own voice" },
+    { id: "own_upload", label: "My own audio" },
+    { id: "lucy_preset", label: "A Lucy voice" },
+    { id: "lucy_cloned", label: "Clone my voice" },
+  ];
+
+  return (
+    <Card
+      id="cinematic"
+      wash="bg-purple-wash/90"
+      iconColor="text-purple"
+      icon="🎬"
+      title="Cinematic"
+      subtitle="Your photo + a scene you describe - Veo generates the shot around it."
+    >
+      <ReferenceMediaField media={media} label="Upload your photo or video" />
+
+      <textarea
+        className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
+        rows={4}
+        placeholder={CINEMATIC_PROMPT_PLACEHOLDER}
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+      />
+
+      <div className="grid grid-cols-2 gap-2">
+        {AUDIO_OPTIONS.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => setAudioSource(o.id)}
+            className={`rounded-2xl border p-2 text-xs font-semibold ${audioSource === o.id ? "border-purple bg-purple text-white shadow-soft" : "border-border bg-white text-muted"}`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {audioSource === "lucy_preset" && (
+        <select
+          value={presetVoiceId}
+          onChange={(e) => setPresetVoiceId(e.target.value)}
+          className="w-full rounded-2xl border border-border bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple"
+        >
+          {PRESET_VOICES.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.label}
+            </option>
+          ))}
+        </select>
+      )}
+      {(audioSource === "own_upload" || audioSource === "lucy_cloned") && (
+        <RecordOrUpload kind="audio" onChange={setOwnAudio} />
+      )}
+      {audioSource !== "engine_native" && (
+        <p className="text-xs italic text-muted">
+          {audioSource === "lucy_cloned" ? "This clones your voice reading the text above." : "Your audio is layered onto the finished video afterward - not lip-synced frame-by-frame the way our Kling modes are, since Veo doesn't support that."}
+        </p>
+      )}
+
+      {!token ? (
+        <p className="rounded-2xl bg-white/70 p-3 text-sm text-muted">
+          Sign in with a Video-plan access code (paste yours above, or{" "}
+          <a href="/billing" className="font-semibold text-purple underline">
+            see plans
+          </a>
+          ) to generate.
+        </p>
+      ) : (
+        <button
+          onClick={handleGenerate}
+          disabled={loading || !media.imageBlob || !prompt.trim()}
+          className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
+        >
+          {loading ? "Generating… (usually 30-90s)" : `Generate (${cinematicCredits} video credits)`}
+        </button>
+      )}
+
+      {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
+      {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="cinematic" />}
+      <p className="text-xs text-muted">
+        A real limitation, not hidden: the more your reference photo moves within the scene, the more the face can
+        drift from your real one - Veo regenerates the whole scene rather than animating your exact photo.
+      </p>
+    </Card>
+  );
+}
 
 function CharacterVideoSection() {
   const { token } = useAccessToken();
   const [characterId, setCharacterId] = useState(CHARACTERS[0].id);
   const [script, setScript] = useState("");
+  const [voiceMode, setVoiceMode] = useState<"default" | "pick" | "own">("default");
+  const [presetVoiceId, setPresetVoiceId] = useState(PRESET_VOICES[0].id);
+  const [ownVoiceSample, setOwnVoiceSample] = useState<Blob | File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const previewRef = useRef<HTMLVideoElement | null>(null);
 
@@ -612,29 +912,25 @@ function CharacterVideoSection() {
   async function handleGenerate() {
     setLoading(true);
     setError(null);
-    setVideoUrl(null);
+    setResult(null);
     try {
-      const res = await fetch("/api/generate-character-video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: token, character_id: characterId, voice_choice: character.defaultVoiceId, script }),
-      });
+      const form = new FormData();
+      form.append("access_token", token ?? "");
+      form.append("character_id", characterId);
+      form.append("script", script);
+      if (voiceMode === "own") {
+        if (!ownVoiceSample) throw new Error("Add a short sample of your voice, or pick a Lucy voice instead");
+        form.append("voice_choice", "__own__");
+        form.append("reference_audio", ownVoiceSample);
+      } else {
+        form.append("voice_choice", voiceMode === "pick" ? presetVoiceId : character.defaultVoiceId);
+      }
+      const res = await fetch("/api/generate-character-video", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-
-      const startedAt = Date.now();
-      for (;;) {
-        if (Date.now() - startedAt > CHARACTER_POLL_TIMEOUT_MS) throw new Error("Taking much longer than usual - try again shortly.");
-        await new Promise((resolve) => setTimeout(resolve, CHARACTER_POLL_INTERVAL_MS));
-        const statusRes = await fetch(`/api/generate-character-video/status?jobId=${encodeURIComponent(jobId)}`);
-        const statusData = await statusRes.json();
-        if (statusData.status === "COMPLETED") {
-          setVideoUrl(statusData.videoUrl);
-          break;
-        }
-        if (statusData.status === "FAILED") throw new Error(statusData.error ?? "Generation failed");
-      }
+      const videoUrl = await pollVideoJob("/api/generate-character-video/status", jobId);
+      setResult({ videoUrl, jobId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -647,8 +943,8 @@ function CharacterVideoSection() {
       wash="bg-purple-wash/90"
       iconColor="text-purple"
       icon="🎭"
-      title="Pick a character, make an ad"
-      subtitle="Tap a face to hear them, then type what they should say."
+      title="Pick a character"
+      subtitle="5 ready-made AI actors, always the same face - tap one to hear them, then type what they should say."
     >
       <video
         ref={previewRef}
@@ -698,6 +994,32 @@ function CharacterVideoSection() {
             onChange={(e) => setScript(e.target.value)}
           />
 
+          <div className="flex gap-2">
+            {(["default", "pick", "own"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setVoiceMode(m)}
+                className={`flex-1 rounded-full py-2 text-xs font-semibold ${voiceMode === m ? "bg-purple text-white shadow-soft" : "border border-border bg-white text-muted"}`}
+              >
+                {m === "default" ? `${character.name}'s voice` : m === "pick" ? "Another Lucy voice" : "My own voice"}
+              </button>
+            ))}
+          </div>
+          {voiceMode === "pick" && (
+            <select
+              value={presetVoiceId}
+              onChange={(e) => setPresetVoiceId(e.target.value)}
+              className="w-full rounded-2xl border border-border bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple"
+            >
+              {PRESET_VOICES.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {voiceMode === "own" && <RecordOrUpload kind="audio" onChange={setOwnVoiceSample} />}
+
           <button
             onClick={handleGenerate}
             disabled={loading || !script.trim()}
@@ -707,7 +1029,7 @@ function CharacterVideoSection() {
           </button>
 
           {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
-          {videoUrl && <video className="w-full rounded-xl" src={videoUrl} controls autoPlay loop playsInline />}
+          {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="character" />}
         </>
       )}
 
@@ -716,29 +1038,16 @@ function CharacterVideoSection() {
   );
 }
 
-const PAYGO_ENGINES: { id: "veo" | "kling" | "seedance"; label: string; blurb: string }[] = [
-  { id: "veo", label: "Veo", blurb: "Most realistic, 8s clips" },
-  { id: "kling", label: "Kling", blurb: "Reliable, 5s clips" },
-  { id: "seedance", label: "Seedance", blurb: "Stylized/UGC look, 8s clips" },
-];
-
-const PAYGO_PACKS = [
-  { id: "single", credits: 1, priceLabel: "$3.99" },
-  { id: "pack5", credits: 5, priceLabel: "$18.00" },
-  { id: "pack10", credits: 10, priceLabel: "$35.00" },
-];
-
-const PAYGO_POLL_INTERVAL_MS = 3000;
-const PAYGO_POLL_TIMEOUT_MS = 300_000; // 5 min - each of these engines' own generation is short, not a long-form narration
-
 function PayAsYouGoVideoSection() {
   const [signedIn, setSignedIn] = useState(false);
   const [balance, setBalance] = useState(0);
-  const [engine, setEngine] = useState<"veo" | "kling" | "seedance">("veo");
+  const [engine, setEngine] = useState<VideoEngine>("veo");
+  const media = useReferenceMedia();
+  const [audio, setAudio] = useState<Blob | File | null>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
   const [buyingPack, setBuyingPack] = useState<string | null>(null);
 
   async function refreshBalance() {
@@ -771,29 +1080,19 @@ function PayAsYouGoVideoSection() {
   async function handleGenerate() {
     setLoading(true);
     setError(null);
-    setVideoUrl(null);
+    setResult(null);
     try {
-      const res = await fetch("/api/video-paygo/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ engine, prompt }),
-      });
+      const form = new FormData();
+      form.append("engine", engine);
+      form.append("prompt", prompt);
+      if (media.imageBlob) form.append("reference_image", media.imageBlob, "reference.jpg");
+      if (audio) form.append("reference_audio", audio);
+      const res = await fetch("/api/video-paygo/generate", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-
-      const startedAt = Date.now();
-      for (;;) {
-        if (Date.now() - startedAt > PAYGO_POLL_TIMEOUT_MS) throw new Error("Taking much longer than usual - try again shortly.");
-        await new Promise((resolve) => setTimeout(resolve, PAYGO_POLL_INTERVAL_MS));
-        const statusRes = await fetch(`/api/video-paygo/status?jobId=${encodeURIComponent(jobId)}`);
-        const statusData = await statusRes.json();
-        if (statusData.status === "COMPLETED") {
-          setVideoUrl(statusData.videoUrl);
-          break;
-        }
-        if (statusData.status === "FAILED") throw new Error(statusData.error ?? "Generation failed");
-      }
+      const videoUrl = await pollVideoJob("/api/video-paygo/status", jobId);
+      setResult({ videoUrl, jobId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -808,8 +1107,8 @@ function PayAsYouGoVideoSection() {
       wash="bg-purple-wash/90"
       iconColor="text-purple"
       icon="🎟"
-      title="Pay as you go: any prompt, any engine"
-      subtitle="Type any prompt, pick Kling, Veo, or Seedance, get an 8-second (5s for Kling) 720p video - no subscription."
+      title="Pay as you go"
+      subtitle="Any prompt, plus an optional photo/video and audio - pick your engine, no subscription."
     >
       {!signedIn ? (
         <p className="rounded-2xl bg-white/70 p-3 text-sm text-muted">
@@ -824,32 +1123,37 @@ function PayAsYouGoVideoSection() {
             Credit balance: <span className="font-bold text-foreground">{balance}</span>
           </p>
           <div className="flex flex-wrap gap-2">
-            {PAYGO_PACKS.map((pack) => (
+            {VIDEO_CREDIT_PACKS.map((pack) => (
               <button
                 key={pack.id}
                 onClick={() => handleBuy(pack.id)}
                 disabled={buyingPack !== null}
                 className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-purple shadow-soft disabled:opacity-50"
               >
-                {buyingPack === pack.id ? "Redirecting…" : `${pack.credits} video${pack.credits > 1 ? "s" : ""} - ${pack.priceLabel}`}
+                {buyingPack === pack.id
+                  ? "Redirecting…"
+                  : `${pack.credits} video${pack.credits > 1 ? "s" : ""} - $${(pack.priceUsdCents / 100).toFixed(2)}`}
               </button>
             ))}
           </div>
 
           <div className="flex gap-2">
-            {PAYGO_ENGINES.map((e) => (
+            {(Object.entries(VIDEO_PAYGO_ENGINES) as [VideoEngine, (typeof VIDEO_PAYGO_ENGINES)[VideoEngine]][]).map(([id, e]) => (
               <button
-                key={e.id}
-                onClick={() => setEngine(e.id)}
+                key={id}
+                onClick={() => setEngine(id)}
                 className={`flex-1 rounded-2xl border p-2 text-center text-xs transition ${
-                  engine === e.id ? "border-purple bg-purple text-white shadow-soft" : "border-border bg-white text-muted"
+                  engine === id ? "border-purple bg-purple text-white shadow-soft" : "border-border bg-white text-muted"
                 }`}
               >
                 <div className="font-bold">{e.label}</div>
-                <div className="mt-0.5">{e.blurb}</div>
+                <div className="mt-0.5">{e.versionLabel}</div>
               </button>
             ))}
           </div>
+
+          <ReferenceMediaField media={media} label="Add a photo or video (optional)" />
+          <RecordOrUpload kind="audio" onChange={setAudio} />
 
           <textarea
             className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
@@ -861,7 +1165,7 @@ function PayAsYouGoVideoSection() {
 
           <button
             onClick={balance < 1 ? () => handleBuy("single") : handleGenerate}
-            disabled={loading || (balance >= 1 && !prompt.trim()) || buyingPack !== null}
+            disabled={loading || (balance >= 1 && !prompt.trim() && !audio) || buyingPack !== null}
             className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
           >
             {loading
@@ -874,13 +1178,13 @@ function PayAsYouGoVideoSection() {
           </button>
 
           {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
-          {videoUrl && <video className="w-full rounded-xl" src={videoUrl} controls autoPlay loop playsInline />}
+          {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="paygo" />}
         </>
       )}
 
       <p className="text-xs italic leading-relaxed text-muted">
-        Same flat price per video regardless of engine - real clip length differs (Kling is a hard 5s, Veo/Seedance are 8s) since
-        each vendor's own API enforces different duration limits, not something we can unify further on our end.
+        Same flat price per video regardless of engine - real clip length differs (Kling is a hard 5s, Veo/Seedance are 8s).
+        Adding audio on Kling lip-syncs your photo to it; on Veo/Seedance it&apos;s layered onto the finished clip instead.
       </p>
     </Card>
   );
@@ -905,7 +1209,9 @@ export default function Home() {
         <AccountWidget />
         <PresetVoiceSection />
         <CloneVoiceSection />
-        <VideoCloneSection />
+        <VideoIntroSection />
+        <CustomVideoSection />
+        <CinematicVideoSection />
         <CharacterVideoSection />
         <PayAsYouGoVideoSection />
         <Footer />

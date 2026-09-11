@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { useAudioRecorder, useAudioRecorderState, RecordingPresets, requestRecordingPermissionsAsync } from "expo-audio";
 import { useAccessToken } from "./useAccessToken";
 
 // Mirrors web/src/app/page.tsx's CharacterVideoSection - same 5-character
-// roster, click-to-preview, single Lucy-voice generation path. Uses the
-// access_token (not a cookie session) since this is billed against the
-// Video plan's existing subscription quota, same gating as audio generation.
+// roster, click-to-preview, and (2026-09-11) the same voice choice: the
+// character's own default, any other Lucy preset, or your own voice cloned
+// from a short recording. Uses the access_token (not a cookie session)
+// since this is billed against the Video plan's existing subscription
+// quota, same gating as audio generation.
 const WEB_BASE = process.env.EXPO_PUBLIC_WEB_BASE ?? "https://www.lucylabs.app";
 
 const COLORS = {
@@ -30,6 +33,24 @@ const CHARACTERS = [
   { id: "jack", name: "Jack", imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/6_ml_AMMqKfis0tvQBm8G_jack.jpg", defaultVoiceId: "voice_tech" },
 ];
 
+// Same 12 ids/labels as web/src/components/VoicePicker.tsx's PRESET_VOICES
+// and App.tsx's own copy - just id+label here, no color/initial needed for
+// a plain picker row.
+const VOICE_CHOICES = [
+  { id: "art_instructor", label: "Vicky" },
+  { id: "music_instructor", label: "Patrick" },
+  { id: "voice_business", label: "Alice" },
+  { id: "voice_finance", label: "Megan" },
+  { id: "voice_broadcast", label: "Katie" },
+  { id: "voice_tech", label: "Brad" },
+  { id: "voice_comedy", label: "Izzy" },
+  { id: "voice_sales", label: "Robbo" },
+  { id: "voice_mark", label: "Mark" },
+  { id: "voice_adam", label: "Adam" },
+  { id: "voice_rachel", label: "Rachel" },
+  { id: "voice_emily", label: "Emily" },
+];
+
 const LUCY_VOICE_CREDIT_COST = 8;
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 300_000;
@@ -46,10 +67,14 @@ export function CharacterVideoSection() {
   const { token } = useAccessToken();
   const [characterId, setCharacterId] = useState(CHARACTERS[0].id);
   const [script, setScript] = useState("");
+  const [voiceMode, setVoiceMode] = useState<"default" | "pick" | "own">("default");
+  const [presetVoiceId, setPresetVoiceId] = useState(VOICE_CHOICES[0].id);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder);
 
   const character = CHARACTERS.find((c) => c.id === characterId)!;
   // One shared preview player, source swapped per click (same pattern as
@@ -70,16 +95,39 @@ export function CharacterVideoSection() {
     setPlayingId(id);
   }
 
+  async function handleToggleRecord() {
+    if (recorderState.isRecording) {
+      await recorder.stop();
+      return;
+    }
+    const { granted } = await requestRecordingPermissionsAsync();
+    if (!granted) return;
+    await recorder.prepareToRecordAsync();
+    recorder.record();
+  }
+
   async function handleGenerate() {
+    if (voiceMode === "own" && !recorder.uri) {
+      setError("Record a short sample of your voice first, or pick a Lucy voice instead");
+      return;
+    }
     setLoading(true);
     setError(null);
     setVideoUrl(null);
     try {
-      const res = await fetch(`${WEB_BASE}/api/generate-character-video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: token, character_id: characterId, voice_choice: character.defaultVoiceId, script }),
-      });
+      const form = new FormData();
+      form.append("access_token", token ?? "");
+      form.append("character_id", characterId);
+      form.append("script", script);
+      if (voiceMode === "own") {
+        form.append("voice_choice", "__own__");
+        // Same {uri, name, type} shape App.tsx's CloneVoiceSection already
+        // uses for React Native's fetch/FormData file uploads.
+        form.append("reference_audio", { uri: recorder.uri, name: "recording.m4a", type: "audio/m4a" } as unknown as Blob);
+      } else {
+        form.append("voice_choice", voiceMode === "pick" ? presetVoiceId : character.defaultVoiceId);
+      }
+      const res = await fetch(`${WEB_BASE}/api/generate-character-video`, { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
@@ -105,8 +153,8 @@ export function CharacterVideoSection() {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Pick a character, make an ad</Text>
-      <Text style={styles.subtitle}>Tap a face to hear them, then type what they should say.</Text>
+      <Text style={styles.title}>Pick a character</Text>
+      <Text style={styles.subtitle}>5 ready-made AI actors, always the same face - tap one to hear them, then type what they should say.</Text>
 
       <View style={styles.characterRow}>
         {CHARACTERS.map((c) => (
@@ -142,6 +190,42 @@ export function CharacterVideoSection() {
             value={script}
             onChangeText={setScript}
           />
+
+          <View style={styles.voiceModeRow}>
+            {(["default", "pick", "own"] as const).map((m) => (
+              <Pressable
+                key={m}
+                onPress={() => setVoiceMode(m)}
+                style={[styles.voiceModeButton, voiceMode === m && styles.voiceModeButtonActive]}
+              >
+                <Text style={[styles.voiceModeText, voiceMode === m && styles.voiceModeTextActive]}>
+                  {m === "default" ? `${character.name}'s voice` : m === "pick" ? "Another voice" : "My own voice"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {voiceMode === "pick" && (
+            <View style={styles.voicePickRow}>
+              {VOICE_CHOICES.map((v) => (
+                <Pressable
+                  key={v.id}
+                  onPress={() => setPresetVoiceId(v.id)}
+                  style={[styles.voiceChip, presetVoiceId === v.id && styles.voiceChipActive]}
+                >
+                  <Text style={[styles.voiceChipText, presetVoiceId === v.id && styles.voiceChipTextActive]}>{v.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          {voiceMode === "own" && (
+            <Pressable onPress={handleToggleRecord} style={styles.recordButton}>
+              <Text style={styles.recordButtonText}>
+                {recorderState.isRecording ? "⏹ Stop recording" : recorder.uri ? "🎙 Re-record" : "🎙 Record ~10s of your voice"}
+              </Text>
+            </Pressable>
+          )}
 
           <Pressable
             onPress={handleGenerate}
@@ -204,6 +288,18 @@ const styles = StyleSheet.create({
     minHeight: 70,
     textAlignVertical: "top",
   },
+  voiceModeRow: { flexDirection: "row", gap: 8 },
+  voiceModeButton: { flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: "center", borderWidth: 1, borderColor: COLORS.border, backgroundColor: "#fff" },
+  voiceModeButtonActive: { backgroundColor: COLORS.purple, borderColor: COLORS.purple },
+  voiceModeText: { fontSize: 11, fontWeight: "700", color: COLORS.muted },
+  voiceModeTextActive: { color: "#fff" },
+  voicePickRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  voiceChip: { borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: COLORS.border, backgroundColor: "#fff" },
+  voiceChipActive: { backgroundColor: COLORS.purple, borderColor: COLORS.purple },
+  voiceChipText: { fontSize: 11, color: COLORS.muted },
+  voiceChipTextActive: { color: "#fff", fontWeight: "700" },
+  recordButton: { borderRadius: 999, paddingVertical: 10, alignItems: "center", borderWidth: 1, borderColor: COLORS.border, backgroundColor: "#fff" },
+  recordButtonText: { fontSize: 12, fontWeight: "700", color: COLORS.foreground },
   generateButton: { backgroundColor: COLORS.purple, borderRadius: 999, paddingVertical: 12, alignItems: "center" },
   generateButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   errorText: { fontSize: 12, color: "#b0463c" },
