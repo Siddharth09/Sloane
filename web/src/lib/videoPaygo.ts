@@ -142,12 +142,10 @@ export const VIDEO_PAYGO_ENGINES: Record<
 //   than the $1.40 flat this file already budgets for Kling - strictly
 //   safer for the profit floor, not a new risk.
 // - Veo/Seedance + an uploaded/cloned audio track render silent/ambient
-//   then get muxed via fal's ffmpeg merge-audio-video utility - real
-//   verified pricing for that endpoint hasn't been checked yet (not
-//   documented in fal's own model page at the time this was written);
-//   treat as a small additional cost to confirm before launch, likely
-//   well inside the existing 15% buffer given ffmpeg-utility endpoints are
-//   typically flat-fee and cheap, but "likely" isn't "verified."
+//   then get muxed via fal's ffmpeg merge-audio-video utility - **verified
+//   2026-09-11 against fal's own model page: $0.0002/second**, so ~$0.0016
+//   for an 8s clip. Negligible, comfortably inside the existing 15%
+//   buffer - confirmed, not just assumed.
 export const VIDEO_PAYGO_ENGINE_COST_USD: Record<VideoEngine, number> = {
   veo: 1.38,
   kling: 1.61,
