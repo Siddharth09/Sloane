@@ -246,24 +246,23 @@ GEN_PARAMS_BY_VOICE: dict[str, dict] = {
         "cfg_weight": 0.35,
         "temperature": 0.80,
     },
-    # Megan, 2026-09-11 - direct report after her retrain: "rushed and
-    # doesn't have enough inflection". Deliberately NOT using DSP
-    # time-stretch to literally slow her down - that mechanism is already
-    # documented elsewhere in this file as causing exactly the "robotic"
-    # artifact she's also describing (see the reverted 0.82/0.96 speed
-    # entries below). Instead reusing the Robbo precedent directly: his
-    # "sped up, drifting" complaint from a loose cfg_weight (0.35) + high
-    # temperature (0.85) was fixed by tightening cfg_weight UP and cutting
-    # temperature DOWN, which reduces the sampling looseness that reads as
-    # rushed/erratic pacing. A modest exaggeration lift (above the 0.5
-    # flat-neutral point) is the separate lever for "inflection" - kept
-    # lower than Katie's above since "rushed" is the bigger complaint here,
-    # and looser exaggeration without also loosening cfg_weight/temperature
-    # shouldn't reintroduce the rushed feeling. Not yet ear-confirmed.
+    # Megan, 2026-09-11: first pass (cfg_weight 0.55/temperature 0.60,
+    # reusing Robbo's "stop drifting" fix) over-corrected - next report was
+    # "slow and robotic, needs more pauses/inflection/emotion". Tightening
+    # cfg_weight that far and cutting temperature that low apparently traded
+    # "rushed" for "flat and mechanical" instead of just fixing the pacing.
+    # Walked both most of the way back toward DEFAULT_GEN_PARAMS (cfg_weight
+    # 0.4, temperature 0.75) rather than all the way, so she's not back to
+    # square one, and raised exaggeration further than the first pass for
+    # actual emotional range instead of just "some energy". Second real
+    # tuning pass on this voice in one day - still not ear-confirmed, and if
+    # "rushed" comes back at this looser setting, the fix is probably in the
+    # training data (only ~2.6min, already flagged as thin) rather than
+    # another round of these three knobs.
     "voice_finance": {
-        "exaggeration": 0.6,
-        "cfg_weight": 0.55,
-        "temperature": 0.60,
+        "exaggeration": 0.68,
+        "cfg_weight": 0.42,
+        "temperature": 0.78,
     },
     # Punchier comedy timing — a bit more expressive intensity, looser cfg.
     # Reverted back to these original values 2026-09-10 ("revert izzy back
