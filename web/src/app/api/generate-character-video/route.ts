@@ -10,7 +10,7 @@ import {
   failCharacterVideoJob,
 } from "@/lib/db";
 import { getCharacter, LUCY_VOICE_CREDIT_COST } from "@/lib/characters";
-import { PRESET_VOICES } from "@/components/VoicePicker";
+import { PRESET_VOICES } from "@/lib/presetVoices";
 import { submitModalJob } from "@/lib/modal";
 import { PLANS } from "@/lib/plans";
 

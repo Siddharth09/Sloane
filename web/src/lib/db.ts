@@ -226,6 +226,17 @@ export async function initSchema() {
   // the engine name at poll time the way it could when every job used the
   // same fixed endpoint per engine.
   await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS fal_endpoint TEXT`;
+  // "A Lucy voice" audio option (2026-09-12) - same phased pattern
+  // subscription_video_jobs already uses for cinematic's lucy_preset: a
+  // Modal TTS pass has to finish before the real video job can even be
+  // submitted (Kling needs the real audio_url for Avatar; every other
+  // engine renders silent first regardless, but still needs to know the
+  // job "isn't ready to submit yet" while TTS is in flight). input_audio_url
+  // (already added above for uploaded audio) doubles as the resolved TTS
+  // output once it's ready - only one of "uploaded" or "TTS" is ever set
+  // per job, never both.
+  await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS modal_job_id TEXT`;
+  await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS preset_voice_id TEXT`;
 }
 
 // Generic runtime settings, switchable from the admin dashboard without a
@@ -713,6 +724,8 @@ export type VideoPaygoJob = {
   input_audio_url: string | null;
   needs_merge: boolean;
   merge_request_id: string | null;
+  modal_job_id: string | null;
+  preset_voice_id: string | null;
   status: "pending" | "in_progress" | "completed" | "failed";
   video_url: string | null;
   error: string | null;
@@ -727,12 +740,13 @@ export async function createVideoPaygoJob(params: {
   inputImageUrl?: string | null;
   inputAudioUrl?: string | null;
   needsMerge?: boolean;
+  presetVoiceId?: string | null;
 }): Promise<string> {
   const rows = await sql`
-    INSERT INTO video_paygo_jobs (user_id, engine, prompt, fal_endpoint, input_image_url, input_audio_url, needs_merge)
+    INSERT INTO video_paygo_jobs (user_id, engine, prompt, fal_endpoint, input_image_url, input_audio_url, needs_merge, preset_voice_id)
     VALUES (
       ${params.userId}, ${params.engine}, ${params.prompt}, ${params.falEndpoint},
-      ${params.inputImageUrl ?? null}, ${params.inputAudioUrl ?? null}, ${params.needsMerge ?? false}
+      ${params.inputImageUrl ?? null}, ${params.inputAudioUrl ?? null}, ${params.needsMerge ?? false}, ${params.presetVoiceId ?? null}
     )
     RETURNING id
   `;
@@ -741,6 +755,17 @@ export async function createVideoPaygoJob(params: {
 
 export async function setVideoPaygoJobRequestId(jobId: string, falRequestId: string) {
   await sql`UPDATE video_paygo_jobs SET fal_request_id = ${falRequestId}, status = 'in_progress' WHERE id = ${jobId}`;
+}
+
+export async function setVideoPaygoJobModalId(jobId: string, modalJobId: string) {
+  await sql`UPDATE video_paygo_jobs SET modal_job_id = ${modalJobId} WHERE id = ${jobId}`;
+}
+
+// Fills in the audio actually used once Lucy TTS resolves - reuses
+// input_audio_url (the same column an uploaded audio file would occupy)
+// since a given job only ever has one or the other, never both.
+export async function setVideoPaygoJobResolvedAudio(jobId: string, audioUrl: string) {
+  await sql`UPDATE video_paygo_jobs SET input_audio_url = ${audioUrl} WHERE id = ${jobId}`;
 }
 
 export async function completeVideoPaygoJob(jobId: string, videoUrl: string) {

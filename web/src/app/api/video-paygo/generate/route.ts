@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { initSchema, spendVideoCredit, refundVideoCredit, createVideoPaygoJob, setVideoPaygoJobRequestId, failVideoPaygoJob } from "@/lib/db";
-import { VIDEO_PAYGO_ENGINES, VIDEO_PAYGO_RESOLUTION, type VideoEngine } from "@/lib/videoPaygo";
+import {
+  initSchema,
+  spendVideoCredit,
+  refundVideoCredit,
+  createVideoPaygoJob,
+  setVideoPaygoJobRequestId,
+  setVideoPaygoJobModalId,
+  failVideoPaygoJob,
+} from "@/lib/db";
+import { VIDEO_PAYGO_ENGINES, buildFalInput, type VideoEngine } from "@/lib/videoPaygo";
 import { submitFalJob, uploadBufferToFal } from "@/lib/fal";
+import { submitModalJob } from "@/lib/modal";
+import { PRESET_VOICES } from "@/lib/presetVoices";
 
 const MAX_PROMPT_LENGTH = 600;
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+
+type AudioMode = "none" | "own" | "lucy";
 
 // Pay-as-you-go now accepts an optional reference photo/video-frame and/or
 // an optional audio track alongside the text prompt, on any of the five
@@ -16,53 +28,26 @@ const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 // Routing, decided per what was actually uploaded (all within the SAME
 // price bracket already budgeted in videoPaygo.ts, see its cost-comment
 // for the one exception - Kling+audio is actually cheaper, not riskier):
-// - Kling + audio given -> Kling Avatar (the only proven lip-sync path;
-//   requires an image, since Avatar animates a photo to match audio).
+// - Kling + own audio OR a Lucy voice -> Kling Avatar (the only proven
+//   lip-sync path; requires an image, since Avatar animates a photo to
+//   match audio). A Lucy voice needs a TTS pass first (see the phase-0
+//   handling in status/route.ts) so Avatar isn't submitted from THIS route
+//   for that case - only the modal TTS job is.
 // - Any engine + image, no audio -> that engine's image-to-video endpoint,
 //   Veo's own voice/ambient audio baked in (generate_audio: true, Veo only
 //   - Seedance/Grok/MiniMax have no native-audio field on their schemas,
 //   so they render silent either way).
-// - Any engine except Kling + audio given -> silent/ambient generation,
-//   then muxed with the given audio afterward (fal ffmpeg
+// - Any engine except Kling + own audio OR a Lucy voice -> silent/ambient
+//   generation, then muxed with the audio afterward (fal ffmpeg
 //   merge-audio-video) - a straight audio-track swap, not lip-sync,
-//   disclosed as such in the UI. Originally just Veo/Seedance; Grok and
-//   MiniMax (added 2026-09-12) have the same no-native-audio schema shape,
-//   so they need the same treatment - see needsMerge below.
+//   disclosed as such in the UI. A Lucy voice still needs its TTS pass
+//   first, but the video itself can start submitting right away (unlike
+//   Kling, its input never depends on the resolved audio) - see needsMerge
+//   below and the phase-0 handling in status/route.ts.
 // - Neither image nor audio -> unchanged existing text-to-video behavior.
-function buildFalInput(engine: VideoEngine, prompt: string, imageUrl: string | null, wantsNativeAudio: boolean): Record<string, unknown> {
-  const def = VIDEO_PAYGO_ENGINES[engine];
-  switch (engine) {
-    case "veo":
-      return {
-        prompt,
-        image_url: imageUrl ?? undefined,
-        duration: def.falDurationValue,
-        resolution: VIDEO_PAYGO_RESOLUTION,
-        generate_audio: wantsNativeAudio,
-      };
-    case "kling":
-      return { prompt, duration: def.falDurationValue, image_url: imageUrl ?? undefined };
-    case "seedance":
-      return { prompt, duration: def.falDurationValue, resolution: VIDEO_PAYGO_RESOLUTION, image_url: imageUrl ?? undefined };
-    case "grok":
-      // duration is a real integer field on this endpoint's schema (not a
-      // string enum like Kling/Veo) - sent as a number, not the string
-      // falDurationValue is stored as elsewhere, to match.
-      return { prompt, image_url: imageUrl ?? undefined, duration: Number(def.falDurationValue), resolution: def.falResolutionValue ?? VIDEO_PAYGO_RESOLUTION };
-    case "minimax":
-      // prompt_expansion_mode is required by this endpoint's schema -
-      // "balanced" (~1s overhead) rather than "quality" (~30s), same choice
-      // made in the real test submission this engine's cost was verified
-      // against.
-      return {
-        prompt,
-        image_url: imageUrl ?? undefined,
-        duration: Number(def.falDurationValue),
-        resolution: def.falResolutionValue ?? VIDEO_PAYGO_RESOLUTION,
-        prompt_expansion_mode: "balanced",
-      };
-  }
-}
+// buildFalInput itself now lives in @/lib/videoPaygo.ts (shared with
+// status/route.ts's phase-0 submission) since route.ts files may only
+// export HTTP method handlers.
 
 export async function POST(req: NextRequest) {
   try {
@@ -77,27 +62,44 @@ export async function POST(req: NextRequest) {
     const prompt = String(form.get("prompt") ?? "").trim();
     const referenceImage = form.get("reference_image");
     const referenceAudio = form.get("reference_audio");
+    const audioMode = (String(form.get("audio_mode") ?? "none") || "none") as AudioMode;
+    const presetVoiceId = String(form.get("preset_voice_id") ?? "");
 
     if (!VIDEO_PAYGO_ENGINES[engine]) {
       return NextResponse.json({ error: "Unknown engine" }, { status: 400 });
     }
-    const hasAudio = referenceAudio instanceof Blob && referenceAudio.size > 0;
+    if (!["none", "own", "lucy"].includes(audioMode)) {
+      return NextResponse.json({ error: "Unknown audio option" }, { status: 400 });
+    }
+    const wantsLucyVoice = audioMode === "lucy";
+    if (wantsLucyVoice && !PRESET_VOICES.find((v) => v.id === presetVoiceId)) {
+      return NextResponse.json({ error: "Unknown voice choice" }, { status: 400 });
+    }
+    const hasAudio = audioMode === "own" && referenceAudio instanceof Blob && referenceAudio.size > 0;
+    if (audioMode === "own" && !hasAudio) {
+      return NextResponse.json({ error: "Add the audio you want on this video" }, { status: 400 });
+    }
     const hasImage = referenceImage instanceof Blob && referenceImage.size > 0;
-    const useKlingAvatar = hasAudio && engine === "kling";
-    if (!prompt && !useKlingAvatar) {
-      // Kling Avatar is the only path needing no text prompt (it lip-syncs
-      // to the given audio) - every other path (including Veo/Seedance
-      // with audio, which render silent then get the audio muxed on
-      // afterward) still needs a real scene/subject description, or it'd
-      // submit an empty prompt to the vendor and spend a real credit on a
-      // generation nobody actually described.
-      return NextResponse.json({ error: "Describe the video you want" }, { status: 400 });
+    const useKlingAvatar = engine === "kling" && (hasAudio || wantsLucyVoice);
+    // Kling Avatar's own audio already carries every word the video needs -
+    // the only case a text prompt can be skipped entirely. A Lucy voice
+    // still needs the prompt (it's the TTS script - see phase 0 in
+    // status/route.ts), same as every non-Kling path.
+    const promptOptional = engine === "kling" && hasAudio;
+    if (!prompt && !promptOptional) {
+      return NextResponse.json(
+        { error: wantsLucyVoice ? "Write what you want the voice to say" : "Describe the video you want" },
+        { status: 400 },
+      );
     }
     if (prompt.length > MAX_PROMPT_LENGTH) {
       return NextResponse.json({ error: `Prompt is too long (max ${MAX_PROMPT_LENGTH} characters)` }, { status: 400 });
     }
-    if (hasAudio && engine === "kling" && !hasImage) {
-      return NextResponse.json({ error: "Kling needs a photo (or video) to lip-sync your audio to" }, { status: 400 });
+    if ((hasAudio || wantsLucyVoice) && engine === "kling" && !hasImage) {
+      return NextResponse.json(
+        { error: wantsLucyVoice ? "Kling needs a photo (or video) to lip-sync the voice to" : "Kling needs a photo (or video) to lip-sync your audio to" },
+        { status: 400 },
+      );
     }
     for (const f of [referenceImage, referenceAudio]) {
       if (f instanceof Blob && f.size > MAX_UPLOAD_BYTES) {
@@ -127,7 +129,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: 500 });
     }
 
-    const needsMerge = hasAudio && engine !== "kling";
+    const needsMerge = (hasAudio || wantsLucyVoice) && engine !== "kling";
     const falEndpoint = useKlingAvatar
       ? VIDEO_PAYGO_ENGINES.kling.falAvatarEndpoint!
       : hasImage
@@ -142,9 +144,18 @@ export async function POST(req: NextRequest) {
       inputImageUrl,
       inputAudioUrl,
       needsMerge,
+      presetVoiceId: wantsLucyVoice ? presetVoiceId : null,
     });
 
     try {
+      if (wantsLucyVoice) {
+        // Defer the real video submission to status/route.ts's phase 0,
+        // once this TTS pass actually finishes - mirrors
+        // generate-cinematic-video/route.ts's lucy_preset handling.
+        const { jobId: modalJobId } = await submitModalJob({ action: "generate-preset", text: prompt, voice_id: presetVoiceId });
+        await setVideoPaygoJobModalId(jobId, modalJobId);
+        return NextResponse.json({ jobId });
+      }
       const falInput = useKlingAvatar
         ? { image_url: inputImageUrl, audio_url: inputAudioUrl }
         : buildFalInput(engine, prompt, inputImageUrl, !needsMerge && engine === "veo");

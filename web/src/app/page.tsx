@@ -1129,7 +1129,7 @@ const SHOWCASE_MODELS: ShowcaseModel[] = [
     note: "Blocked on this test - see below.",
     videoUrl: null,
     blockedReason:
-      'fal’s safety classifier rejected this job ("content_policy_violation / partner_validation_failed") - it blocks AI-generated photorealistic human faces. That’s enforced on fal’s side, not something we can configure around.',
+      "Seedance struggles with hyper-realistic AI-generated faces on this kind of shot and wouldn't produce a usable clip for this test. Every engine has its own quirks scene-to-scene - try your own prompt and photo above and see how it does for you.",
   },
 ];
 
@@ -1362,17 +1362,48 @@ function CharacterVideoSection() {
   );
 }
 
+type PaygoAudioMode = "none" | "own" | "lucy";
+
 function PayAsYouGoVideoSection() {
   const [signedIn, setSignedIn] = useState(false);
   const [balance, setBalance] = useState(0);
   const [engine, setEngine] = useState<VideoEngine>("veo");
   const media = useReferenceMedia();
   const audio = useMultiAudio();
+  const [audioMode, setAudioMode] = useState<PaygoAudioMode>("none");
+  const [presetVoiceId, setPresetVoiceId] = useState(PRESET_VOICES[0].id);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
   const [buyingPack, setBuyingPack] = useState<string | null>(null);
+
+  // Same shared-<audio>-element click-to-preview pattern as VoicePicker.tsx
+  // and the character/model-showcase pickers above - click a voice to hear
+  // its sample, click again to stop, click again to replay.
+  function togglePreview(id: string) {
+    const el = previewAudioRef.current;
+    if (!el) return;
+    if (previewingVoiceId === id) {
+      el.pause();
+      el.currentTime = 0;
+      setPreviewingVoiceId(null);
+      return;
+    }
+    el.pause();
+    el.src = `/voice-samples/${id}.wav`;
+    el.currentTime = 0;
+    el.play().catch(() => {});
+    setPreviewingVoiceId(id);
+  }
+
+  // Matches the server's real rule (video-paygo/generate/route.ts): Kling
+  // Avatar's own uploaded audio already carries every word, so it's the
+  // only case a text prompt can be skipped - a Lucy voice still needs the
+  // prompt (it's the TTS script) same as every other path.
+  const promptSkippable = engine === "kling" && audioMode === "own" && !!audio.selectedBlob;
 
   async function refreshBalance() {
     const res = await fetch("/api/video-paygo/balance");
@@ -1409,8 +1440,10 @@ function PayAsYouGoVideoSection() {
       const form = new FormData();
       form.append("engine", engine);
       form.append("prompt", prompt);
+      form.append("audio_mode", audioMode);
       if (media.imageBlob) form.append("reference_image", media.imageBlob, "reference.jpg");
-      if (audio.selectedBlob) form.append("reference_audio", audio.selectedBlob);
+      if (audioMode === "own" && audio.selectedBlob) form.append("reference_audio", audio.selectedBlob);
+      if (audioMode === "lucy") form.append("preset_voice_id", presetVoiceId);
       const res = await fetch("/api/video-paygo/generate", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
@@ -1485,13 +1518,65 @@ function PayAsYouGoVideoSection() {
             ))}
           </div>
 
+          <p className="text-xs text-muted">
+            Only Veo can speak on its own with no audio given - Kling, Seedance, Grok, and MiniMax always render
+            silent unless you add your own audio or pick a Lucy voice below.
+          </p>
+
           <ReferenceMediaField media={media} label="Add photo(s) or video(s) (optional)" />
-          <MultiAudioField audio={audio} />
+
+          <div className="grid grid-cols-3 gap-2">
+            {(["none", "own", "lucy"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setAudioMode(m)}
+                className={`rounded-2xl border p-2 text-center text-xs font-semibold transition ${
+                  audioMode === m ? "border-purple bg-purple text-white shadow-soft" : "border-border bg-white text-muted"
+                }`}
+              >
+                {m === "none" ? "No extra audio" : m === "own" ? "My own audio" : "A Lucy voice"}
+              </button>
+            ))}
+          </div>
+
+          {audioMode === "own" && <MultiAudioField audio={audio} />}
+
+          {audioMode === "lucy" && (
+            <div className="flex items-center gap-2">
+              <audio ref={previewAudioRef} onEnded={() => setPreviewingVoiceId(null)} className="hidden" />
+              <select
+                value={presetVoiceId}
+                onChange={(e) => setPresetVoiceId(e.target.value)}
+                className="flex-1 rounded-2xl border border-border bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple"
+              >
+                {PRESET_VOICES.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => togglePreview(presetVoiceId)}
+                className="rounded-full border border-border bg-white px-3 py-2.5 text-xs font-semibold text-purple shadow-soft"
+              >
+                {previewingVoiceId === presetVoiceId ? "⏸ Stop" : "▶ Preview"}
+              </button>
+            </div>
+          )}
+
+          {(audioMode === "own" || audioMode === "lucy") && (
+            <p className="text-xs italic leading-relaxed text-muted">
+              {engine === "kling"
+                ? "Kling lip-syncs the video to this audio - the mouth movements actually follow what's said."
+                : `${VIDEO_PAYGO_ENGINES[engine].label} renders the scene silently, then layers this audio on top afterward - not lip-synced, just a soundtrack swap.`}
+            </p>
+          )}
 
           <textarea
             className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
             rows={3}
-            placeholder="Describe the video you want..."
+            placeholder={audioMode === "lucy" ? "What should the voice say?" : "Describe the video you want..."}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
@@ -1500,12 +1585,8 @@ function PayAsYouGoVideoSection() {
             onClick={balance < 1 ? () => handleBuy("single") : handleGenerate}
             disabled={
               loading ||
-              // Matches the server's real rule (video-paygo/generate/route.ts):
-              // only Kling+audio (its lip-sync Avatar path) can skip the
-              // prompt - Veo/Seedance always need a real scene description,
-              // even when audio is also given (they render silent/ambient
-              // first, then the audio gets muxed on afterward).
-              (balance >= 1 && !prompt.trim() && !(engine === "kling" && audio.selectedBlob)) ||
+              (balance >= 1 && !prompt.trim() && !promptSkippable) ||
+              (audioMode === "own" && !audio.selectedBlob) ||
               buyingPack !== null
             }
             className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
@@ -1526,7 +1607,8 @@ function PayAsYouGoVideoSection() {
 
       <p className="text-xs italic leading-relaxed text-muted">
         Same flat price per video regardless of engine - real clip length differs (Kling is a hard 5s, the other four are 8s).
-        Adding audio on Kling lip-syncs your photo to it; on every other engine it&apos;s layered onto the finished clip instead.
+        Only Kling actually lip-syncs to your audio (needs a photo); every other engine plays your audio as a
+        soundtrack over a silently-rendered scene instead.
       </p>
     </Card>
   );

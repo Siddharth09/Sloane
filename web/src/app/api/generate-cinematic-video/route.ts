@@ -12,7 +12,7 @@ import {
   failSubscriptionVideoJob,
   type SubscriptionVideoAudioSource,
 } from "@/lib/db";
-import { PRESET_VOICES } from "@/components/VoicePicker";
+import { PRESET_VOICES } from "@/lib/presetVoices";
 import { submitModalJob } from "@/lib/modal";
 import { submitFalJob, uploadBufferToFal } from "@/lib/fal";
 import { VIDEO_CREDIT_COSTS, PLANS } from "@/lib/plans";

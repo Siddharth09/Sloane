@@ -201,6 +201,46 @@ export const VIDEO_PAYGO_ENGINE_COST_USD: Record<VideoEngine, number> = {
   minimax: 0.74,
 };
 
+// Builds the fal input body for a plain (non-Kling-Avatar) engine
+// submission. Shared by /api/video-paygo/generate (immediate submission)
+// and its status route (the deferred "a Lucy voice" phase-0 submission,
+// once TTS resolves) - lives here rather than in either route file since
+// Next.js route.ts files may only export HTTP method handlers.
+export function buildFalInput(engine: VideoEngine, prompt: string, imageUrl: string | null, wantsNativeAudio: boolean): Record<string, unknown> {
+  const def = VIDEO_PAYGO_ENGINES[engine];
+  switch (engine) {
+    case "veo":
+      return {
+        prompt,
+        image_url: imageUrl ?? undefined,
+        duration: def.falDurationValue,
+        resolution: VIDEO_PAYGO_RESOLUTION,
+        generate_audio: wantsNativeAudio,
+      };
+    case "kling":
+      return { prompt, duration: def.falDurationValue, image_url: imageUrl ?? undefined };
+    case "seedance":
+      return { prompt, duration: def.falDurationValue, resolution: VIDEO_PAYGO_RESOLUTION, image_url: imageUrl ?? undefined };
+    case "grok":
+      // duration is a real integer field on this endpoint's schema (not a
+      // string enum like Kling/Veo) - sent as a number, not the string
+      // falDurationValue is stored as elsewhere, to match.
+      return { prompt, image_url: imageUrl ?? undefined, duration: Number(def.falDurationValue), resolution: def.falResolutionValue ?? VIDEO_PAYGO_RESOLUTION };
+    case "minimax":
+      // prompt_expansion_mode is required by this endpoint's schema -
+      // "balanced" (~1s overhead) rather than "quality" (~30s), same choice
+      // made in the real test submission this engine's cost was verified
+      // against.
+      return {
+        prompt,
+        image_url: imageUrl ?? undefined,
+        duration: Number(def.falDurationValue),
+        resolution: def.falResolutionValue ?? VIDEO_PAYGO_RESOLUTION,
+        prompt_expansion_mode: "balanced",
+      };
+  }
+}
+
 export type VideoCreditPack = {
   id: string;
   credits: number;
