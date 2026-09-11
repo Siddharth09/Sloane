@@ -148,6 +148,18 @@ def _encode_wav(audio, sr) -> str:
     # sampling progress bars) - the GPU/CUDA state clearly didn't restore
     # cleanly from the snapshot. Reverted same day. Do not re-enable without
     # a real fix for the post-restore GPU slowdown, not just a retry.
+    #
+    # LOAD-BEARING SAFETY ASSUMPTION, found during a 2026-09-11 code audit -
+    # do not add @modal.concurrent()/allow_concurrent_inputs to this class
+    # without first fixing lucy_tts_engine.py's generate_preset/
+    # generate_clone: both mutate the single module-level `base_engine.t3`
+    # in place per-request rather than using a per-request copy. With no
+    # concurrency directive here, Modal serializes requests to one input at
+    # a time per container (today's real, verified behavior), which is the
+    # only reason two different voices' requests can never interleave and
+    # cross-contaminate each other's output mid-generation. Opting into
+    # concurrency here is one line away from a real cross-customer voice
+    # bug with no code-level guard currently protecting against it.
 )
 class LucyTTS:
     @modal.enter()

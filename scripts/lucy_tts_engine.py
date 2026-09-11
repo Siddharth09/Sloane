@@ -318,12 +318,15 @@ PAUSE_MULTIPLIER_RANGE = (0.7, 1.6)
 # (cache miss)" on a real request, directly explaining "Modal is slow even
 # after warmed up" for realistic traffic that tries more than 6 voices
 # across a container's lifetime. MAX_CACHED_VOICES now covers every preset
-# voice (~2GB/voice x9 + ~10GB shared ≈ 28GB, comfortable headroom on 48GB)
-# and modal_app.py's @modal.enter() eagerly preloads all of them at
-# container start - trading a somewhat longer cold start (already the
-# dominant cost at 85-150s) for eliminating this per-voice tax on every
-# later request, cold or warm. Recompute if the roster grows enough to
-# threaten the VRAM budget again.
+# voice (~2GB/voice x12 + ~10GB shared ≈ 34GB, comfortable headroom on 48GB -
+# recomputed 2026-09-11 after Adam/Rachel/Emily brought the roster from 9 to
+# 12; the 2GB/voice figure is still an estimate, not independently
+# re-verified) and modal_app.py's @modal.enter() eagerly preloads all of
+# them at container start - trading a somewhat longer cold start (already
+# the dominant cost at 85-150s) for eliminating this per-voice tax on every
+# later request, cold or warm. MAX_CACHED_VOICES auto-scales with
+# len(PRESET_VOICES), so recompute this math again if the roster grows
+# enough to threaten the VRAM budget.
 MAX_CACHED_VOICES = len(PRESET_VOICES)
 
 
@@ -1195,8 +1198,21 @@ def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference
 
         if duration < min_expected_seconds:
             print(f"[engine] short generation ({duration:.2f}s for {word_count} words), retrying ({attempt + 1}/{MAX_GENERATION_ATTEMPTS})...")
-            if duration > 0 and best_score < 0.0:
-                best_trimmed, best_score, best_words = trimmed, 0.0, []
+            # Real bug fixed here: this docstring says the exhaustion
+            # fallback "tracks the best-scoring attempt seen" (added after
+            # a near-silent 0.1s clip shipped from a *worse* later attempt
+            # - see the comment above), but every short attempt was scored
+            # a flat 0.0, and `best_score < 0.0` is only ever true once (the
+            # very first update) - so the FIRST short attempt always won,
+            # not the longest/least-bad one, exactly the bug this was
+            # supposed to fix. Score by how close to passing the duration
+            # actually was instead, capped below the ends_abruptly tier's
+            # 0.2 so a real-content-but-cut-off take is still always
+            # preferred over any too-short one, same tier ordering as before.
+            if duration > 0:
+                duration_score = min(0.19, (duration / min_expected_seconds) * 0.19)
+                if duration_score > best_score:
+                    best_trimmed, best_score, best_words = trimmed, duration_score, []
             continue
 
         if ends_abruptly(trimmed, engine.sr):
@@ -1225,6 +1241,18 @@ def generate_sentence_with_retry(engine: ChatterboxTTS, sentence: str, reference
             continue
         return apply_word_emphasis(trimmed, engine.sr, whisper_words)
 
+    if len(best_trimmed) == 0:
+        # Real bug fixed here: every attempt came back completely
+        # zero-length (not just short/mismatched) - there is no "closest-
+        # to-passing" fallback to ship. The caller (synthesize) silently
+        # dropped this chunk from the final output with no error and no
+        # log line at all - a chunk of real text (up to ~40 words) missing
+        # from a customer's finished audio with the job still reporting
+        # COMPLETED. This can't be recovered here (nothing was generated to
+        # ship), but it's now loudly logged so it's at least searchable/
+        # alertable instead of invisible.
+        print(f"[engine] CRITICAL: all {MAX_GENERATION_ATTEMPTS} attempts produced zero-length audio for chunk \"{sentence[:80]}\" - this chunk will be MISSING from the final output")
+        return best_trimmed
     print(f"[engine] all {MAX_GENERATION_ATTEMPTS} attempts came back bad - shipping the closest-to-passing one rather than failing outright")
     return apply_word_emphasis(best_trimmed, engine.sr, best_words)
 
@@ -1264,6 +1292,8 @@ def synthesize(
             chunk, voice_id, exaggeration=exaggeration, cfg_weight=cfg_weight, temperature=temperature
         )
         trimmed = generate_sentence_with_retry(engine, chunk, reference_path, **gen_params)
+        if len(trimmed) == 0:
+            print(f"[engine] dropping empty chunk from final output: \"{chunk[:80]}\"")
         if len(trimmed) > 0:
             sr = engine.sr
             if chunk_pitch_offset:
@@ -1346,7 +1376,16 @@ def _write_reference_wav(reference_audio_bytes: bytes, tmp_dir: Path) -> Path:
         ["ffmpeg", "-y", "-i", str(src_path), "-ar", "24000", "-ac", "1", str(wav_path)],
         capture_output=True,
     )
-    if result.returncode != 0 or not wav_path.exists():
+    # Real gap fixed here: ffmpeg can exit 0 while writing a near-empty/
+    # corrupt WAV (an unsupported or garbled codec it silently no-ops on) -
+    # checking only wav_path.exists() let that through as a "successful"
+    # transcode, only to blow up later as an unhandled soundfile/libsndfile
+    # exception (not one of the friendly error types callers catch for),
+    # surfacing a raw internal error to the customer instead of "couldn't
+    # read that recording." 44 bytes is a real WAV header's minimum size
+    # with zero audio frames - anything at or below that is empty in
+    # practice, not a real recording.
+    if result.returncode != 0 or not wav_path.exists() or wav_path.stat().st_size <= 44:
         raise UnsupportedReferenceAudioError()
     return wav_path
 
