@@ -26,7 +26,7 @@ export default async function PrivacyPage() {
   return (
     <div className="min-h-screen px-6 py-16">
       <main className="mx-auto flex max-w-2xl flex-col gap-8">
-        <SiteHeader title="Privacy Policy" subtitle="Last updated 2026-09-09 (part of the Astryks Group)" />
+        <SiteHeader title="Privacy Policy" subtitle="Last updated 2026-09-11 (part of the Astryks Group)" />
 
         <div className="flex flex-col gap-6 rounded-[28px] border border-white/60 bg-surface/90 p-8 shadow-soft backdrop-blur-xl">
           <Section title="What this covers">
@@ -41,23 +41,41 @@ export default async function PrivacyPage() {
           <Section title="Audio — narration and voice cloning">
             <p>
               Text you type for narration, any voice recording you upload to clone, and the audio we
-              generate are processed entirely on our own infrastructure (a GPU server we control,
-              rented from RunPod). We do not send this data to any third-party AI vendor. Generated
-              audio is not stored on our servers — it&apos;s returned directly to your device for
-              playback and download, so save anything you want to keep. Uploaded voice samples are
+              generate are processed entirely on our own infrastructure — GPU servers we control,
+              rented from RunPod and Modal. We do not send this data to any third-party AI vendor.
+              Generated audio is not stored on our servers — it&apos;s returned directly to your device
+              for playback and download, so save anything you want to keep. Uploaded voice samples are
               used only to generate your requested audio and are not retained afterward or used to
               train models for other users.
             </p>
           </Section>
 
-          <Section title="Video (not live yet)">
+          <Section title="Video — a materially different arrangement from audio">
             <p>
-              Video cloning is not a working feature yet (see the home page). When it ships, it will
-              work differently from audio: any photo, video, or reference audio you upload for a video
-              generation will be sent to third-party AI vendors (Kling, Veo, and the fal.ai platform we
-              use to reach them) for processing. That is a materially different arrangement from
-              audio, which stays entirely on our own infrastructure — we&apos;ll say this plainly in the
-              product itself before you generate anything, not just here.
+              Video generation is a live, paid feature (talking-head avatars, cinematic scenes, and
+              our pay-as-you-go engine picker). It works differently from audio-only narration/voice
+              cloning above, and we want to be direct about that difference rather than bury it:
+            </p>
+            <p>
+              Any photo, video, or reference audio you upload for a video generation — along with the
+              text/audio we generate on your behalf to drive it — is sent to third-party AI model
+              providers to actually produce the video. Depending on which engine you (or the feature)
+              select, that means one or more of: <strong>Kling</strong> (Kuaishou), <strong>Veo</strong>{" "}
+              (Google), and <strong>Seedance</strong> (ByteDance) — all reached through{" "}
+              <strong>fal.ai</strong>, the inference platform that hosts and routes to these models on
+              our behalf. fal.ai also runs a small audio/video-merge utility we use when a video needs
+              your uploaded or generated audio track attached to it.
+            </p>
+            <p>
+              Practically, this means: your uploaded photo/video/audio and the resulting generated
+              video are transmitted to and briefly stored by fal.ai and whichever model provider
+              actually renders it, are subject to those companies&apos; own privacy and retention
+              policies (not just ours), and the finished video is returned to you via a URL hosted on
+              fal.ai&apos;s infrastructure rather than ours. We do not control how long fal.ai or its
+              model providers retain that content on their own systems, and we have asked fal.ai
+              directly about aspects of this we could not confirm from public documentation alone. We
+              never send your data to these providers for anything other than fulfilling the specific
+              video you asked for — not for their model training, and not for ours.
             </p>
           </Section>
 
@@ -67,8 +85,41 @@ export default async function PrivacyPage() {
               access code generated after checkout. Payment is processed by Stripe — we do not see or
               store your card details ourselves. We store your email, subscription status, and usage
               (characters/video credits used this billing period) to enforce plan limits and manage
-              your subscription.
+              your subscription. Your email address and subscription plan name are also sent to Resend,
+              the service we use to actually deliver your access-code, sign-in, and payment-failed
+              emails.
             </p>
+          </Section>
+
+          <Section title="Third-party service providers, at a glance">
+            <p>
+              Summarizing the companies above in one place, and what each one actually receives from
+              us:
+            </p>
+            <ul className="list-disc pl-5">
+              <li>
+                <strong>fal.ai, Kling, Veo, Seedance</strong> — your uploaded photo/video/audio and
+                generated video, only when you use a video feature (see &quot;Video&quot; above).
+              </li>
+              <li>
+                <strong>Stripe</strong> — payment details and billing email, to process your
+                subscription or credit purchase. We never see your raw card number.
+              </li>
+              <li>
+                <strong>Resend</strong> — your email address and plan name, to deliver transactional
+                emails (access codes, sign-in links, payment-failure notices).
+              </li>
+              <li>
+                <strong>RunPod, Modal</strong> — audio you submit for narration/voice cloning, and
+                photo/video/audio for video generation before it&apos;s forwarded to the vendors above.
+                These are GPU servers we rent and run our own code on, not third-party AI services
+                that process data on their own terms.
+              </li>
+              <li>
+                <strong>Vercel</strong> — hosts the site and, for signed-in users, your generation
+                history (see &quot;Data retention &amp; deletion&quot; below).
+              </li>
+            </ul>
           </Section>
 
           <Section title="Basic visit counts">
@@ -84,8 +135,8 @@ export default async function PrivacyPage() {
           <Section title="What we don't do">
             <ul className="list-disc pl-5">
               <li>We don&apos;t sell your data.</li>
-              <li>We don&apos;t use your uploaded voice, photos, or video to train models for anyone else.</li>
-              <li>We don&apos;t share audio data with third parties — it&apos;s processed on our own servers.</li>
+              <li>We don&apos;t use your uploaded voice, photos, or video to train models — not for anyone else&apos;s benefit, and not for ours.</li>
+              <li>We don&apos;t send audio-only narration/voice-cloning data to any third party — that stays entirely on infrastructure we control (see &quot;Audio&quot; above). Video generation is the one exception, disclosed plainly above, not buried here.</li>
             </ul>
           </Section>
 
@@ -94,9 +145,13 @@ export default async function PrivacyPage() {
               If you generate audio without signing in, nothing is stored on our servers — it exists
               only in your browser for that session. If you sign in, we keep a short history of your
               generations (currently {retentionDays} days) so you can play them back and re-download
-              them from your account; anything older is automatically deleted. If you&apos;d like anything
-              deleted sooner — your account, uploaded samples, or generated clips — email us and
-              we&apos;ll take care of it.
+              them from your account; anything older is automatically deleted. Videos are not stored on
+              our own servers at any point — you get a direct link to the file as hosted by fal.ai, and
+              signed-in users&apos; history keeps that link, not a copy of the video itself, for the same
+              retention window. If you&apos;d like anything deleted sooner — your account, uploaded
+              samples, or generated clips — email us and we&apos;ll take care of it. We can&apos;t force an
+              early deletion on fal.ai&apos;s or a model provider&apos;s own systems, but we can and will ask
+              on your behalf.
             </p>
           </Section>
 
