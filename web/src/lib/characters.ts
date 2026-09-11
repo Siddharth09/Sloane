@@ -45,7 +45,12 @@ export const CHARACTERS: Character[] = [
     age: "mid-20s",
     region: "Sydney, Australia",
     imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/yOpTgTwUZNYQcFCLsa822_harper.jpg",
-    defaultVoiceId: "voice_broadcast", // Katie - Australian accent, requested explicitly ("same as katie")
+    // 2026-09-11: switched from Katie to Harper's own voice - a new preset
+    // zero-shot cloned from the surfing ads-demo clip's own audio (see
+    // VoicePicker.tsx's PRESET_VOICES and lucy_tts_engine.py's
+    // ZERO_SHOT_PRESET_VOICES), per direct request to make her voice match
+    // her face/the original demo instead of reusing another voice.
+    defaultVoiceId: "harper",
   },
   {
     id: "beth",

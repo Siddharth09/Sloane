@@ -21,6 +21,10 @@ zeroshot_test_output/
 # of this section - the blanket *.wav rule above would otherwise silently
 # 404 the whole feature in production despite working locally.
 !web/public/voice-samples/*.wav
+# Same reasoning: Harper's fixed zero-shot reference clip is a production
+# asset the Modal deploy bundles into the image (see modal_app.py's
+# add_local_file), not source training data.
+!scripts/voice_references/*.wav
 # Same reasoning, for the character click-to-preview clips.
 !web/public/character-samples/*.mp4
 # Different reasoning, same fix: these are archived research/investigation

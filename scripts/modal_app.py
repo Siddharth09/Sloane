@@ -92,6 +92,13 @@ image = (
     # chatterbox-ft-art/src package live on the Volume (see module docstring),
     # matching how RunPod's own image only carries the handler code too.
     .add_local_file(os.path.join(_SCRIPT_DIR, "lucy_tts_engine.py"), "/app/lucy_tts_engine.py")
+    # Harper (2026-09-11) - a "preset" voice backed by zero-shot cloning
+    # instead of a LoRA adapter (no real fine-tuning data exists for her -
+    # source is a single 6s clip from a Veo-generated demo, looped to clear
+    # the 8s zero-shot floor). Small enough to bundle directly into the
+    # image rather than uploading to the Volume - see
+    # lucy_tts_engine.py's ZERO_SHOT_PRESET_VOICES for how this gets used.
+    .add_local_file(os.path.join(_SCRIPT_DIR, "voice_references", "harper.wav"), "/app/voice_references/harper.wav")
 )
 
 model_volume = modal.Volume.from_name("lucy-tts-models", create_if_missing=True)

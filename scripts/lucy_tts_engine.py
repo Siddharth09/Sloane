@@ -125,6 +125,21 @@ PRESET_VOICES = {
     # as a preset.
 }
 
+# "Preset" voices backed by zero-shot cloning against a FIXED reference
+# clip, instead of a real LoRA fine-tune (see PRESET_VOICES above) - for a
+# voice with no real training data to fine-tune on. Harper (2026-09-11):
+# her only source is a single ~6s clip from a Veo-generated demo (looped
+# to clear MIN_UPLOAD_SECONDS - see generate_preset), not the many minutes
+# every other preset voice has. Quality expectation set honestly: zero-
+# shot cloning from one short, already-synthetic clip is a rougher
+# approximation than a real fine-tune, not the same bar as the voices in
+# PRESET_VOICES above. Reference paths point at files bundled directly
+# into the Modal image (see modal_app.py's add_local_file) since these are
+# small and don't need the Volume's fine-tuned-checkpoint machinery.
+ZERO_SHOT_PRESET_VOICES: dict[str, str] = {
+    "harper": "/app/voice_references/harper.wav",
+}
+
 # Runtime pitch adjustment, applied as post-processing (librosa.effects.
 # pitch_shift) after generation - a real audio-signal change, not a
 # training-time effect, so it's cheap to tune per-voice without retraining.
@@ -1470,11 +1485,16 @@ def generate_preset(
     """Feature A: one of the named preset voices. Raises UnknownVoiceError
     for an unrecognized voice_id. Returns (audio, sr), or (None, None) if
     generation produced nothing at all (empty input text)."""
-    if voice_id not in PRESET_VOICES:
-        raise UnknownVoiceError(f"unknown voice_id, expected one of {sorted(PRESET_VOICES)}")
-
-    base_engine.t3 = get_preset_t3(voice_id)  # swap onto the one shared engine (see load_finetuned_t3 note); loads on first use
-    reference = PRESET_VOICES[voice_id]["reference"]
+    if voice_id in ZERO_SHOT_PRESET_VOICES:
+        # No LoRA adapter to swap onto - zero-shot preset (see
+        # ZERO_SHOT_PRESET_VOICES comment), same base T3 generate_clone uses.
+        base_engine.t3 = base_t3
+        reference = ZERO_SHOT_PRESET_VOICES[voice_id]
+    elif voice_id in PRESET_VOICES:
+        base_engine.t3 = get_preset_t3(voice_id)  # swap onto the one shared engine (see load_finetuned_t3 note); loads on first use
+        reference = PRESET_VOICES[voice_id]["reference"]
+    else:
+        raise UnknownVoiceError(f"unknown voice_id, expected one of {sorted(set(PRESET_VOICES) | set(ZERO_SHOT_PRESET_VOICES))}")
     pitch = pitch_semitones if pitch_semitones is not None else PITCH_SEMITONES_BY_VOICE.get(voice_id, 0.0)
     highpass = HIGHPASS_HZ_BY_VOICE.get(voice_id, 0.0)
     notch_hz = NOTCH_HZ_BY_VOICE.get(voice_id, 0.0)

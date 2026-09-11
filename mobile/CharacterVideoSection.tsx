@@ -26,7 +26,7 @@ const COLORS = {
 // 2026-09-11 per direct real-ear feedback (see characters.ts's comment for
 // the full reasoning, including the deliberate Marcus/Mark accent tradeoff).
 const CHARACTERS = [
-  { id: "harper", name: "Harper", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/yOpTgTwUZNYQcFCLsa822_harper.jpg", defaultVoiceId: "voice_broadcast" },
+  { id: "harper", name: "Harper", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/yOpTgTwUZNYQcFCLsa822_harper.jpg", defaultVoiceId: "harper" },
   { id: "beth", name: "Beth", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/Y2m8E19pk2G12R1ewoEYH_beth.jpg", defaultVoiceId: "voice_business" },
   { id: "vicky", name: "Vicky", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/GCrI6ghEIlnUFmhtS8X7v_vicky.jpg", defaultVoiceId: "voice_comedy" },
   { id: "marcus", name: "Marcus", imageUrl: "https://v3b.fal.media/files/b/0aa9ed98/31mAICP5_1aZQawWNnVT8_marcus_v2.jpg", defaultVoiceId: "voice_mark" },
@@ -49,6 +49,7 @@ const VOICE_CHOICES = [
   { id: "voice_adam", label: "Adam" },
   { id: "voice_rachel", label: "Rachel" },
   { id: "voice_emily", label: "Emily" },
+  { id: "harper", label: "Harper" },
 ];
 
 const LUCY_VOICE_CREDIT_COST = 8;
