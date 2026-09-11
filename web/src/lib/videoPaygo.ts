@@ -44,8 +44,8 @@
  * VIDEO_PAYGO_ENGINE_COST_USD below):
  * - $3.99 single video: net after Stripe fee ($0.4157) = $3.574;
  *   profit = $3.574 - $2.23 = **$1.34**
- * - $18.00 for 5 (=$3.60/video): net after Stripe fee ($0.522 total,
- *   $0.1044/video) = $3.4356/video; profit = **$1.21/video**
+ * - $18.00 for 5 (=$3.60/video): net after Stripe fee (2.9%*18+$0.30 =
+ *   $0.822 total, $0.1644/video) = $3.4356/video; profit = **$1.21/video**
  * - $35.00 for 10 (=$3.50/video): net after Stripe fee ($0.315 gone
  *   from division, $0.0315/video... actual: fee=$1.315 total/10=$0.1315/
  *   video) = $3.3685/video; profit = **$1.14/video**

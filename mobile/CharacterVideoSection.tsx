@@ -107,6 +107,17 @@ export function CharacterVideoSection() {
   }
 
   async function handleGenerate() {
+    // Real bug fixed here: recorder.uri is assigned as soon as
+    // prepareToRecordAsync() runs (before record() is even called, per
+    // expo-audio's native implementation on both iOS/Android) - checking
+    // only `!recorder.uri` doesn't catch a recording that's still live.
+    // Tapping "Re-record" then Generate before tapping Stop used to send
+    // whatever's been written to the in-progress file so far - unfinished,
+    // no container trailer, producing a decode failure/garbage clone.
+    if (voiceMode === "own" && recorderState.isRecording) {
+      setError("Stop recording first");
+      return;
+    }
     if (voiceMode === "own" && !recorder.uri) {
       setError("Record a short sample of your voice first, or pick a Lucy voice instead");
       return;
@@ -195,7 +206,14 @@ export function CharacterVideoSection() {
             {(["default", "pick", "own"] as const).map((m) => (
               <Pressable
                 key={m}
-                onPress={() => setVoiceMode(m)}
+                onPress={() => {
+                  // Real bug fixed here: switching away from "own" mid-
+                  // recording left the recorder running in the background
+                  // with no visual indicator (the Record/Stop button
+                  // unmounts, the mic stays open) until switching back.
+                  if (voiceMode === "own" && recorderState.isRecording) recorder.stop();
+                  setVoiceMode(m);
+                }}
                 style={[styles.voiceModeButton, voiceMode === m && styles.voiceModeButtonActive]}
               >
                 <Text style={[styles.voiceModeText, voiceMode === m && styles.voiceModeTextActive]}>
@@ -229,8 +247,8 @@ export function CharacterVideoSection() {
 
           <Pressable
             onPress={handleGenerate}
-            disabled={loading || !script.trim()}
-            style={[styles.generateButton, (loading || !script.trim()) && { opacity: 0.5 }]}
+            disabled={loading || !script.trim() || recorderState.isRecording}
+            style={[styles.generateButton, (loading || !script.trim() || recorderState.isRecording) && { opacity: 0.5 }]}
           >
             <Text style={styles.generateButtonText}>
               {loading ? "Generating… (usually 30-90s)" : `Generate (${LUCY_VOICE_CREDIT_COST} video credits)`}

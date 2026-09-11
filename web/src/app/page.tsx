@@ -478,12 +478,18 @@ function CloneVoiceSection() {
 const VIDEO_POLL_INTERVAL_MS = 3000;
 const VIDEO_POLL_TIMEOUT_MS = 300_000;
 
-async function pollVideoJob(statusEndpoint: string, jobId: string): Promise<string> {
+// accessToken is required for the 3 subscription-video modes (their status
+// routes now check job.access_token against the caller - see
+// generate-character-video/status/route.ts and its siblings for the fix)
+// and unused/omittable for "paygo" (that one's owned by the signed-in
+// cookie session instead).
+async function pollVideoJob(statusEndpoint: string, jobId: string, accessToken?: string | null): Promise<string> {
   const startedAt = Date.now();
+  const tokenQuery = accessToken ? `&access_token=${encodeURIComponent(accessToken)}` : "";
   for (;;) {
     if (Date.now() - startedAt > VIDEO_POLL_TIMEOUT_MS) throw new Error("Taking much longer than usual - try again shortly.");
     await new Promise((resolve) => setTimeout(resolve, VIDEO_POLL_INTERVAL_MS));
-    const res = await fetch(`${statusEndpoint}?jobId=${encodeURIComponent(jobId)}`);
+    const res = await fetch(`${statusEndpoint}?jobId=${encodeURIComponent(jobId)}${tokenQuery}`);
     const data = await res.json();
     if (data.status === "COMPLETED") return data.videoUrl as string;
     if (data.status === "FAILED") throw new Error(data.error ?? "Generation failed");
@@ -494,12 +500,23 @@ type VideoJobType = "paygo" | "character" | "custom" | "cinematic";
 
 // Real video + a real "Download MP4" that streams through our own domain
 // (see /api/download-video) instead of sending people to fal's raw CDN URL.
-function VideoResultPlayer({ videoUrl, jobId, jobType }: { videoUrl: string; jobId: string; jobType: VideoJobType }) {
+function VideoResultPlayer({
+  videoUrl,
+  jobId,
+  jobType,
+  accessToken,
+}: {
+  videoUrl: string;
+  jobId: string;
+  jobType: VideoJobType;
+  accessToken?: string | null;
+}) {
+  const tokenQuery = accessToken ? `&access_token=${encodeURIComponent(accessToken)}` : "";
   return (
     <div>
       <video className="w-full rounded-xl" src={videoUrl} controls autoPlay loop playsInline />
       <a
-        href={`/api/download-video?jobType=${jobType}&jobId=${encodeURIComponent(jobId)}`}
+        href={`/api/download-video?jobType=${jobType}&jobId=${encodeURIComponent(jobId)}${tokenQuery}`}
         className="mt-3 inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
       >
         Download MP4
@@ -555,16 +572,39 @@ function useReferenceMedia() {
     }
   }
 
+  // Real bug fixed here: every URL.createObjectURL() above was never
+  // paired with a revoke - not on removal, not on reset, not on unmount -
+  // so each discarded photo/video-frame Blob stayed pinned in the tab's
+  // memory for the rest of the page's life. removeAt/reset now revoke the
+  // specific URL(s) being dropped, and an unmount effect below revokes
+  // whatever's still left if the user navigates away with items still in
+  // the list.
   function removeAt(i: number) {
-    setItems((prev) => prev.filter((_, idx) => idx !== i));
+    setItems((prev) => {
+      URL.revokeObjectURL(prev[i]?.previewUrl);
+      return prev.filter((_, idx) => idx !== i);
+    });
     setSelectedIndex((prev) => (prev === i ? 0 : prev > i ? prev - 1 : prev));
   }
 
   function reset() {
-    setItems([]);
+    setItems((prev) => {
+      prev.forEach((it) => URL.revokeObjectURL(it.previewUrl));
+      return [];
+    });
     setSelectedIndex(0);
     setError(null);
   }
+
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+  useEffect(() => {
+    return () => {
+      itemsRef.current.forEach((it) => URL.revokeObjectURL(it.previewUrl));
+    };
+  }, []);
 
   const selected = items[selectedIndex] ?? null;
   return {
@@ -629,10 +669,15 @@ function useMultiAudio() {
   const rec = useMediaRecorder("audio");
 
   useEffect(() => {
-    if (!rec.blob || !rec.previewUrl) return;
+    if (!rec.blob) return;
+    // A fresh object URL, independent of rec's own previewUrl - rec.reset()
+    // (below) revokes rec's own URL as soon as we're done copying the
+    // blob out, and this hook owns the lifetime of this new one from here
+    // (revoked by removeAt/reset/unmount, same as the upload-driven items).
+    const url = URL.createObjectURL(rec.blob);
     setItems((prev) => {
       setSelectedIndex(prev.length);
-      return [...prev, { blob: rec.blob!, previewUrl: rec.previewUrl!, label: `Recording ${prev.length + 1}` }];
+      return [...prev, { blob: rec.blob!, previewUrl: url, label: `Recording ${prev.length + 1}` }];
     });
     rec.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -648,16 +693,34 @@ function useMultiAudio() {
     });
   }
 
+  // Real bug fixed here: same unrevoked-object-URL leak as
+  // useReferenceMedia above, for every uploaded/recorded audio take.
   function removeAt(i: number) {
-    setItems((prev) => prev.filter((_, idx) => idx !== i));
+    setItems((prev) => {
+      URL.revokeObjectURL(prev[i]?.previewUrl);
+      return prev.filter((_, idx) => idx !== i);
+    });
     setSelectedIndex((prev) => (prev === i ? 0 : prev > i ? prev - 1 : prev));
   }
 
   function reset() {
-    setItems([]);
+    setItems((prev) => {
+      prev.forEach((it) => URL.revokeObjectURL(it.previewUrl));
+      return [];
+    });
     setSelectedIndex(0);
     rec.reset();
   }
+
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+  useEffect(() => {
+    return () => {
+      itemsRef.current.forEach((it) => URL.revokeObjectURL(it.previewUrl));
+    };
+  }, []);
 
   const selected = items[selectedIndex] ?? null;
   return { items, selectedIndex, setSelectedIndex, selectedBlob: selected?.blob ?? null, rec, addFiles, removeAt, reset };
@@ -776,7 +839,7 @@ function CustomVideoSection() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-      const videoUrl = await pollVideoJob("/api/generate-custom-video/status", jobId);
+      const videoUrl = await pollVideoJob("/api/generate-custom-video/status", jobId, token);
       setResult({ videoUrl, jobId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -856,7 +919,7 @@ function CustomVideoSection() {
       ) : (
         <button
           onClick={handleGenerate}
-          disabled={loading || !media.imageBlob || !script.trim()}
+          disabled={loading || !media.imageBlob || !script.trim() || (voiceMode === "own" && !ownVoice.selectedBlob && !media.videoFile)}
           className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
         >
           {loading ? "Generating… (usually 30-90s)" : `Generate (${LUCY_VOICE_CREDIT_COST} video credits)`}
@@ -864,7 +927,7 @@ function CustomVideoSection() {
       )}
 
       {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
-      {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="custom" />}
+      {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="custom" accessToken={token} />}
       <p className="text-xs text-muted">Powered by Kling - the only engine in our tests that reliably keeps your exact face, not a lookalike.</p>
     </Card>
   );
@@ -897,6 +960,13 @@ function CinematicVideoSection() {
     setError(null);
     setResult(null);
     try {
+      // Real bug fixed here: "My own audio"/"Clone my voice" silently
+      // omitted reference_audio if none was ever added, wasting a round-
+      // trip on a request the server was always going to reject - check
+      // client-side first instead, matching CustomVideoSection's pattern.
+      if ((audioSource === "own_upload" || audioSource === "lucy_cloned") && !ownAudio.selectedBlob) {
+        throw new Error(audioSource === "own_upload" ? "Add the audio you want on this video" : "Add a short sample of your voice to clone");
+      }
       const form = new FormData();
       form.append("access_token", token ?? "");
       form.append("prompt", prompt);
@@ -910,7 +980,7 @@ function CinematicVideoSection() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-      const videoUrl = await pollVideoJob("/api/generate-cinematic-video/status", jobId);
+      const videoUrl = await pollVideoJob("/api/generate-cinematic-video/status", jobId, token);
       setResult({ videoUrl, jobId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -993,7 +1063,12 @@ function CinematicVideoSection() {
       ) : (
         <button
           onClick={handleGenerate}
-          disabled={loading || !media.imageBlob || !prompt.trim()}
+          disabled={
+            loading ||
+            !media.imageBlob ||
+            !prompt.trim() ||
+            ((audioSource === "own_upload" || audioSource === "lucy_cloned") && !ownAudio.selectedBlob)
+          }
           className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
         >
           {loading ? "Generating… (usually 30-90s)" : `Generate (${cinematicCredits} video credits)`}
@@ -1001,7 +1076,7 @@ function CinematicVideoSection() {
       )}
 
       {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
-      {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="cinematic" />}
+      {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="cinematic" accessToken={token} />}
       <p className="text-xs text-muted">
         A real limitation, not hidden: the more your reference photo moves within the scene, the more the face can
         drift from your real one - Veo regenerates the whole scene rather than animating your exact photo.
@@ -1065,7 +1140,7 @@ function CharacterVideoSection() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-      const videoUrl = await pollVideoJob("/api/generate-character-video/status", jobId);
+      const videoUrl = await pollVideoJob("/api/generate-character-video/status", jobId, token);
       setResult({ videoUrl, jobId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -1163,14 +1238,14 @@ function CharacterVideoSection() {
 
           <button
             onClick={handleGenerate}
-            disabled={loading || !script.trim()}
+            disabled={loading || !script.trim() || (voiceMode === "own" && !ownVoice.selectedBlob)}
             className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
           >
             {loading ? "Generating… (usually 30-90s)" : `Generate (${LUCY_VOICE_CREDIT_COST} video credits)`}
           </button>
 
           {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
-          {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="character" />}
+          {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="character" accessToken={token} />}
         </>
       )}
 

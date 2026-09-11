@@ -15,6 +15,14 @@ export function useMediaRecorder(kind: "audio" | "video") {
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  // Tracks the current previewUrl outside React state so it can always be
+  // revoked before creating the next one, regardless of render timing -
+  // real bug fixed here: URL.createObjectURL results were never revoked
+  // anywhere (not on re-record, not in reset()), so each full Blob stayed
+  // pinned in the tab's memory for the rest of the page's life. Re-record
+  // a few times (retrying a voice sample, or a video take) and it adds up
+  // unbounded, especially for video.
+  const previewUrlRef = useRef<string | null>(null);
 
   const start = useCallback(async () => {
     setError(null);
@@ -48,8 +56,11 @@ export function useMediaRecorder(kind: "audio" | "video") {
         // playing back: the bytes are mp4 but were being tagged webm.
         const mimeType = recorder.mimeType || (kind === "video" ? "video/webm" : "audio/webm");
         const outBlob = new Blob(chunksRef.current, { type: mimeType });
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+        const url = URL.createObjectURL(outBlob);
+        previewUrlRef.current = url;
         setBlob(outBlob);
-        setPreviewUrl(URL.createObjectURL(outBlob));
+        setPreviewUrl(url);
         stream.getTracks().forEach((t) => t.stop());
         setLiveStream(null);
       };
@@ -68,6 +79,10 @@ export function useMediaRecorder(kind: "audio" | "video") {
   }, []);
 
   const reset = useCallback(() => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
     setBlob(null);
     setPreviewUrl(null);
     setError(null);

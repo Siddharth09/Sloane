@@ -18,7 +18,7 @@ function videoCreditsBlurb(credits: number): string | null {
 }
 
 const VIDEO_NOTE =
-  "Honest heads-up: video is being wired up now, not live in your account yet - see the home page for real tests of all three modes (talking head via Kling, cinematic via Veo, ads via Seedance with your own reusable AI actor), a genuine feature, not a lesser self-hosted substitute. Credits above are reserved for the moment it ships. Your photo/video/reference audio will be sent to those third-party AI vendors for processing (not fully self-hosted like audio is today) - we'll disclose that clearly in the product before you use it.";
+  "Video is live: your own likeness (Kling), Cinematic scenes (Veo), and 5 ready-made characters (Kling), all on the home page. Your photo/video/reference audio is sent to those third-party AI vendors for processing (not fully self-hosted like audio is today).";
 
 const PLAN_CARDS: { id: PlanId; blurb: string; wash: string; accent: string }[] = [
   { id: "free", blurb: "Try it out", wash: "bg-surface", accent: "text-muted" },
@@ -37,23 +37,36 @@ function CheckoutSuccess() {
 
   useEffect(() => {
     if (!sessionId) return;
+    // Real bug fixed here: this self-rescheduling setTimeout chain had no
+    // unmount guard at all - navigating away from /billing right after a
+    // Stripe redirect (before polling finished) left it calling
+    // setState on an unmounted component and kept fetching in the
+    // background for up to ~12s more.
+    let cancelled = false;
     let attempts = 0;
     setChecking(true);
     const poll = async () => {
       attempts += 1;
       const res = await fetch(`/api/billing/session?session_id=${encodeURIComponent(sessionId)}`);
+      if (cancelled) return;
       const data = await res.json();
+      if (cancelled) return;
       if (data.accessToken) {
         setRevealedToken(data.accessToken);
         setToken(data.accessToken);
         setChecking(false);
       } else if (attempts < 8) {
-        setTimeout(poll, 1500);
+        setTimeout(() => {
+          if (!cancelled) poll();
+        }, 1500);
       } else {
         setChecking(false);
       }
     };
     poll();
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId, setToken]);
 
   if (canceled) {
