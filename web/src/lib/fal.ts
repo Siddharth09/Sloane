@@ -29,6 +29,23 @@ export async function submitFalJob(endpoint: string, input: Record<string, unkno
 
 export type FalJobStatus = "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
 
+// fal's own docs say status/result URLs use the same full endpoint path as
+// submission (e.g. fal-ai/flux/schnell) - true for single-model apps, but
+// "kling-video" gateways several model variants (ai-avatar, v2.1/master,
+// v1.6/standard/elements) under one app, and that app only mounts its queue
+// status/result routes at the base app id, not the full submission path.
+// Verified empirically 2026-09-11 against a real completed request: GET
+// .../kling-video/ai-avatar/v2/standard/requests/{id}/status returned 405
+// Method Not Allowed on every poll for 10 minutes straight, while GET
+// .../kling-video/requests/{id}/status on the exact same request_id
+// succeeded immediately. Without this, every live Kling Avatar generation
+// (character videos, custom hyper-realistic mode, paygo avatar mode) would
+// throw on every status poll and hang in "IN_PROGRESS" forever.
+function pollingEndpoint(submitEndpoint: string): string {
+  if (submitEndpoint.startsWith("fal-ai/kling-video/")) return "fal-ai/kling-video";
+  return submitEndpoint;
+}
+
 // Real bug fixed here: this used to return "FAILED" on ANY non-2xx HTTP
 // response from fal's own status endpoint - indistinguishable from fal
 // genuinely reporting the underlying generation as failed. Every caller
@@ -41,7 +58,7 @@ export type FalJobStatus = "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
 // free. Now throws on a non-2xx response instead, so callers can retry on
 // the next poll rather than treating "we couldn't check" as "it failed."
 export async function getFalJobStatus(endpoint: string, requestId: string): Promise<FalJobStatus> {
-  const res = await fetch(`${FAL_BASE}/${endpoint}/requests/${requestId}/status`, {
+  const res = await fetch(`${FAL_BASE}/${pollingEndpoint(endpoint)}/requests/${requestId}/status`, {
     headers: falHeaders(),
   });
   if (!res.ok) {
@@ -55,7 +72,7 @@ export async function getFalJobStatus(endpoint: string, requestId: string): Prom
 // Result shape differs slightly per engine (all three so far return
 // {video: {url}}), so this stays loosely typed and callers pull `.video.url`.
 export async function getFalJobResult(endpoint: string, requestId: string): Promise<{ video?: { url: string } }> {
-  const res = await fetch(`${FAL_BASE}/${endpoint}/requests/${requestId}`, {
+  const res = await fetch(`${FAL_BASE}/${pollingEndpoint(endpoint)}/requests/${requestId}`, {
     headers: falHeaders(),
   });
   if (!res.ok) {
