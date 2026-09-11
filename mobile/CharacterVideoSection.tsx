@@ -18,14 +18,15 @@ const COLORS = {
 };
 
 // Kept in sync by hand with web/src/lib/characters.ts - no shared package
-// between web/mobile yet. defaultVoiceId picked to match each character's
-// requested accent (2026-09-11): Harper/Jack Australian (Jack "like Brad"),
-// Beth English "like Alice", Vicky/Marcus American.
+// between web/mobile yet. defaultVoiceId originally picked to match each
+// character's requested accent, then Harper/Vicky/Marcus reassigned
+// 2026-09-11 per direct real-ear feedback (see characters.ts's comment for
+// the full reasoning, including the deliberate Marcus/Mark accent tradeoff).
 const CHARACTERS = [
-  { id: "harper", name: "Harper", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/yOpTgTwUZNYQcFCLsa822_harper.jpg", defaultVoiceId: "voice_mark" },
+  { id: "harper", name: "Harper", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/yOpTgTwUZNYQcFCLsa822_harper.jpg", defaultVoiceId: "voice_broadcast" },
   { id: "beth", name: "Beth", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/Y2m8E19pk2G12R1ewoEYH_beth.jpg", defaultVoiceId: "voice_business" },
-  { id: "vicky", name: "Vicky", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/GCrI6ghEIlnUFmhtS8X7v_vicky.jpg", defaultVoiceId: "voice_rachel" },
-  { id: "marcus", name: "Marcus", imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/iPWHKRCO3ZxzoPoXtCewT_marcus.jpg", defaultVoiceId: "voice_adam" },
+  { id: "vicky", name: "Vicky", imageUrl: "https://v3b.fal.media/files/b/0aa9eb60/GCrI6ghEIlnUFmhtS8X7v_vicky.jpg", defaultVoiceId: "voice_comedy" },
+  { id: "marcus", name: "Marcus", imageUrl: "https://v3b.fal.media/files/b/PLACEHOLDER/marcus_v2.jpg", defaultVoiceId: "voice_mark" },
   { id: "jack", name: "Jack", imageUrl: "https://v3b.fal.media/files/b/0aa9eb61/6_ml_AMMqKfis0tvQBm8G_jack.jpg", defaultVoiceId: "voice_tech" },
 ];
 
@@ -126,6 +127,8 @@ export function CharacterVideoSection() {
         ))}
       </View>
 
+      {playingId && <VideoView style={styles.previewVideo} player={previewPlayer} nativeControls contentFit="cover" />}
+
       {!token ? (
         <Text style={styles.muted}>Sign in with a Video-plan access code in Account to actually generate a video with them.</Text>
       ) : (
@@ -205,5 +208,6 @@ const styles = StyleSheet.create({
   generateButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   errorText: { fontSize: 12, color: "#b0463c" },
   resultVideo: { width: "100%", aspectRatio: 9 / 16, borderRadius: 16, backgroundColor: "#000" },
+  previewVideo: { width: "100%", aspectRatio: 9 / 16, borderRadius: 16, backgroundColor: "#000" },
   noteText: { fontSize: 11, lineHeight: 17, color: COLORS.muted },
 });

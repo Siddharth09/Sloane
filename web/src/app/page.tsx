@@ -645,7 +645,13 @@ function CharacterVideoSection() {
       title="Pick a character, make an ad"
       subtitle="Tap a face to hear them, then type what they should say."
     >
-      <video ref={previewRef} onEnded={() => setPlayingId(null)} className="hidden" />
+      <video
+        ref={previewRef}
+        onEnded={() => setPlayingId(null)}
+        controls
+        playsInline
+        className={playingId ? "mx-auto w-full max-w-xs rounded-xl" : "hidden"}
+      />
       <div className="flex flex-wrap justify-center gap-4">
         {CHARACTERS.map((c) => (
           <button key={c.id} onClick={() => handlePickCharacter(c.id)} className="flex flex-col items-center gap-1.5">
@@ -849,11 +855,17 @@ function PayAsYouGoVideoSection() {
           />
 
           <button
-            onClick={handleGenerate}
-            disabled={loading || !prompt.trim() || balance < 1}
+            onClick={balance < 1 ? () => handleBuy("single") : handleGenerate}
+            disabled={loading || (balance >= 1 && !prompt.trim()) || buyingPack !== null}
             className="w-full rounded-2xl bg-purple py-3 text-sm font-bold text-white shadow-soft disabled:opacity-50"
           >
-            {loading ? "Generating… (usually 30-90s)" : balance < 1 ? "Buy credits to generate" : "Generate (1 credit)"}
+            {loading
+              ? "Generating… (usually 30-90s)"
+              : balance < 1
+                ? buyingPack === "single"
+                  ? "Redirecting…"
+                  : "Buy credits to generate"
+                : "Generate (1 credit)"}
           </button>
 
           {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
