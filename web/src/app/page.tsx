@@ -483,7 +483,15 @@ const VIDEO_POLL_TIMEOUT_MS = 300_000;
 // generate-character-video/status/route.ts and its siblings for the fix)
 // and unused/omittable for "paygo" (that one's owned by the signed-in
 // cookie session instead).
-async function pollVideoJob(statusEndpoint: string, jobId: string, accessToken?: string | null): Promise<string> {
+// silentVideoUrl is only ever populated by /api/video-paygo/status (the
+// raw, unmodified engine output from just before the lip-sync pass - see
+// silent_video_url's comment in db.ts) - every other status endpoint never
+// sends this field, so it comes back undefined there, same as before.
+async function pollVideoJob(
+  statusEndpoint: string,
+  jobId: string,
+  accessToken?: string | null,
+): Promise<{ videoUrl: string; silentVideoUrl: string | null }> {
   const startedAt = Date.now();
   const tokenQuery = accessToken ? `&access_token=${encodeURIComponent(accessToken)}` : "";
   for (;;) {
@@ -491,7 +499,7 @@ async function pollVideoJob(statusEndpoint: string, jobId: string, accessToken?:
     await new Promise((resolve) => setTimeout(resolve, VIDEO_POLL_INTERVAL_MS));
     const res = await fetch(`${statusEndpoint}?jobId=${encodeURIComponent(jobId)}${tokenQuery}`);
     const data = await res.json();
-    if (data.status === "COMPLETED") return data.videoUrl as string;
+    if (data.status === "COMPLETED") return { videoUrl: data.videoUrl as string, silentVideoUrl: (data.silentVideoUrl as string | null) ?? null };
     if (data.status === "FAILED") throw new Error(data.error ?? "Generation failed");
   }
 }
@@ -505,22 +513,43 @@ function VideoResultPlayer({
   jobId,
   jobType,
   accessToken,
+  silentVideoUrl,
 }: {
   videoUrl: string;
   jobId: string;
   jobType: VideoJobType;
   accessToken?: string | null;
+  // Only ever set on paygo jobs that went through a silent-render-then-
+  // lip-sync pipeline (Veo/Seedance/Grok/MiniMax + audio) - see
+  // silent_video_url's comment in db.ts. Undefined/null elsewhere, which
+  // just means the second button below doesn't render.
+  silentVideoUrl?: string | null;
 }) {
   const tokenQuery = accessToken ? `&access_token=${encodeURIComponent(accessToken)}` : "";
   return (
     <div>
       <video className="w-full rounded-xl" src={videoUrl} controls autoPlay loop playsInline />
-      <a
-        href={`/api/download-video?jobType=${jobType}&jobId=${encodeURIComponent(jobId)}${tokenQuery}`}
-        className="mt-3 inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
-      >
-        Download MP4
-      </a>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <a
+          href={`/api/download-video?jobType=${jobType}&jobId=${encodeURIComponent(jobId)}${tokenQuery}`}
+          className="inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
+        >
+          Download MP4
+        </a>
+        {silentVideoUrl && (
+          <a
+            href={`/api/download-video?jobType=${jobType}&jobId=${encodeURIComponent(jobId)}&variant=silent${tokenQuery}`}
+            className="inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
+          >
+            Download without audio
+          </a>
+        )}
+      </div>
+      {silentVideoUrl && (
+        <p className="mt-2 text-xs text-muted">
+          &quot;Download MP4&quot; is our lip-synced attempt. &quot;Download without audio&quot; is the model&apos;s actual footage, exactly as we got it back, before we added audio.
+        </p>
+      )}
     </div>
   );
 }
@@ -839,7 +868,7 @@ function CustomVideoSection() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-      const videoUrl = await pollVideoJob("/api/generate-custom-video/status", jobId, token);
+      const { videoUrl } = await pollVideoJob("/api/generate-custom-video/status", jobId, token);
       setResult({ videoUrl, jobId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -980,7 +1009,7 @@ function CinematicVideoSection() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-      const videoUrl = await pollVideoJob("/api/generate-cinematic-video/status", jobId, token);
+      const { videoUrl } = await pollVideoJob("/api/generate-cinematic-video/status", jobId, token);
       setResult({ videoUrl, jobId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -1416,7 +1445,7 @@ function CharacterVideoSection() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-      const videoUrl = await pollVideoJob("/api/generate-character-video/status", jobId, token);
+      const { videoUrl } = await pollVideoJob("/api/generate-character-video/status", jobId, token);
       setResult({ videoUrl, jobId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -1551,7 +1580,7 @@ function PayAsYouGoVideoSection() {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
+  const [result, setResult] = useState<{ videoUrl: string; jobId: string; silentVideoUrl: string | null } | null>(null);
   const [buyingPack, setBuyingPack] = useState<string | null>(null);
 
   // Same shared-<audio>-element click-to-preview pattern as VoicePicker.tsx
@@ -1622,8 +1651,8 @@ function PayAsYouGoVideoSection() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-      const videoUrl = await pollVideoJob("/api/video-paygo/status", jobId);
-      setResult({ videoUrl, jobId });
+      const { videoUrl, silentVideoUrl } = await pollVideoJob("/api/video-paygo/status", jobId);
+      setResult({ videoUrl, jobId, silentVideoUrl });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -1775,7 +1804,9 @@ function PayAsYouGoVideoSection() {
           </button>
 
           {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
-          {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="paygo" />}
+          {result && (
+            <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="paygo" silentVideoUrl={result.silentVideoUrl} />
+          )}
         </>
       )}
 

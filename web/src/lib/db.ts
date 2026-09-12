@@ -241,6 +241,15 @@ export async function initSchema() {
   // per job, never both.
   await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS modal_job_id TEXT`;
   await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS preset_voice_id TEXT`;
+  // The raw, silent engine output from just before the lip-sync pass
+  // (2026-09-12) - previously fetched and used as submitLipsyncJob's input,
+  // then thrown away once the lip-synced result was ready. Kept now so a
+  // customer can download both: the model's actual unmodified footage, and
+  // our lip-synced attempt on top of it. Only ever set on the
+  // needs_merge=true path (Veo/Seedance/Grok/MiniMax + audio) - Kling's own
+  // Avatar path generates audio+video together in one step, so there's no
+  // separate silent version to keep for it.
+  await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS silent_video_url TEXT`;
 }
 
 // Generic runtime settings, switchable from the admin dashboard without a
@@ -732,6 +741,7 @@ export type VideoPaygoJob = {
   preset_voice_id: string | null;
   status: "pending" | "in_progress" | "completed" | "failed";
   video_url: string | null;
+  silent_video_url: string | null;
   error: string | null;
   created_at: string;
 };
@@ -770,6 +780,12 @@ export async function setVideoPaygoJobModalId(jobId: string, modalJobId: string)
 // since a given job only ever has one or the other, never both.
 export async function setVideoPaygoJobResolvedAudio(jobId: string, audioUrl: string) {
   await sql`UPDATE video_paygo_jobs SET input_audio_url = ${audioUrl} WHERE id = ${jobId}`;
+}
+
+// Saves the raw silent engine output right before the lip-sync pass runs on
+// top of it - see the silent_video_url column comment above for why.
+export async function setVideoPaygoJobSilentVideo(jobId: string, silentVideoUrl: string) {
+  await sql`UPDATE video_paygo_jobs SET silent_video_url = ${silentVideoUrl} WHERE id = ${jobId}`;
 }
 
 export async function completeVideoPaygoJob(jobId: string, videoUrl: string) {

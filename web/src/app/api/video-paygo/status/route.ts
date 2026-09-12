@@ -8,6 +8,7 @@ import {
   setVideoPaygoJobMergeRequestId,
   setVideoPaygoJobRequestId,
   setVideoPaygoJobResolvedAudio,
+  setVideoPaygoJobSilentVideo,
 } from "@/lib/db";
 import { getFalJobStatus, getFalJobResult, submitLipsyncJob, submitFalJob, uploadBufferToFal, LIPSYNC_ENDPOINT } from "@/lib/fal";
 import { getModalJobStatus } from "@/lib/modal";
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (job.status === "completed") {
-    return NextResponse.json({ status: "COMPLETED", videoUrl: job.video_url });
+    return NextResponse.json({ status: "COMPLETED", videoUrl: job.video_url, silentVideoUrl: job.silent_video_url });
   }
   if (job.status === "failed") {
     return NextResponse.json({ status: "FAILED", error: job.error });
@@ -113,7 +114,7 @@ export async function GET(req: NextRequest) {
         const videoUrl = result.video?.url;
         if (!videoUrl) throw new Error("lip-sync result had no video url");
         await completeVideoPaygoJob(job.id, videoUrl);
-        return NextResponse.json({ status: "COMPLETED", videoUrl });
+        return NextResponse.json({ status: "COMPLETED", videoUrl, silentVideoUrl: job.silent_video_url });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to fetch lip-synced result";
         // Atomic claim - only refund if THIS call actually transitioned the
@@ -145,13 +146,19 @@ export async function GET(req: NextRequest) {
       if (!videoUrl) throw new Error("fal result had no video url");
 
       if (job.needs_merge && job.input_audio_url) {
+        // Keep the raw, silent engine output around (2026-09-12) - it's
+        // about to become submitLipsyncJob's input below, but was
+        // previously discarded right after. Saved so a customer can
+        // download both this and the lip-synced result once the job
+        // finishes - see the silent_video_url column comment in db.ts.
+        await setVideoPaygoJobSilentVideo(job.id, videoUrl);
         const lipsyncRequestId = await submitLipsyncJob(videoUrl, job.input_audio_url);
         await setVideoPaygoJobMergeRequestId(job.id, lipsyncRequestId);
         return NextResponse.json({ status: "IN_PROGRESS" });
       }
 
       await completeVideoPaygoJob(job.id, videoUrl);
-      return NextResponse.json({ status: "COMPLETED", videoUrl });
+      return NextResponse.json({ status: "COMPLETED", videoUrl, silentVideoUrl: null });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to fetch result";
       if (await failVideoPaygoJob(job.id, message)) await refundVideoCredit(user.id);
