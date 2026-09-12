@@ -1237,10 +1237,8 @@ const PRODUCT_AD_MODELS: ProductAdModel[] = [
   {
     id: "veo",
     name: "Veo",
-    note: "Not re-tested this round - see below for why.",
-    videoUrl: null,
-    blockedReason:
-      "Veo blocks prompts that read like a specific real person endorsing a named brand (an AI-fake-endorsement pattern many platforms guard against) - it only passed in an earlier test once we dropped Harper's identity entirely for a generic, unnamed woman, which defeats the point of using Harper by name. Not worth spending more credits to reconfirm a block we've already proven twice.",
+    note: "Can't generate Harper specifically (see below), but here's an earlier real test showing it will incorporate our actual product when the person isn't a named identity - a generic, unnamed woman picking up the tumbler. Real caveat: watch the label closely - it double-exposes/ghosts for a moment instead of staying crisp, so logo fidelity isn't perfect here either.",
+    videoUrl: "/product-showcase/veo_generic_cup.mp4",
   },
   {
     id: "seedance",
@@ -1341,11 +1339,11 @@ function ProductAdShowcaseSection() {
       </div>
 
       <p className="text-xs text-muted">
-        On Veo and Seedance, real-person policies are the whole story: <strong>Seedance</strong> blocks any
-        photorealistic AI face outright, no matter the prompt. <strong>Veo</strong> flags prompts that read like a
-        specific real person endorsing a named brand - it only passes with a generic, unnamed person, which
-        defeats using a named character like Harper. Both left out of this round rather than re-spending credits
-        to reconfirm an already-proven block.
+        Real-person policies explain the other two: <strong>Seedance</strong> blocks any photorealistic AI face
+        outright, no matter the prompt - left out of this round entirely rather than re-spending credits to
+        reconfirm an already-proven block. <strong>Veo</strong> flags prompts that read like a specific real
+        person endorsing a named brand, so it can&apos;t generate Harper by name - but as the clip above shows, it
+        will render a generic, unnamed person holding the real product once the named-identity part is dropped.
       </p>
 
       <p className="text-xs text-muted">
