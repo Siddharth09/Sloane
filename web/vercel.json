@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/check-fal-balance",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 9 * * *"
     }
   ]
 }
