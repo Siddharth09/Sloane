@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { upsertSubscriberForCheckout, setSubscriberStatus, linkSubscriberToUser, initSchema, addVideoCredits, claimStripeEvent } from "@/lib/db";
-import { planFromStripePriceId } from "@/lib/plans";
+import { planFromStripePriceId, PLANS } from "@/lib/plans";
 import { videoCreditPackFromStripePriceId } from "@/lib/videoPaygo";
-import { sendAccessCodeEmail, sendPaymentFailedEmail } from "@/lib/email";
+import { sendAccessCodeEmail, sendPaymentFailedEmail, sendVideoCreditReceiptEmail } from "@/lib/email";
 import type Stripe from "stripe";
 
 // Stripe needs the raw request body (unparsed) to verify the signature.
@@ -52,6 +52,8 @@ export async function POST(req: NextRequest) {
         const userId = session.client_reference_id;
         if (pack && userId) {
           await addVideoCredits(userId, pack.credits);
+          const email = session.customer_details?.email;
+          if (email) await sendVideoCreditReceiptEmail(email, pack, session.amount_total ?? pack.priceUsdCents);
         } else {
           console.error("Video credit checkout completed but couldn't resolve pack/user", { priceId, userId });
         }
@@ -79,7 +81,7 @@ export async function POST(req: NextRequest) {
       // Only on first checkout, not every renewal (invoice.paid fires
       // monthly too) - a "welcome, here's your code" email every renewal
       // would be spammy and confusing.
-      await sendAccessCodeEmail(email, accessToken, plan);
+      await sendAccessCodeEmail(email, accessToken, plan, session.amount_total ?? PLANS[plan].priceUsdCents);
       // If checkout was started from a logged-in session, link this
       // subscriber straight to that account so /account shows it immediately
       // without waiting for a lazy email-match on next login.
