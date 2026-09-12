@@ -1152,7 +1152,7 @@ function ModelShowcaseSection() {
       </p>
 
       {model.videoUrl ? (
-        <video key={model.id} className="w-full rounded-xl" src={model.videoUrl} controls loop muted playsInline />
+        <video key={model.id} className="mx-auto w-full max-w-xs rounded-xl" src={model.videoUrl} controls loop muted playsInline />
       ) : (
         <div className="rounded-2xl border border-coral-dark/30 bg-white/70 p-4 text-sm text-coral-dark">
           {model.blockedReason}
