@@ -1195,12 +1195,20 @@ function ModelShowcaseSection() {
 
 // --- "Just for fun" product-ad showcase: Beth + our own product, five engines ---
 
-const PRODUCT_AD_PROMPT =
-  "Cinematic tracking shot: this exact woman strides confidently out of a bright modern yoga studio holding her " +
-  "pink tumbler, which has a purple microphone logo and the words LUCY LABS printed on it, and the shot flows " +
-  "into her walking into a sleek New York high-rise office with floor-to-ceiling windows and skyscrapers behind " +
-  "her, still holding the same tumbler, energetic and professional, photorealistic, 4k, cinematic commercial ad, " +
-  "dramatic lighting";
+const PRODUCT_AD_SCRIPT = "“Look at your tumbler. Now back to mine. Sadly, yours isn't mine. But it could be.”";
+
+// The scene-description prompt given to Grok/MiniMax's silent render (Kling
+// Avatar takes no text prompt at all - just the reference photo + audio).
+const PRODUCT_AD_SCENE_PROMPT =
+  "A confident professional woman holds this exact tumbler and gestures energetically as she talks to the " +
+  "camera, camera slowly pans across a bright modern sunlit room, energetic, playful, confident, cinematic " +
+  "commercial ad, photorealistic, 4k";
+
+// The separate prompt used for Veo's generic-person test (real cup photo,
+// no Beth, no audio - see that model's note above).
+const PRODUCT_AD_VEO_PROMPT =
+  "A professional woman holds this tumbler and gestures energetically while talking, bright modern office, " +
+  "photorealistic, 4k, commercial ad style";
 
 type ProductAdModel = {
   id: string;
@@ -1212,30 +1220,28 @@ type ProductAdModel = {
 
 const PRODUCT_AD_MODELS: ProductAdModel[] = [
   {
-    id: "minimax",
-    name: "MiniMax",
-    note: "The cleanest result of the five - crisp logo (mic icon and all), warm and natural, straight out of a real ad.",
-    videoUrl: "/product-showcase/beth_ad_minimax.mp4",
+    id: "kling",
+    name: "Kling",
+    note: "Real lip-sync in one step (Kling's Avatar feature) - genuinely great result, crisp logo throughout, Beth actually mouthing the script.",
+    videoUrl: "/product-showcase/beth_dub_kling.mp4",
   },
   {
     id: "grok",
     name: "Grok",
-    note: "Nailed the exact Lucy Labs logo and mic icon purely from the text description - it never even saw a photo of the real cup.",
-    videoUrl: "/product-showcase/beth_ad_grok.mp4",
+    note: "Rendered the scene silently, then we added real lip-sync afterward via Kling's dedicated lip-sync pass - logo and expression both came out great.",
+    videoUrl: "/product-showcase/beth_dub_grok.mp4",
   },
   {
-    id: "kling",
-    name: "Kling",
-    note: "Recognizably Beth, but without a real photo of the cup to work from, the logo came out as an illegible scribble.",
-    videoUrl: "/product-showcase/beth_ad_kling.mp4",
+    id: "minimax",
+    name: "MiniMax",
+    note: "Same two-step process as Grok (silent render, then a real lip-sync pass) - crisp logo, warm and natural delivery.",
+    videoUrl: "/product-showcase/beth_dub_minimax.mp4",
   },
   {
     id: "veo",
     name: "Veo",
-    note: "Couldn't offer us a result on this one - see below.",
-    videoUrl: null,
-    blockedReason:
-      "Veo's own safety checker rejected this scene before it ever started generating - one of its more sensitive content filters, not something we can configure around.",
+    note: "Only worked once we described a generic, unnamed woman instead of “this exact woman” - no audio on this one, a separate test of the theory, not the dubbed script.",
+    videoUrl: "/product-showcase/beth_dub_veo.mp4",
   },
   {
     id: "seedance",
@@ -1243,7 +1249,7 @@ const PRODUCT_AD_MODELS: ProductAdModel[] = [
     note: "Couldn't offer us a result on this one - see below.",
     videoUrl: null,
     blockedReason:
-      "Seedance can't offer us a realistic video with Beth in it because of their own privacy policy around hyper-realistic AI faces - the same reason it sat out our other test above.",
+      "Seedance's own safety policy blocks any photorealistic AI-generated face outright, before it even looks at the rest of the scene - it can't tell a convincing AI face from a real photo of a real person, so it refuses both. Nothing about wording gets around this one.",
   },
 ];
 
@@ -1256,26 +1262,29 @@ function ProductAdShowcaseSection() {
       wash="bg-purple-wash/90"
       iconColor="text-purple"
       icon="🥤"
-      title="Can AI promote your product?"
-      subtitle="We asked each model to put one of our AI characters in a real ad for our own product - no distortion allowed."
+      title="Just for fun: can AI promote your product?"
+      subtitle="We asked each model to put one of our AI characters in a real, spoken ad for our own product - no distortion allowed."
     >
       <p className="text-sm leading-relaxed text-muted">
-        This time we made it harder: show Beth, one of our AI characters, leaving a yoga studio and walking into
-        her New York office, carrying a Lucy Labs tumbler (the same one below, relabeled with our real logo). Only
-        Beth&apos;s photo was given as the actual reference image - none of these engines can take a second photo
-        of the cup at the same time for a real person, so the cup itself was only described in words.
+        Beth (one of our AI characters) actually says a short script about the tumbler, dubbed in her own voice.
+        We first combined a photo of Beth and a photo of the tumbler into one real reference image (so both her
+        face and the exact logo carry through), then had each engine animate that photo and speak the line below.
+      </p>
+      <p className="text-xs italic text-muted">
+        To be clear: this tumbler isn&apos;t a real Lucy Labs product - it&apos;s a relabeled stock photo, purely
+        for testing how well each engine keeps a product&apos;s logo intact.
       </p>
 
       <div className="flex items-center justify-center gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/product-showcase/beth_reference.jpg" alt="Beth, the photo we uploaded" className="h-40 w-auto rounded-xl object-contain" />
+        <img src="/product-showcase/beth_reference.jpg" alt="Beth, the original photo" className="h-40 w-auto rounded-xl object-contain" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/product-showcase/lucylabs_cup_v2.png" alt="Our Lucy Labs tumbler" className="h-40 w-auto rounded-xl object-contain" />
+        <img src="/product-showcase/beth_holding_cup.png" alt="Beth and the tumbler, combined into one reference photo" className="h-40 w-auto rounded-xl object-contain" />
       </div>
-      <p className="text-center text-xs text-muted">Beth&apos;s photo (the actual reference image) and our tumbler (described in the prompt only).</p>
+      <p className="text-center text-xs text-muted">Beth&apos;s original photo, and the combined reference photo we actually used (Beth + the real tumbler in one image).</p>
 
       {model.videoUrl ? (
-        <video key={model.id} className="mx-auto w-full max-w-xs rounded-xl" src={model.videoUrl} controls loop muted playsInline />
+        <video key={model.id} className="mx-auto w-full max-w-xs rounded-xl" src={model.videoUrl} controls loop muted={false} playsInline />
       ) : (
         <div className="rounded-2xl border border-coral-dark/30 bg-white/70 p-4 text-sm text-coral-dark">
           {model.blockedReason}
@@ -1304,15 +1313,36 @@ function ProductAdShowcaseSection() {
       <p className="text-xs text-muted">{model.note}</p>
 
       <div className="rounded-2xl bg-white/70 p-3">
-        <p className="text-xs font-semibold text-muted">The exact prompt used for all five:</p>
-        <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_PROMPT}</p>
+        <p className="text-xs font-semibold text-muted">The script Beth says out loud (Kling, Grok, MiniMax):</p>
+        <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_SCRIPT}</p>
+      </div>
+
+      <div className="rounded-2xl bg-white/70 p-3">
+        <p className="text-xs font-semibold text-muted">
+          The scene prompt for Grok/MiniMax&apos;s silent render (Kling&apos;s Avatar step takes no text prompt at
+          all - just the photo and the audio):
+        </p>
+        <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_SCENE_PROMPT}</p>
+      </div>
+
+      <div className="rounded-2xl bg-white/70 p-3">
+        <p className="text-xs font-semibold text-muted">Veo&apos;s separate prompt (its own test, no audio):</p>
+        <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_VEO_PROMPT}</p>
       </div>
 
       <p className="text-xs text-muted">
-        Honest caveat: none of the five actually cut between two locations - that&apos;s a real limit of a single
-        generation (they render one continuous shot, not a multi-scene edit), not a bug on our end. What you see
-        is each engine&apos;s best one-take interpretation. Same as above: a snapshot from 2026-09-12, not a
-        permanent ranking.
+        On Veo and Seedance, real-person policies are the whole story: <strong>Seedance</strong> blocks any
+        photorealistic AI face outright, no matter the prompt. <strong>Veo</strong> blocked our first attempt too,
+        but for a narrower reason - it flags prompts that read like a specific real person endorsing a named
+        brand (an AI-fake-endorsement pattern many platforms guard against), not photorealistic faces in general.
+        Dropping the specific identity (a generic, unnamed woman instead of &quot;this exact woman&quot;) let it
+        through - that&apos;s why Veo&apos;s clip above uses a different, non-Beth reference photo and has no audio.
+      </p>
+
+      <p className="text-xs text-muted">
+        Honest caveat: none of these actually cut between multiple locations - that&apos;s a real limit of a single
+        generation (one continuous shot, not a multi-scene edit), not something we can configure around. Same as
+        above: a snapshot from 2026-09-12, not a permanent ranking.
       </p>
     </Card>
   );
