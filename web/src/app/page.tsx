@@ -1193,10 +1193,14 @@ function ModelShowcaseSection() {
   );
 }
 
-// --- "Just for fun" product-ad showcase: our own product, five engines ---
+// --- "Just for fun" product-ad showcase: Beth + our own product, five engines ---
 
 const PRODUCT_AD_PROMPT =
-  "A woman's hand reaches into frame and picks up this exact tumbler from a bright cafe table, morning sunlight, taking a sip through the straw, photorealistic, 4k, commercial product ad";
+  "Cinematic tracking shot: this exact woman strides confidently out of a bright modern yoga studio holding her " +
+  "pink tumbler, which has a purple microphone logo and the words LUCY LABS printed on it, and the shot flows " +
+  "into her walking into a sleek New York high-rise office with floor-to-ceiling windows and skyscrapers behind " +
+  "her, still holding the same tumbler, energetic and professional, photorealistic, 4k, cinematic commercial ad, " +
+  "dramatic lighting";
 
 type ProductAdModel = {
   id: string;
@@ -1208,36 +1212,38 @@ type ProductAdModel = {
 
 const PRODUCT_AD_MODELS: ProductAdModel[] = [
   {
-    id: "kling",
-    name: "Kling",
-    note: "Logo stayed perfectly crisp, with a natural-looking hand grip.",
-    videoUrl: "/product-showcase/cup_kling.mp4",
-  },
-  {
-    id: "seedance",
-    name: "Seedance",
-    note: "Logo stayed perfectly crisp - the best-composed shot of the five.",
-    videoUrl: "/product-showcase/cup_seedance.mp4",
+    id: "minimax",
+    name: "MiniMax",
+    note: "The cleanest result of the five - crisp logo (mic icon and all), warm and natural, straight out of a real ad.",
+    videoUrl: "/product-showcase/beth_ad_minimax.mp4",
   },
   {
     id: "grok",
     name: "Grok",
-    note: "Logo stayed perfectly crisp, and it built a nice little cafe scene around it.",
-    videoUrl: "/product-showcase/cup_grok.mp4",
+    note: "Nailed the exact Lucy Labs logo and mic icon purely from the text description - it never even saw a photo of the real cup.",
+    videoUrl: "/product-showcase/beth_ad_grok.mp4",
+  },
+  {
+    id: "kling",
+    name: "Kling",
+    note: "Recognizably Beth, but without a real photo of the cup to work from, the logo came out as an illegible scribble.",
+    videoUrl: "/product-showcase/beth_ad_kling.mp4",
   },
   {
     id: "veo",
     name: "Veo",
-    note: "Distorted the logo (it came out doubled/ghosted) and warped the cup's actual shape.",
-    videoUrl: "/product-showcase/cup_veo.mp4",
-  },
-  {
-    id: "minimax",
-    name: "MiniMax",
-    note: "Didn't get to test this one.",
+    note: "Couldn't offer us a result on this one - see below.",
     videoUrl: null,
     blockedReason:
-      "We ran out of real generation credit partway through this test, right before MiniMax's turn - not a limitation of the model itself, just bad timing. We'll fill this in next time.",
+      "Veo's own safety checker rejected this scene before it ever started generating - one of its more sensitive content filters, not something we can configure around.",
+  },
+  {
+    id: "seedance",
+    name: "Seedance",
+    note: "Couldn't offer us a result on this one - see below.",
+    videoUrl: null,
+    blockedReason:
+      "Seedance can't offer us a realistic video with Beth in it because of their own privacy policy around hyper-realistic AI faces - the same reason it sat out our other test above.",
   },
 ];
 
@@ -1250,22 +1256,23 @@ function ProductAdShowcaseSection() {
       wash="bg-purple-wash/90"
       iconColor="text-purple"
       icon="🥤"
-      title="Just for fun: can AI promote our own product?"
-      subtitle="We uploaded a real product photo and asked each model to build an ad around it - no distortion allowed."
+      title="Can AI promote your product?"
+      subtitle="We asked each model to put one of our AI characters in a real ad for our own product - no distortion allowed."
     >
       <p className="text-sm leading-relaxed text-muted">
-        We took a real tumbler photo, edited the logo to say &quot;Lucy Labs&quot; instead of the original brand
-        (a quick image edit, not a real product of ours), then gave every engine that exact same photo and the
-        exact same prompt to see who could build a believable ad around it without warping the logo.
+        This time we made it harder: show Beth, one of our AI characters, leaving a yoga studio and walking into
+        her New York office, carrying a Lucy Labs tumbler (the same one below, relabeled with our real logo). Only
+        Beth&apos;s photo was given as the actual reference image - none of these engines can take a second photo
+        of the cup at the same time for a real person, so the cup itself was only described in words.
       </p>
 
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/product-showcase/lucylabs_cup.png"
-        alt="The Lucy Labs tumbler we uploaded"
-        className="mx-auto h-48 w-auto rounded-xl object-contain"
-      />
-      <p className="text-center text-xs text-muted">The exact photo we uploaded.</p>
+      <div className="flex items-center justify-center gap-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/product-showcase/beth_reference.jpg" alt="Beth, the photo we uploaded" className="h-40 w-auto rounded-xl object-contain" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/product-showcase/lucylabs_cup_v2.png" alt="Our Lucy Labs tumbler" className="h-40 w-auto rounded-xl object-contain" />
+      </div>
+      <p className="text-center text-xs text-muted">Beth&apos;s photo (the actual reference image) and our tumbler (described in the prompt only).</p>
 
       {model.videoUrl ? (
         <video key={model.id} className="mx-auto w-full max-w-xs rounded-xl" src={model.videoUrl} controls loop muted playsInline />
@@ -1302,8 +1309,10 @@ function ProductAdShowcaseSection() {
       </div>
 
       <p className="text-xs text-muted">
-        Same caveat as above: this is a snapshot from 2026-09-12, not a permanent ranking - and just a real test of
-        product fidelity, not an endorsement to sell relabeled products.
+        Honest caveat: none of the five actually cut between two locations - that&apos;s a real limit of a single
+        generation (they render one continuous shot, not a multi-scene edit), not a bug on our end. What you see
+        is each engine&apos;s best one-take interpretation. Same as above: a snapshot from 2026-09-12, not a
+        permanent ranking.
       </p>
     </Card>
   );
