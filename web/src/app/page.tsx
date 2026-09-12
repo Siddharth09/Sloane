@@ -858,7 +858,7 @@ function CustomVideoSection() {
       subtitle="Upload your photo or a short video of yourself, type what to say - we animate exactly your face to say it."
     >
       <div className="rounded-2xl border border-white/60 bg-white/60 p-3">
-        <video className="w-full rounded-xl" src="/trailers/kirsty-kling-dub.mp4" controls loop muted playsInline />
+        <video className="mx-auto w-full max-w-xs rounded-xl" src="/trailers/kirsty-kling-dub.mp4" controls loop muted playsInline />
         <p className="mt-1.5 text-xs text-muted">Example: a real photo, dubbed with a Lucy voice via Kling.</p>
       </div>
 
@@ -1006,7 +1006,7 @@ function CinematicVideoSection() {
       subtitle="Your photo + a scene you describe - Veo generates the shot around it."
     >
       <div className="rounded-2xl border border-white/60 bg-white/60 p-3">
-        <video className="w-full rounded-xl" src="/trailers/kirsty-moon-veo-audio.mp4" controls loop muted playsInline />
+        <video className="mx-auto w-full max-w-xs rounded-xl" src="/trailers/kirsty-moon-veo-audio.mp4" controls loop muted playsInline />
         <p className="mt-1.5 text-xs text-muted">Example: the moon-surface scene, from the prompt below.</p>
       </div>
 
@@ -1126,10 +1126,10 @@ const SHOWCASE_MODELS: ShowcaseModel[] = [
   {
     id: "seedance",
     name: "Seedance 2.0",
-    note: "Blocked on this test - see below.",
+    note: "Couldn't offer us a result on this test - see below.",
     videoUrl: null,
     blockedReason:
-      "Seedance struggles with hyper-realistic AI-generated faces on this kind of shot and wouldn't produce a usable clip for this test. Every engine has its own quirks scene-to-scene - try your own prompt and photo above and see how it does for you.",
+      "Seedance can't offer us a realistic video for this scene right now because of their own privacy policy around hyper-realistic AI faces. Every engine has its own quirks scene-to-scene - try your own prompt and photo above and see how it does for you.",
   },
 ];
 
@@ -1188,6 +1188,122 @@ function ModelShowcaseSection() {
       <p className="text-xs text-muted">
         Caveat: these models change constantly - the labs and fal ship new versions often. This is a snapshot of
         where each one stood when we tested it (2026-09-12), not a permanent ranking.
+      </p>
+    </Card>
+  );
+}
+
+// --- "Just for fun" product-ad showcase: our own product, five engines ---
+
+const PRODUCT_AD_PROMPT =
+  "A woman's hand reaches into frame and picks up this exact tumbler from a bright cafe table, morning sunlight, taking a sip through the straw, photorealistic, 4k, commercial product ad";
+
+type ProductAdModel = {
+  id: string;
+  name: string;
+  note: string;
+  videoUrl: string | null;
+  blockedReason?: string;
+};
+
+const PRODUCT_AD_MODELS: ProductAdModel[] = [
+  {
+    id: "kling",
+    name: "Kling",
+    note: "Logo stayed perfectly crisp, with a natural-looking hand grip.",
+    videoUrl: "/product-showcase/cup_kling.mp4",
+  },
+  {
+    id: "seedance",
+    name: "Seedance",
+    note: "Logo stayed perfectly crisp - the best-composed shot of the five.",
+    videoUrl: "/product-showcase/cup_seedance.mp4",
+  },
+  {
+    id: "grok",
+    name: "Grok",
+    note: "Logo stayed perfectly crisp, and it built a nice little cafe scene around it.",
+    videoUrl: "/product-showcase/cup_grok.mp4",
+  },
+  {
+    id: "veo",
+    name: "Veo",
+    note: "Distorted the logo (it came out doubled/ghosted) and warped the cup's actual shape.",
+    videoUrl: "/product-showcase/cup_veo.mp4",
+  },
+  {
+    id: "minimax",
+    name: "MiniMax",
+    note: "Didn't get to test this one.",
+    videoUrl: null,
+    blockedReason:
+      "We ran out of real generation credit partway through this test, right before MiniMax's turn - not a limitation of the model itself, just bad timing. We'll fill this in next time.",
+  },
+];
+
+function ProductAdShowcaseSection() {
+  const [modelId, setModelId] = useState(PRODUCT_AD_MODELS[0].id);
+  const model = PRODUCT_AD_MODELS.find((m) => m.id === modelId)!;
+
+  return (
+    <Card
+      wash="bg-purple-wash/90"
+      iconColor="text-purple"
+      icon="🥤"
+      title="Just for fun: can AI promote our own product?"
+      subtitle="We uploaded a real product photo and asked each model to build an ad around it - no distortion allowed."
+    >
+      <p className="text-sm leading-relaxed text-muted">
+        We took a real tumbler photo, edited the logo to say &quot;Lucy Labs&quot; instead of the original brand
+        (a quick image edit, not a real product of ours), then gave every engine that exact same photo and the
+        exact same prompt to see who could build a believable ad around it without warping the logo.
+      </p>
+
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/product-showcase/lucylabs_cup.png"
+        alt="The Lucy Labs tumbler we uploaded"
+        className="mx-auto h-48 w-auto rounded-xl object-contain"
+      />
+      <p className="text-center text-xs text-muted">The exact photo we uploaded.</p>
+
+      {model.videoUrl ? (
+        <video key={model.id} className="mx-auto w-full max-w-xs rounded-xl" src={model.videoUrl} controls loop muted playsInline />
+      ) : (
+        <div className="rounded-2xl border border-coral-dark/30 bg-white/70 p-4 text-sm text-coral-dark">
+          {model.blockedReason}
+        </div>
+      )}
+
+      <div className="flex flex-wrap justify-center gap-3">
+        {PRODUCT_AD_MODELS.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setModelId(m.id)}
+            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+              modelId === m.id
+                ? "bg-purple text-white shadow-soft"
+                : m.videoUrl
+                  ? "border border-border bg-white text-muted hover:opacity-100"
+                  : "border border-coral-dark/30 bg-white text-coral-dark opacity-80"
+            }`}
+          >
+            {m.name}
+            {!m.videoUrl && " ⚠️"}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-xs text-muted">{model.note}</p>
+
+      <div className="rounded-2xl bg-white/70 p-3">
+        <p className="text-xs font-semibold text-muted">The exact prompt used for all five:</p>
+        <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_PROMPT}</p>
+      </div>
+
+      <p className="text-xs text-muted">
+        Same caveat as above: this is a snapshot from 2026-09-12, not a permanent ranking - and just a real test of
+        product fidelity, not an endorsement to sell relabeled products.
       </p>
     </Card>
   );
@@ -1266,7 +1382,7 @@ function CharacterVideoSection() {
       subtitle="5 ready-made AI actors, always the same face - tap one to hear them, then type what they should say."
     >
       <div className="rounded-2xl border border-white/60 bg-white/60 p-3">
-        <video className="w-full rounded-xl" src="/trailers/ads-veo-demo.mp4" controls loop muted playsInline />
+        <video className="mx-auto w-full max-w-xs rounded-xl" src="/trailers/ads-veo-demo.mp4" controls loop muted playsInline />
         <p className="mt-1.5 text-xs text-muted">Example: Harper, one of the 5 characters below.</p>
       </div>
 
@@ -1639,6 +1755,7 @@ export default function Home() {
         <CharacterVideoSection />
         <PayAsYouGoVideoSection />
         <ModelShowcaseSection />
+        <ProductAdShowcaseSection />
         <Footer />
       </main>
     </div>
