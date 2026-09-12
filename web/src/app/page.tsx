@@ -1193,22 +1193,19 @@ function ModelShowcaseSection() {
   );
 }
 
-// --- "Just for fun" product-ad showcase: Beth + our own product, five engines ---
+// --- "Just for fun" product-ad showcase: Harper + our own product, real 2-scene ad ---
 
-const PRODUCT_AD_SCRIPT = "“Look at your tumbler. Now back to mine. Sadly, yours isn't mine. But it could be.”";
+const PRODUCT_AD_SCRIPT =
+  "“I'm on a yoga mat. Now I'm in a corner office, forty floors up. Anything is possible when your tumbler " +
+  "works as hard as you do. Check out Lucy Labs.”";
 
-// The scene-description prompt given to Grok/MiniMax's silent render (Kling
-// Avatar takes no text prompt at all - just the reference photo + audio).
-const PRODUCT_AD_SCENE_PROMPT =
-  "A confident professional woman holds this exact tumbler and gestures energetically as she talks to the " +
-  "camera, camera slowly pans across a bright modern sunlit room, energetic, playful, confident, cinematic " +
-  "commercial ad, photorealistic, 4k";
+const PRODUCT_AD_YOGA_PROMPT =
+  "This exact woman kneels on a yoga mat holding this exact tumbler, talking to the camera, natural gestures, " +
+  "photorealistic, 4k, cinematic commercial ad";
 
-// The separate prompt used for Veo's generic-person test (real cup photo,
-// no Beth, no audio - see that model's note above).
-const PRODUCT_AD_VEO_PROMPT =
-  "A professional woman holds this tumbler and gestures energetically while talking, bright modern office, " +
-  "photorealistic, 4k, commercial ad style";
+const PRODUCT_AD_OFFICE_PROMPT =
+  "This exact woman stands in a corner office with a city skyline behind her, holding this exact tumbler, " +
+  "talking to the camera with natural gestures, photorealistic, 4k, cinematic commercial ad";
 
 type ProductAdModel = {
   id: string;
@@ -1222,34 +1219,36 @@ const PRODUCT_AD_MODELS: ProductAdModel[] = [
   {
     id: "kling",
     name: "Kling",
-    note: "Real lip-sync in one step (Kling's Avatar feature) - genuinely great result, crisp logo throughout, Beth actually mouthing the script.",
-    videoUrl: "/product-showcase/beth_dub_kling.mp4",
+    note: "Real lip-sync end to end (Kling's Avatar feature drives both scenes directly from the audio) - the strongest result of the three, crisp logo and a genuine outfit + location change.",
+    videoUrl: "/product-showcase/harper_final_kling.mp4",
   },
   {
     id: "grok",
     name: "Grok",
-    note: "Rendered the scene silently, then we added real lip-sync afterward via Kling's dedicated lip-sync pass - logo and expression both came out great.",
-    videoUrl: "/product-showcase/beth_dub_grok.mp4",
+    note: "Rendered each scene silently, then we added a real lip-sync pass afterward via Kling's dedicated lip-sync endpoint - logo, outfit, and location all came through well, but the actual mouth-sync quality is noticeably weaker than Kling's own Avatar path (see caveat below).",
+    videoUrl: "/product-showcase/harper_final_grok.mp4",
   },
   {
     id: "minimax",
     name: "MiniMax",
-    note: "Same two-step process as Grok (silent render, then a real lip-sync pass) - crisp logo, warm and natural delivery.",
-    videoUrl: "/product-showcase/beth_dub_minimax.mp4",
+    note: "Same two-step process as Grok (silent render, then a real lip-sync pass) - crisp logo in both scenes, but same lip-sync-quality caveat as Grok below.",
+    videoUrl: "/product-showcase/harper_final_minimax.mp4",
   },
   {
     id: "veo",
     name: "Veo",
-    note: "Only worked once we described a generic, unnamed woman instead of “this exact woman” - no audio on this one, a separate test of the theory, not the dubbed script.",
-    videoUrl: "/product-showcase/beth_dub_veo.mp4",
+    note: "Not re-tested this round - see below for why.",
+    videoUrl: null,
+    blockedReason:
+      "Veo blocks prompts that read like a specific real person endorsing a named brand (an AI-fake-endorsement pattern many platforms guard against) - it only passed in an earlier test once we dropped Harper's identity entirely for a generic, unnamed woman, which defeats the point of using Harper by name. Not worth spending more credits to reconfirm a block we've already proven twice.",
   },
   {
     id: "seedance",
     name: "Seedance",
-    note: "Couldn't offer us a result on this one - see below.",
+    note: "Not re-tested this round - see below for why.",
     videoUrl: null,
     blockedReason:
-      "Seedance's own safety policy blocks any photorealistic AI-generated face outright, before it even looks at the rest of the scene - it can't tell a convincing AI face from a real photo of a real person, so it refuses both. Nothing about wording gets around this one.",
+      "Seedance's own safety policy blocks any photorealistic AI-generated face outright, before it even looks at the rest of the scene - it can't tell a convincing AI face from a real photo of a real person, so it refuses both. Nothing about wording gets around this one; we've reproduced it three separate times in this project.",
   },
 ];
 
@@ -1263,12 +1262,14 @@ function ProductAdShowcaseSection() {
       iconColor="text-purple"
       icon="🥤"
       title="Just for fun: can AI promote your product?"
-      subtitle="We asked each model to put one of our AI characters in a real, spoken ad for our own product - no distortion allowed."
+      subtitle="We asked each model to put one of our AI characters in a real, spoken, two-scene ad for our own product - no distortion allowed."
     >
       <p className="text-sm leading-relaxed text-muted">
-        Beth (one of our AI characters) actually says a short script about the tumbler, dubbed in her own voice.
-        We first combined a photo of Beth and a photo of the tumbler into one real reference image (so both her
-        face and the exact logo carry through), then had each engine animate that photo and speak the line below.
+        Harper (one of our AI characters) actually speaks the script below, in her own voice, and changes both
+        outfit and location partway through - a yoga mat to a corner office, holding the tumbler the whole time.
+        Since no engine here can take two reference photos of a real person in one generation, we built each
+        scene as its own separate video (its own reference photo, its own line of the script, its own lip-sync
+        pass), then stitched the two scenes together afterward.
       </p>
       <p className="text-xs italic text-muted">
         To be clear: this tumbler isn&apos;t a real Lucy Labs product - it&apos;s a relabeled stock photo, purely
@@ -1277,11 +1278,11 @@ function ProductAdShowcaseSection() {
 
       <div className="flex items-center justify-center gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/product-showcase/beth_reference.jpg" alt="Beth, the original photo" className="h-40 w-auto rounded-xl object-contain" />
+        <img src="/product-showcase/harper_yoga.png" alt="Harper on a yoga mat, holding the tumbler" className="h-40 w-auto rounded-xl object-contain" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/product-showcase/beth_holding_cup.png" alt="Beth and the tumbler, combined into one reference photo" className="h-40 w-auto rounded-xl object-contain" />
+        <img src="/product-showcase/harper_office.png" alt="Harper in a corner office, holding the tumbler" className="h-40 w-auto rounded-xl object-contain" />
       </div>
-      <p className="text-center text-xs text-muted">Beth&apos;s original photo, and the combined reference photo we actually used (Beth + the real tumbler in one image).</p>
+      <p className="text-center text-xs text-muted">The two reference photos we actually used - one per scene, each combining Harper&apos;s photo with the tumbler photo.</p>
 
       {model.videoUrl ? (
         <video key={model.id} className="mx-auto w-full max-w-xs rounded-xl" src={model.videoUrl} controls loop muted={false} playsInline />
@@ -1313,36 +1314,50 @@ function ProductAdShowcaseSection() {
       <p className="text-xs text-muted">{model.note}</p>
 
       <div className="rounded-2xl bg-white/70 p-3">
-        <p className="text-xs font-semibold text-muted">The script Beth says out loud (Kling, Grok, MiniMax):</p>
+        <p className="text-xs font-semibold text-muted">The full script Harper says out loud:</p>
         <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_SCRIPT}</p>
       </div>
 
       <div className="rounded-2xl bg-white/70 p-3">
-        <p className="text-xs font-semibold text-muted">
-          The scene prompt for Grok/MiniMax&apos;s silent render (Kling&apos;s Avatar step takes no text prompt at
-          all - just the photo and the audio):
-        </p>
-        <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_SCENE_PROMPT}</p>
+        <p className="text-xs font-semibold text-muted">Scene 1 prompt (yoga mat):</p>
+        <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_YOGA_PROMPT}</p>
       </div>
 
       <div className="rounded-2xl bg-white/70 p-3">
-        <p className="text-xs font-semibold text-muted">Veo&apos;s separate prompt (its own test, no audio):</p>
-        <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_VEO_PROMPT}</p>
+        <p className="text-xs font-semibold text-muted">Scene 2 prompt (corner office):</p>
+        <p className="mt-1 text-xs italic text-muted">{PRODUCT_AD_OFFICE_PROMPT}</p>
+      </div>
+
+      <div className="rounded-2xl bg-white/70 p-3">
+        <p className="mb-1 text-xs font-semibold text-muted">Want to make a multi-scene ad like this yourself?</p>
+        <p className="text-xs leading-relaxed text-muted">
+          Every engine above only accepts one photo per generation - none of them can jump between two scenes on
+          their own. Here&apos;s exactly how we built the version above: (1) merge your two reference photos (e.g.
+          yourself + your product) into one image using a free tool like fal.ai&apos;s Flux Kontext, Canva, or
+          Photoroom; (2) generate one video per scene here, each with its own merged photo and its own prompt
+          (different wording per scene, matching what&apos;s said in that part of the script); (3) stitch the
+          resulting clips together with a free tool like Kapwing, Clideo, or CapCut.
+        </p>
       </div>
 
       <p className="text-xs text-muted">
         On Veo and Seedance, real-person policies are the whole story: <strong>Seedance</strong> blocks any
-        photorealistic AI face outright, no matter the prompt. <strong>Veo</strong> blocked our first attempt too,
-        but for a narrower reason - it flags prompts that read like a specific real person endorsing a named
-        brand (an AI-fake-endorsement pattern many platforms guard against), not photorealistic faces in general.
-        Dropping the specific identity (a generic, unnamed woman instead of &quot;this exact woman&quot;) let it
-        through - that&apos;s why Veo&apos;s clip above uses a different, non-Beth reference photo and has no audio.
+        photorealistic AI face outright, no matter the prompt. <strong>Veo</strong> flags prompts that read like a
+        specific real person endorsing a named brand - it only passes with a generic, unnamed person, which
+        defeats using a named character like Harper. Both left out of this round rather than re-spending credits
+        to reconfirm an already-proven block.
       </p>
 
       <p className="text-xs text-muted">
-        Honest caveat: none of these actually cut between multiple locations - that&apos;s a real limit of a single
-        generation (one continuous shot, not a multi-scene edit), not something we can configure around. Same as
-        above: a snapshot from 2026-09-12, not a permanent ranking.
+        Caveat on the dubbing itself: watching all three side by side, <strong>Kling&apos;s lip-sync is clearly the
+        best of the three</strong> - it generates the mouth movement and audio together in one pass. Grok and
+        MiniMax&apos;s two-step process (silent video, then a separate lip-sync pass laid over it afterward) is
+        real and does work, but the mouth-to-word match is noticeably less convincing than Kling&apos;s. If a
+        spoken, dubbed ad is what you actually need, Kling is the one to pick today.
+      </p>
+
+      <p className="text-xs text-muted">
+        Honest caveat: a snapshot from 2026-09-12, not a permanent ranking - these models change constantly.
       </p>
     </Card>
   );
@@ -1518,6 +1533,12 @@ function CharacterVideoSection() {
 }
 
 type PaygoAudioMode = "none" | "own" | "lucy";
+
+const PAYGO_PROMPT_PLACEHOLDER =
+  'Give a prompt and really add the details - the more specific, the better the result. For example, one we ' +
+  'used for testing: "A confident professional woman holds this exact tumbler and gestures energetically as she ' +
+  'talks to the camera, camera slowly pans across a bright modern sunlit room, energetic, playful, confident, ' +
+  'cinematic commercial ad, photorealistic, 4k"';
 
 function PayAsYouGoVideoSection() {
   const [signedIn, setSignedIn] = useState(false);
@@ -1731,7 +1752,7 @@ function PayAsYouGoVideoSection() {
           <textarea
             className="w-full rounded-2xl border border-border bg-white p-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-purple"
             rows={3}
-            placeholder={audioMode === "lucy" ? "What should the voice say?" : "Describe the video you want..."}
+            placeholder={audioMode === "lucy" ? "What should the voice say?" : PAYGO_PROMPT_PLACEHOLDER}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
