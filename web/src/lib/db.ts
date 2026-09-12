@@ -311,9 +311,27 @@ export async function getVisitStats() {
   };
 }
 
+// Excludes visually-ambiguous characters (0/O, 1/I/L) - this gets typed
+// back in by hand from an email or a screen, so a customer misreading one
+// character for another is a real support-ticket risk, not just a
+// cosmetic concern. 32 symbols divides evenly into 256 (a random byte's
+// range), so `byte % 32` below has zero modulo bias - every symbol is
+// exactly as likely as every other.
+const ACCESS_TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
 function generateAccessToken(): string {
-  // Readable-ish, not guessable - e.g. "lucy_9f2a7c1e4b8d6053a1f9c2e7b4d80a3f"
-  return `lucy_${randomBytes(16).toString("hex")}`;
+  // Branded and readable - e.g. "LUCY-7F3K-QW2M-9XPR-4TZC" - 16 random
+  // symbols from the 32-char alphabet above (80 bits of entropy, still far
+  // beyond brute-force range for an access token) grouped into 4s so it's
+  // easy to read back and paste correctly, rather than the old unbroken
+  // 32-character hex string.
+  const bytes = randomBytes(16);
+  let out = "LUCY";
+  for (let i = 0; i < 16; i++) {
+    if (i % 4 === 0) out += "-";
+    out += ACCESS_TOKEN_ALPHABET[bytes[i] % ACCESS_TOKEN_ALPHABET.length];
+  }
+  return out;
 }
 
 // Call once at the top of the Stripe webhook handler, before acting on the
