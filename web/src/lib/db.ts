@@ -250,6 +250,13 @@ export async function initSchema() {
   // Avatar path generates audio+video together in one step, so there's no
   // separate silent version to keep for it.
   await sql`ALTER TABLE video_paygo_jobs ADD COLUMN IF NOT EXISTS silent_video_url TEXT`;
+  // Same idea, same day, for cinematic mode's own needs_merge path - Veo's
+  // raw silent clip (generate_audio: false) gets fetched, then muxed with
+  // the resolved audio via fal's ffmpeg-api/merge-audio-video, and was
+  // previously thrown away right after. 'custom' mode never sets this - it
+  // only ever uses Kling Avatar directly (audio drives the whole
+  // generation from the start), so there's no silent version to keep.
+  await sql`ALTER TABLE subscription_video_jobs ADD COLUMN IF NOT EXISTS silent_video_url TEXT`;
 }
 
 // Generic runtime settings, switchable from the admin dashboard without a
@@ -910,6 +917,7 @@ export type SubscriptionVideoJob = {
   merge_request_id: string | null;
   status: "pending" | "in_progress" | "completed" | "failed";
   video_url: string | null;
+  silent_video_url: string | null;
   error: string | null;
   created_at: string;
 };
@@ -950,6 +958,12 @@ export async function setSubscriptionVideoJobRequestId(jobId: string, falRequest
 
 export async function setSubscriptionVideoJobMergeRequestId(jobId: string, mergeRequestId: string) {
   await sql`UPDATE subscription_video_jobs SET merge_request_id = ${mergeRequestId} WHERE id = ${jobId}`;
+}
+
+// Saves cinematic mode's raw silent Veo clip right before it's muxed with
+// the resolved audio - see the silent_video_url column comment above.
+export async function setSubscriptionVideoJobSilentVideo(jobId: string, silentVideoUrl: string) {
+  await sql`UPDATE subscription_video_jobs SET silent_video_url = ${silentVideoUrl} WHERE id = ${jobId}`;
 }
 
 export async function completeSubscriptionVideoJob(jobId: string, videoUrl: string) {

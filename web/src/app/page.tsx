@@ -506,8 +506,16 @@ async function pollVideoJob(
 
 type VideoJobType = "paygo" | "character" | "custom" | "cinematic";
 
-// Real video + a real "Download MP4" that streams through our own domain
-// (see /api/download-video) instead of sending people to fal's raw CDN URL.
+// Real video + a real download that streams through our own domain (see
+// /api/download-video) instead of sending people to fal's raw CDN URL.
+// Whenever a job went through a two-step pipeline (an engine's raw silent
+// clip, then either Kling lip-sync or an ffmpeg audio merge on top - see
+// each table's silent_video_url comment in db.ts), two clearly-labeled
+// downloads are offered instead of one, per direct request ("all ai
+// generated videos will have 2 download options... making it easy for
+// users to understand"). Jobs with no separate silent artifact (Kling
+// Avatar's one-step output, or an engine's own native voice) only ever
+// show the one button - there's no second real file to offer there.
 function VideoResultPlayer({
   videoUrl,
   jobId,
@@ -519,10 +527,6 @@ function VideoResultPlayer({
   jobId: string;
   jobType: VideoJobType;
   accessToken?: string | null;
-  // Only ever set on paygo jobs that went through a silent-render-then-
-  // lip-sync pipeline (Veo/Seedance/Grok/MiniMax + audio) - see
-  // silent_video_url's comment in db.ts. Undefined/null elsewhere, which
-  // just means the second button below doesn't render.
   silentVideoUrl?: string | null;
 }) {
   const tokenQuery = accessToken ? `&access_token=${encodeURIComponent(accessToken)}` : "";
@@ -534,20 +538,20 @@ function VideoResultPlayer({
           href={`/api/download-video?jobType=${jobType}&jobId=${encodeURIComponent(jobId)}${tokenQuery}`}
           className="inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
         >
-          Download MP4
+          {silentVideoUrl ? "Download with audio" : "Download MP4"}
         </a>
         {silentVideoUrl && (
           <a
             href={`/api/download-video?jobType=${jobType}&jobId=${encodeURIComponent(jobId)}&variant=silent${tokenQuery}`}
             className="inline-block rounded-full border border-border bg-white px-4 py-2 text-xs font-semibold text-foreground hover:bg-white/70"
           >
-            Download without audio
+            Download original (no audio)
           </a>
         )}
       </div>
       {silentVideoUrl && (
         <p className="mt-2 text-xs text-muted">
-          &quot;Download MP4&quot; is our lip-synced attempt. &quot;Download without audio&quot; is the model&apos;s actual footage, exactly as we got it back, before we added audio.
+          &quot;Download with audio&quot; is our attempt at adding sound. &quot;Download original (no audio)&quot; is the model&apos;s actual footage, exactly as we got it back, before we touched it.
         </p>
       )}
     </div>
@@ -980,7 +984,7 @@ function CinematicVideoSection() {
   const ownAudio = useMultiAudio();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ videoUrl: string; jobId: string } | null>(null);
+  const [result, setResult] = useState<{ videoUrl: string; jobId: string; silentVideoUrl: string | null } | null>(null);
   const cinematicCredits = Math.round(8 / VIDEO_CREDIT_COSTS.cinematicSecondsPerCredit);
 
   async function handleGenerate() {
@@ -1009,8 +1013,8 @@ function CinematicVideoSection() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed");
       const jobId = data.jobId as string;
-      const { videoUrl } = await pollVideoJob("/api/generate-cinematic-video/status", jobId, token);
-      setResult({ videoUrl, jobId });
+      const { videoUrl, silentVideoUrl } = await pollVideoJob("/api/generate-cinematic-video/status", jobId, token);
+      setResult({ videoUrl, jobId, silentVideoUrl });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -1105,7 +1109,9 @@ function CinematicVideoSection() {
       )}
 
       {error && <p className="rounded-2xl bg-white/70 p-3 text-sm text-coral-dark">{error}</p>}
-      {result && <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="cinematic" accessToken={token} />}
+      {result && (
+        <VideoResultPlayer videoUrl={result.videoUrl} jobId={result.jobId} jobType="cinematic" accessToken={token} silentVideoUrl={result.silentVideoUrl} />
+      )}
       <p className="text-xs text-muted">
         A real limitation, not hidden: the more your reference photo moves within the scene, the more the face can
         drift from your real one - Veo regenerates the whole scene rather than animating your exact photo.

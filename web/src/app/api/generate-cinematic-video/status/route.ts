@@ -6,6 +6,7 @@ import {
   setSubscriptionVideoJobRequestId,
   setSubscriptionVideoJobResolvedAudio,
   setSubscriptionVideoJobMergeRequestId,
+  setSubscriptionVideoJobSilentVideo,
   releaseVideoCredits,
 } from "@/lib/db";
 import { getFalJobStatus, getFalJobResult, uploadBufferToFal, submitFalJob, submitMergeAudioVideo, FFMPEG_MERGE_ENDPOINT } from "@/lib/fal";
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
   if (job.status === "completed") {
-    return NextResponse.json({ status: "COMPLETED", videoUrl: job.video_url });
+    return NextResponse.json({ status: "COMPLETED", videoUrl: job.video_url, silentVideoUrl: job.silent_video_url });
   }
   if (job.status === "failed") {
     return NextResponse.json({ status: "FAILED", error: job.error });
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest) {
         await completeSubscriptionVideoJob(job.id, videoUrl);
         // Usage already recorded atomically at submission time (see
         // reserveVideoCredits in generate-cinematic-video/route.ts).
-        return NextResponse.json({ status: "COMPLETED", videoUrl });
+        return NextResponse.json({ status: "COMPLETED", videoUrl, silentVideoUrl: job.silent_video_url });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to fetch merged result";
         if (await failSubscriptionVideoJob(job.id, message)) await releaseVideoCredits(job.access_token, job.credits_cost);
@@ -142,12 +143,20 @@ export async function GET(req: NextRequest) {
     if (!veoVideoUrl) throw new Error("fal result had no video url");
 
     if (!job.needs_merge) {
-      // engine_native: Veo's own clip already has the voice baked in.
+      // engine_native: Veo's own clip already has the voice baked in - no
+      // separate silent version was ever generated (audio drove the whole
+      // clip from the start, same as Kling Avatar), so there's nothing
+      // extra to offer here.
       await completeSubscriptionVideoJob(job.id, veoVideoUrl);
-      return NextResponse.json({ status: "COMPLETED", videoUrl: veoVideoUrl });
+      return NextResponse.json({ status: "COMPLETED", videoUrl: veoVideoUrl, silentVideoUrl: null });
     }
 
     if (!job.resolved_audio_url) throw new Error("No resolved audio to merge onto the video");
+    // Keep Veo's raw silent clip around (2026-09-12) - it's about to become
+    // submitMergeAudioVideo's input below, but was previously discarded
+    // right after. Saved so a customer can download both this and the
+    // audio-merged result once the job finishes.
+    await setSubscriptionVideoJobSilentVideo(job.id, veoVideoUrl);
     const mergeRequestId = await submitMergeAudioVideo(veoVideoUrl, job.resolved_audio_url);
     await setSubscriptionVideoJobMergeRequestId(job.id, mergeRequestId);
     return NextResponse.json({ status: "IN_PROGRESS" });

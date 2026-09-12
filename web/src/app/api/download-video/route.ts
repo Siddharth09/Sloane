@@ -17,12 +17,13 @@ import { getSessionUser } from "@/lib/auth";
 // same two auth systems used by the rest of the app for these features.
 type JobType = "paygo" | "character" | "custom" | "cinematic";
 
-// "silent" only ever exists on paygo jobs that actually went through the
-// silent-render-then-lip-sync pipeline (Veo/Seedance/Grok/MiniMax + audio -
-// see silent_video_url's comment in db.ts). Every other job type/variant
-// combination has no silent version to serve - Kling's own Avatar path
-// generates audio+video together in one step, and character/custom only
-// ever use that Avatar path, never the two-step one.
+// "silent" exists on paygo jobs that went through the silent-render-then-
+// lip-sync pipeline (Veo/Seedance/Grok/MiniMax + audio) and on cinematic
+// jobs that went through Veo-silent-then-ffmpeg-merge (own_upload/lucy
+// audio, not engine_native) - see each table's silent_video_url comment in
+// db.ts. "character" and "custom" never have one: both only ever use
+// Kling Avatar directly, which generates audio+video together in a single
+// step, so there's no separate silent artifact that ever existed to serve.
 type Variant = "final" | "silent";
 
 async function resolveVideoUrl(jobType: JobType, jobId: string, accessToken: string | null, variant: Variant): Promise<string | null> {
@@ -40,12 +41,16 @@ async function resolveVideoUrl(jobType: JobType, jobId: string, accessToken: str
       if (!job || job.access_token !== accessToken) return null;
       return job.status === "completed" ? job.video_url : null;
     }
-    case "custom":
-    case "cinematic": {
+    case "custom": {
       if (variant === "silent") return null;
       const job = await getSubscriptionVideoJob(jobId);
       if (!job || job.mode !== jobType || job.access_token !== accessToken) return null;
       return job.status === "completed" ? job.video_url : null;
+    }
+    case "cinematic": {
+      const job = await getSubscriptionVideoJob(jobId);
+      if (!job || job.mode !== jobType || job.access_token !== accessToken || job.status !== "completed") return null;
+      return variant === "silent" ? job.silent_video_url : job.video_url;
     }
   }
 }
