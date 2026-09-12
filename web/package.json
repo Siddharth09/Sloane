@@ -12,6 +12,7 @@
     "@breezystack/lamejs": "^1.2.7",
     "@neondatabase/serverless": "^1.1.0",
     "@vercel/blob": "^2.8.0",
+    "music-metadata": "^11.15.0",
     "next": "16.3.4",
     "node-wav": "^0.0.2",
     "react": "19.2.8",

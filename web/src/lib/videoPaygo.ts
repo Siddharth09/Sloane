@@ -204,31 +204,97 @@ export const VIDEO_PAYGO_ENGINE_COST_USD: Record<VideoEngine, number> = {
   minimax: 0.74,
 };
 
+// Real per-engine minimum duration, confirmed directly against each
+// endpoint (not guessed) - see audioDuration.ts's module comment for the
+// production bug (dead air / ungrounded mouth movement past the end of
+// short audio) this exists to fix. Only ever used to SHRINK a generation's
+// duration down to match short real audio; never to extend past the
+// engine's existing default above, since that default is what
+// VIDEO_PAYGO_ENGINE_COST_USD's worst-case margin math is priced against -
+// going higher would need new cost math, a separate decision from this fix.
+// - veo: strict enum ["4s","6s","8s"] - 4s is the floor, checked directly
+//   against the schema (see module comment at the top of this file).
+// - kling: strict enum ["5","10"] - 5s is both the floor and this file's
+//   existing default, so there's nothing to shrink to; kept here anyway so
+//   a future default change doesn't silently lose this behavior.
+// - seedance: flexible "4"-"15", floor checked directly against the schema.
+// - grok: confirmed 2026-09-12 - duration=1 was accepted and rendered a
+//   real ~1.04s clip; duration=99 was rejected ("must be <= 15"). No
+//   documented range existed before this (fal's own docs just said
+//   "integer, default 6" with no bounds), so this was verified against the
+//   live API rather than assumed - see STATUS.md for the exact probe.
+// - minimax: confirmed 2026-09-12 - duration=2 was rejected ("must be >=
+//   5") while testing the Harper round; this file's existing default of 8
+//   was already proven working in the same round.
+const VIDEO_PAYGO_ENGINE_MIN_DURATION_SECONDS: Record<VideoEngine, number> = {
+  veo: 4,
+  kling: 5,
+  seedance: 4,
+  grok: 1,
+  minimax: 5,
+};
+
+// Resolves the actual duration value to send to fal for one generation:
+// the engine's fixed default when no real audio duration is known yet (the
+// existing, unchanged behavior), otherwise the smallest value the engine's
+// own schema allows that's still >= the real audio length - shrinking down
+// to fit short audio, clamped so it never exceeds the already-budgeted
+// default. Returned as a string, matching how falDurationValue is already
+// stored/sent elsewhere in this file (buildFalInput below still does its
+// own Number(...) conversion for grok/minimax, same as before).
+function matchedDurationValue(engine: VideoEngine, audioSeconds: number | null): string {
+  const def = VIDEO_PAYGO_ENGINES[engine];
+  if (audioSeconds == null) return def.falDurationValue;
+  const min = VIDEO_PAYGO_ENGINE_MIN_DURATION_SECONDS[engine];
+  const target = Math.min(def.durationSeconds, Math.max(min, Math.ceil(audioSeconds)));
+  switch (engine) {
+    case "veo":
+      return target <= 4 ? "4s" : target <= 6 ? "6s" : "8s";
+    case "kling":
+      return target <= 5 ? "5" : "10";
+    default:
+      return `${target}`;
+  }
+}
+
 // Builds the fal input body for a plain (non-Kling-Avatar) engine
 // submission. Shared by /api/video-paygo/generate (immediate submission)
 // and its status route (the deferred "a Lucy voice" phase-0 submission,
 // once TTS resolves) - lives here rather than in either route file since
 // Next.js route.ts files may only export HTTP method handlers.
-export function buildFalInput(engine: VideoEngine, prompt: string, imageUrl: string | null, wantsNativeAudio: boolean): Record<string, unknown> {
+//
+// `realAudioSeconds` (2026-09-12): the actual length of the audio this
+// video will be lip-synced to afterward (own upload or resolved Lucy TTS),
+// when known - null for the no-audio path, which keeps the engine's fixed
+// default exactly as before. See matchedDurationValue above and
+// audioDuration.ts for where this number comes from.
+export function buildFalInput(
+  engine: VideoEngine,
+  prompt: string,
+  imageUrl: string | null,
+  wantsNativeAudio: boolean,
+  realAudioSeconds: number | null = null,
+): Record<string, unknown> {
   const def = VIDEO_PAYGO_ENGINES[engine];
+  const durationValue = matchedDurationValue(engine, realAudioSeconds);
   switch (engine) {
     case "veo":
       return {
         prompt,
         image_url: imageUrl ?? undefined,
-        duration: def.falDurationValue,
+        duration: durationValue,
         resolution: VIDEO_PAYGO_RESOLUTION,
         generate_audio: wantsNativeAudio,
       };
     case "kling":
-      return { prompt, duration: def.falDurationValue, image_url: imageUrl ?? undefined };
+      return { prompt, duration: durationValue, image_url: imageUrl ?? undefined };
     case "seedance":
-      return { prompt, duration: def.falDurationValue, resolution: VIDEO_PAYGO_RESOLUTION, image_url: imageUrl ?? undefined };
+      return { prompt, duration: durationValue, resolution: VIDEO_PAYGO_RESOLUTION, image_url: imageUrl ?? undefined };
     case "grok":
       // duration is a real integer field on this endpoint's schema (not a
       // string enum like Kling/Veo) - sent as a number, not the string
       // falDurationValue is stored as elsewhere, to match.
-      return { prompt, image_url: imageUrl ?? undefined, duration: Number(def.falDurationValue), resolution: def.falResolutionValue ?? VIDEO_PAYGO_RESOLUTION };
+      return { prompt, image_url: imageUrl ?? undefined, duration: Number(durationValue), resolution: def.falResolutionValue ?? VIDEO_PAYGO_RESOLUTION };
     case "minimax":
       // prompt_expansion_mode is required by this endpoint's schema -
       // "balanced" (~1s overhead) rather than "quality" (~30s), same choice
@@ -237,7 +303,7 @@ export function buildFalInput(engine: VideoEngine, prompt: string, imageUrl: str
       return {
         prompt,
         image_url: imageUrl ?? undefined,
-        duration: Number(def.falDurationValue),
+        duration: Number(durationValue),
         resolution: def.falResolutionValue ?? VIDEO_PAYGO_RESOLUTION,
         prompt_expansion_mode: "balanced",
       };

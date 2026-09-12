@@ -12,6 +12,7 @@ import {
 import { VIDEO_PAYGO_ENGINES, buildFalInput, type VideoEngine } from "@/lib/videoPaygo";
 import { submitFalJob, uploadBufferToFal, hasEnoughFalBalanceToGenerate } from "@/lib/fal";
 import { submitModalJob } from "@/lib/modal";
+import { probeAudioDurationSeconds, LIPSYNC_MIN_AUDIO_SECONDS } from "@/lib/audioDuration";
 import { PRESET_VOICES } from "@/lib/presetVoices";
 
 const MAX_PROMPT_LENGTH = 600;
@@ -109,6 +110,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Real, own-uploaded audio needs its real duration for two reasons
+    // below (both added 2026-09-12 after the Harper product-ad round found
+    // both bugs for real - see audioDuration.ts's module comment): the
+    // eventual lip-sync pass has a hard 2-second floor (confirmed directly
+    // against fal's kling-video/lipsync endpoint), and the silent video
+    // generated in between should be shrunk to match short audio rather
+    // than always rendering the engine's full default length. Read once
+    // here, before spending a credit, so a too-short upload is rejected up
+    // front instead of wasting one. A Lucy-voice audio hasn't been
+    // generated yet at this point (it's TTS'd after this route returns -
+    // see the phase-0 handling in status/route.ts), so that path gets the
+    // same duration/floor treatment there instead, once real audio exists.
+    let ownAudioBuffer: Buffer | null = null;
+    let ownAudioSeconds: number | null = null;
+    if (hasAudio) {
+      ownAudioBuffer = Buffer.from(await (referenceAudio as Blob).arrayBuffer());
+      ownAudioSeconds = await probeAudioDurationSeconds(ownAudioBuffer, (referenceAudio as Blob).type || "");
+      if (ownAudioSeconds != null && ownAudioSeconds < LIPSYNC_MIN_AUDIO_SECONDS) {
+        return NextResponse.json(
+          { error: `That audio is too short to lip-sync (${ownAudioSeconds.toFixed(1)}s) - add at least ${LIPSYNC_MIN_AUDIO_SECONDS}s` },
+          { status: 400 },
+        );
+      }
+    }
+
     // Real-time fal balance guard (2026-09-12) - checked right before we'd
     // actually commit to spending a credit, so a thin fal balance declines
     // gracefully with no charge instead of a customer's credit being spent
@@ -134,9 +160,8 @@ export async function POST(req: NextRequest) {
         const buf = Buffer.from(await (referenceImage as Blob).arrayBuffer());
         inputImageUrl = await uploadBufferToFal(buf, (referenceImage as Blob).type || "image/jpeg", "reference.jpg");
       }
-      if (hasAudio) {
-        const buf = Buffer.from(await (referenceAudio as Blob).arrayBuffer());
-        inputAudioUrl = await uploadBufferToFal(buf, (referenceAudio as Blob).type || "audio/mpeg", "audio");
+      if (hasAudio && ownAudioBuffer) {
+        inputAudioUrl = await uploadBufferToFal(ownAudioBuffer, (referenceAudio as Blob).type || "audio/mpeg", "audio");
       }
     } catch (err) {
       await refundVideoCredit(user.id);
@@ -173,7 +198,7 @@ export async function POST(req: NextRequest) {
       }
       const falInput = useKlingAvatar
         ? { image_url: inputImageUrl, audio_url: inputAudioUrl }
-        : buildFalInput(engine, prompt, inputImageUrl, !needsMerge && engine === "veo");
+        : buildFalInput(engine, prompt, inputImageUrl, !needsMerge && engine === "veo", ownAudioSeconds);
       const requestId = await submitFalJob(falEndpoint, falInput);
       await setVideoPaygoJobRequestId(jobId, requestId);
       return NextResponse.json({ jobId });

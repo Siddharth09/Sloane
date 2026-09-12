@@ -3,6 +3,7 @@ import { getCharacterVideoJob, completeCharacterVideoJob, failCharacterVideoJob,
 import { getCharacter } from "@/lib/characters";
 import { submitFalJob, getFalJobStatus, getFalJobResult, uploadBufferToFal } from "@/lib/fal";
 import { getModalJobStatus } from "@/lib/modal";
+import { padWavToMinDuration, LIPSYNC_MIN_AUDIO_SECONDS } from "@/lib/audioDuration";
 
 const KLING_AVATAR_ENDPOINT = "fal-ai/kling-video/ai-avatar/v2/standard";
 
@@ -56,7 +57,12 @@ export async function GET(req: NextRequest) {
       if (!audioBase64) throw new Error("Voice generation produced no audio");
       const character = getCharacter(job.character_id);
       if (!character) throw new Error("Unknown character");
-      const audioBuffer = Buffer.from(audioBase64, "base64");
+      // Same real bug found and fixed on pay-as-you-go's Lucy-voice path
+      // 2026-09-12 (a 1.05s TTS line got rejected by Kling's lipsync
+      // endpoint's 2-second floor) - a short character bio/line here would
+      // hit Kling Avatar with the same short audio, so pad defensively
+      // rather than wait to hit it for real on a live customer job.
+      const audioBuffer = padWavToMinDuration(Buffer.from(audioBase64, "base64"), LIPSYNC_MIN_AUDIO_SECONDS);
       const audioUrl = await uploadBufferToFal(audioBuffer, "audio/wav", `${job.id}.wav`);
       const requestId = await submitFalJob(KLING_AVATAR_ENDPOINT, {
         image_url: character.imageUrl,

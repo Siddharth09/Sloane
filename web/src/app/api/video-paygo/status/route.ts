@@ -12,6 +12,7 @@ import {
 import { getFalJobStatus, getFalJobResult, submitLipsyncJob, submitFalJob, uploadBufferToFal, LIPSYNC_ENDPOINT } from "@/lib/fal";
 import { getModalJobStatus } from "@/lib/modal";
 import { VIDEO_PAYGO_ENGINES, buildFalInput, type VideoEngine } from "@/lib/videoPaygo";
+import { probeAudioDurationSeconds, padWavToMinDuration, LIPSYNC_MIN_AUDIO_SECONDS } from "@/lib/audioDuration";
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
@@ -61,13 +62,23 @@ export async function GET(req: NextRequest) {
     try {
       const audioBase64 = modalStatus.output?.audio_base64 as string | undefined;
       if (!audioBase64) throw new Error("Voice generation produced no audio");
-      const audioUrl = await uploadBufferToFal(Buffer.from(audioBase64, "base64"), "audio/wav", `${job.id}.wav`);
+      // Pad up to the real, confirmed 2-second floor before this audio ever
+      // reaches Kling (Avatar or the standalone lipsync pass both take real
+      // audio input) - fixes for every Lucy-voice line in production the
+      // exact bug hit for real on Harper's "I'm on a yoga mat" line during
+      // testing (1.05s, rejected). Real (possibly now-padded) duration is
+      // also what shrinks the silent video generation to match on the
+      // non-Kling engines below - see videoPaygo.ts's buildFalInput.
+      const rawAudio = Buffer.from(audioBase64, "base64");
+      const paddedAudio = padWavToMinDuration(rawAudio, LIPSYNC_MIN_AUDIO_SECONDS);
+      const resolvedAudioSeconds = await probeAudioDurationSeconds(paddedAudio, "audio/wav");
+      const audioUrl = await uploadBufferToFal(paddedAudio, "audio/wav", `${job.id}.wav`);
       await setVideoPaygoJobResolvedAudio(job.id, audioUrl);
       if (!job.fal_endpoint) throw new Error("Job is missing its target endpoint");
       const isKlingAvatar = job.fal_endpoint === VIDEO_PAYGO_ENGINES.kling.falAvatarEndpoint;
       const requestId = isKlingAvatar
         ? await submitFalJob(job.fal_endpoint, { image_url: job.input_image_url, audio_url: audioUrl })
-        : await submitFalJob(job.fal_endpoint, buildFalInput(job.engine as VideoEngine, job.prompt, job.input_image_url, false));
+        : await submitFalJob(job.fal_endpoint, buildFalInput(job.engine as VideoEngine, job.prompt, job.input_image_url, false, resolvedAudioSeconds));
       await setVideoPaygoJobRequestId(job.id, requestId);
       return NextResponse.json({ status: "IN_PROGRESS" });
     } catch (err) {
