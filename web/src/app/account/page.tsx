@@ -179,19 +179,34 @@ function AccountPageInner() {
 
         <div className="rounded-[28px] border border-white/60 bg-surface/90 p-6 text-sm shadow-soft backdrop-blur-xl">
           {data.subscriber ? (
-            <>
-              <p className="font-semibold text-foreground">{data.subscriber.plan} plan · {data.subscriber.status}</p>
-              <p className="mt-1 text-muted">
-                {data.subscriber.charactersUsed.toLocaleString()} characters used this period
-              </p>
-              <button
-                onClick={openBillingPortal}
-                disabled={busy}
-                className="shadow-soft mt-4 rounded-full bg-coral px-4 py-2 text-xs font-bold text-white transition hover:brightness-105 disabled:opacity-50"
-              >
-                Manage billing / cancel
-              </button>
-            </>
+            data.subscriber.status === "canceled" ? (
+              <>
+                <p className="font-semibold text-foreground">Your {data.subscriber.plan} plan was canceled</p>
+                <p className="mt-1 text-muted">You can resubscribe any time - it only takes a minute.</p>
+                <a
+                  href="/billing"
+                  className="shadow-soft mt-4 inline-block rounded-full bg-coral px-4 py-2 text-xs font-bold text-white transition hover:brightness-105"
+                >
+                  Resubscribe
+                </a>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold text-foreground">
+                  {data.subscriber.plan} plan · {data.subscriber.status === "past_due" ? "payment needs updating" : "active"}
+                </p>
+                <p className="mt-1 text-muted">
+                  {data.subscriber.charactersUsed.toLocaleString()} characters used this period
+                </p>
+                <button
+                  onClick={openBillingPortal}
+                  disabled={busy}
+                  className="shadow-soft mt-4 rounded-full bg-coral px-4 py-2 text-xs font-bold text-white transition hover:brightness-105 disabled:opacity-50"
+                >
+                  Manage billing / cancel
+                </button>
+              </>
+            )
           ) : (
             <>
               <p className="text-muted">You&apos;re on the free tier — no active plan yet.</p>
